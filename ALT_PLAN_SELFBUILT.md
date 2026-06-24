@@ -44,7 +44,9 @@
 | Qt | widget 成熟、跨平台 | 大依赖、LGPL/商业授权 |
 | Dear ImGui | 出活最快 | 非原生观感,产品级体验打折 |
 
-**倾向**:要极简自主选 Win32+Direct2D 自绘;要省 chrome 工作量、原生观感选 WinUI 3。**此决策未定。**
+**倾向**:要极简自主选 Win32+Direct2D 自绘;要省 chrome 工作量、原生观感选 WinUI 3。
+
+**暂定:Win32 + Direct2D 全自绘。** 依据见 [`TERMINAL_LANDSCAPE.md`](./TERMINAL_LANDSCAPE.md):该栈与微软 AtlasEngine(DirectWrite+Direct2D+D3D11)一致、有 MIT 参考实现;只做 Windows 时 Direct2D/DirectWrite 最原生;Alacritty/WezTerm/Ghostty 均自绘或用平台原生 UI,自绘 chrome 工程上成立。
 
 ---
 
