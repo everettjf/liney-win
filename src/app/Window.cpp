@@ -32,7 +32,12 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
 
     RECT rc{};
     GetClientRect(hwnd_, &rc);
-    onResize(rc.right - rc.left, rc.bottom - rc.top);
+    renderer_->resize(rc.right - rc.left, rc.bottom - rc.top);
+
+    int cols = 0, rows = 0;
+    clientCells(cols, rows);
+    startSession(cols, rows);
+    if (!sessionActive_) rebuildDemoGrid();
     return true;
 }
 
@@ -85,7 +90,37 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
 void Window::onResize(unsigned widthPx, unsigned heightPx) {
     if (widthPx == 0 || heightPx == 0) return;
     renderer_->resize(widthPx, heightPx);
-    rebuildDemoGrid();
+
+    int cols = 0, rows = 0;
+    clientCells(cols, rows);
+    if (sessionActive_) {
+        unsigned cw = 0, ch = 0;
+        renderer_->cellSize(cw, ch);
+        terminal_.resize(cols, rows, cw, ch);
+        pty_.resize(static_cast<short>(cols), static_cast<short>(rows));
+    } else {
+        rebuildDemoGrid();
+    }
+}
+
+void Window::clientCells(int& cols, int& rows) const {
+    unsigned cw = 0, ch = 0;
+    renderer_->cellSize(cw, ch);
+    RECT rc{};
+    GetClientRect(hwnd_, &rc);
+    cols = cw ? static_cast<int>((rc.right - rc.left) / cw) : 80;
+    rows = ch ? static_cast<int>((rc.bottom - rc.top) / ch) : 24;
+    if (cols < 1) cols = 1;
+    if (rows < 1) rows = 1;
+}
+
+void Window::startSession(int cols, int rows) {
+    // create() returns false when libghostty-vt is not compiled in.
+    if (!terminal_.create(cols, rows)) return;
+    const bool ok = pty_.start(
+        shell_, static_cast<short>(cols), static_cast<short>(rows),
+        [this](const char* data, size_t len) { terminal_.write(data, len); });
+    sessionActive_ = ok;
 }
 
 void Window::rebuildDemoGrid() {
@@ -111,7 +146,7 @@ void Window::rebuildDemoGrid() {
         L"Stage 1: per-cell direct draw (this view).",
         L"Stage 2: glyph atlas + Direct3D 11.",
         L"",
-        L"Next: wire ConPTY output through libghostty-vt.",
+        L"Build with -DLINEY_WITH_LIBGHOSTTY=ON for a live shell.",
     };
     const Color accent{ 120, 220, 160 };
     for (int row = 0; row < rows && row < static_cast<int>(std::size(lines)); ++row) {
@@ -125,6 +160,7 @@ void Window::rebuildDemoGrid() {
 }
 
 void Window::renderFrame() {
+    if (sessionActive_) terminal_.snapshotInto(grid_);
     renderer_->render(grid_);
 }
 

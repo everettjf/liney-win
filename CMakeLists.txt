@@ -9,11 +9,17 @@ if(NOT WIN32)
     "liney-win targets Windows only (Win32 + Direct2D/Direct3D 11 + ConPTY).")
 endif()
 
+# libghostty-vt provides the terminal core (parsing/buffer/scrollback/reflow).
+# OFF by default so the scaffold builds with just MSVC; ON fetches Ghostty and
+# builds ghostty-vt via Zig (the Zig toolchain must be on PATH).
+option(LINEY_WITH_LIBGHOSTTY "Integrate libghostty-vt (requires Zig)" OFF)
+
 add_executable(liney_win WIN32
   src/main.cpp
   src/app/Window.cpp
   src/render/D2DRenderer.cpp
   src/pty/ConPty.cpp
+  src/vt/Terminal.cpp
 )
 
 target_include_directories(liney_win PRIVATE src)
@@ -23,3 +29,16 @@ target_compile_definitions(liney_win PRIVATE
 
 target_link_libraries(liney_win PRIVATE
   d2d1 dwrite d3d11 dxgi)
+
+if(LINEY_WITH_LIBGHOSTTY)
+  include(FetchContent)
+  FetchContent_Declare(ghostty
+    GIT_REPOSITORY https://github.com/ghostty-org/ghostty.git
+    GIT_TAG main)
+  FetchContent_MakeAvailable(ghostty)
+
+  target_compile_definitions(liney_win PRIVATE LINEY_WITH_LIBGHOSTTY)
+  # `ghostty-vt` is the target produced by Ghostty's CMake (delegates to
+  # `zig build lib-vt`); it also supplies the include directory.
+  target_link_libraries(liney_win PRIVATE ghostty-vt)
+endif()
