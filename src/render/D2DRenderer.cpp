@@ -1,0 +1,188 @@
+#include "render/D2DRenderer.h"
+
+namespace liney {
+
+static D2D1_COLOR_F toColorF(const Color& c) {
+    return D2D1::ColorF(c.r / 255.0f, c.g / 255.0f, c.b / 255.0f, 1.0f);
+}
+
+bool D2DRenderer::initialize(void* hwnd) {
+    hwnd_ = static_cast<HWND>(hwnd);
+    return createDeviceResources();
+}
+
+bool D2DRenderer::createDeviceResources() {
+    UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+    D3D_FEATURE_LEVEL featureLevel{};
+    HRESULT hr = D3D11CreateDevice(
+        nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags,
+        nullptr, 0, D3D11_SDK_VERSION,
+        d3dDevice_.GetAddressOf(), &featureLevel, d3dContext_.GetAddressOf());
+    if (FAILED(hr)) return false;
+
+    ComPtr<IDXGIDevice> dxgiDevice;
+    if (FAILED(d3dDevice_.As(&dxgiDevice))) return false;
+
+    D2D1_FACTORY_OPTIONS opts{};
+    hr = D2D1CreateFactory(
+        D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1), &opts,
+        reinterpret_cast<void**>(d2dFactory_.GetAddressOf()));
+    if (FAILED(hr)) return false;
+
+    hr = d2dFactory_->CreateDevice(dxgiDevice.Get(), d2dDevice_.GetAddressOf());
+    if (FAILED(hr)) return false;
+
+    hr = d2dDevice_->CreateDeviceContext(
+        D2D1_DEVICE_CONTEXT_OPTIONS_NONE, d2dContext_.GetAddressOf());
+    if (FAILED(hr)) return false;
+
+    hr = DWriteCreateFactory(
+        DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+        reinterpret_cast<IUnknown**>(dwriteFactory_.GetAddressOf()));
+    if (FAILED(hr)) return false;
+
+    const float fontSize = 16.0f;
+    hr = dwriteFactory_->CreateTextFormat(
+        L"Cascadia Mono", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+        DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, fontSize,
+        L"en-us", textFormat_.GetAddressOf());
+    if (FAILED(hr)) {
+        // Cascadia Mono may be absent; fall back to a guaranteed monospace font.
+        hr = dwriteFactory_->CreateTextFormat(
+            L"Consolas", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+            DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, fontSize,
+            L"en-us", textFormat_.GetAddressOf());
+        if (FAILED(hr)) return false;
+    }
+    textFormat_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+    textFormat_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+
+    // Derive the monospace cell size from a representative glyph.
+    ComPtr<IDWriteTextLayout> layout;
+    hr = dwriteFactory_->CreateTextLayout(
+        L"M", 1, textFormat_.Get(), 1000.0f, 1000.0f, layout.GetAddressOf());
+    if (SUCCEEDED(hr)) {
+        DWRITE_TEXT_METRICS tm{};
+        layout->GetMetrics(&tm);
+        cellW_ = tm.width > 0.0f ? tm.width : fontSize * 0.6f;
+        cellH_ = tm.height > 0.0f ? tm.height : fontSize * 1.2f;
+    } else {
+        cellW_ = fontSize * 0.6f;
+        cellH_ = fontSize * 1.2f;
+    }
+    return true;
+}
+
+bool D2DRenderer::createSwapChainResources() {
+    ComPtr<IDXGIDevice> dxgiDevice;
+    if (FAILED(d3dDevice_.As(&dxgiDevice))) return false;
+    ComPtr<IDXGIAdapter> adapter;
+    if (FAILED(dxgiDevice->GetAdapter(adapter.GetAddressOf()))) return false;
+    ComPtr<IDXGIFactory2> factory;
+    if (FAILED(adapter->GetParent(
+            __uuidof(IDXGIFactory2),
+            reinterpret_cast<void**>(factory.GetAddressOf())))) {
+        return false;
+    }
+
+    DXGI_SWAP_CHAIN_DESC1 scd{};
+    scd.Width = widthPx_;
+    scd.Height = heightPx_;
+    scd.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    scd.SampleDesc.Count = 1;
+    scd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    scd.BufferCount = 2;
+    scd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+
+    HRESULT hr = factory->CreateSwapChainForHwnd(
+        d3dDevice_.Get(), hwnd_, &scd, nullptr, nullptr,
+        swapChain_.GetAddressOf());
+    if (FAILED(hr)) return false;
+
+    return bindTarget();
+}
+
+bool D2DRenderer::bindTarget() {
+    ComPtr<IDXGISurface> surface;
+    HRESULT hr = swapChain_->GetBuffer(
+        0, __uuidof(IDXGISurface),
+        reinterpret_cast<void**>(surface.GetAddressOf()));
+    if (FAILED(hr)) return false;
+
+    D2D1_BITMAP_PROPERTIES1 props = D2D1::BitmapProperties1(
+        D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE));
+
+    hr = d2dContext_->CreateBitmapFromDxgiSurface(
+        surface.Get(), &props, targetBitmap_.ReleaseAndGetAddressOf());
+    if (FAILED(hr)) return false;
+
+    d2dContext_->SetTarget(targetBitmap_.Get());
+
+    if (!brush_) {
+        d2dContext_->CreateSolidColorBrush(
+            D2D1::ColorF(D2D1::ColorF::White), brush_.GetAddressOf());
+    }
+    return true;
+}
+
+void D2DRenderer::releaseSwapChainResources() {
+    if (d2dContext_) d2dContext_->SetTarget(nullptr);
+    targetBitmap_.Reset();
+}
+
+void D2DRenderer::resize(unsigned widthPx, unsigned heightPx) {
+    widthPx_ = widthPx;
+    heightPx_ = heightPx;
+    if (!d3dDevice_ || widthPx == 0 || heightPx == 0) return;
+
+    if (!swapChain_) {
+        createSwapChainResources();
+        return;
+    }
+    releaseSwapChainResources();
+    swapChain_->ResizeBuffers(0, widthPx, heightPx, DXGI_FORMAT_UNKNOWN, 0);
+    bindTarget();
+}
+
+void D2DRenderer::cellSize(unsigned& wPx, unsigned& hPx) const {
+    wPx = static_cast<unsigned>(cellW_ + 0.5f);
+    hPx = static_cast<unsigned>(cellH_ + 0.5f);
+}
+
+void D2DRenderer::render(const Grid& grid) {
+    if (!d2dContext_ || !targetBitmap_ || !brush_) return;
+
+    d2dContext_->BeginDraw();
+    d2dContext_->Clear(D2D1::ColorF(D2D1::ColorF::Black));
+
+    for (int y = 0; y < grid.rows; ++y) {
+        for (int x = 0; x < grid.cols; ++x) {
+            const Cell& cell = grid.at(x, y);
+            const float px = x * cellW_;
+            const float py = y * cellH_;
+            const D2D1_RECT_F rect =
+                D2D1::RectF(px, py, px + cellW_, py + cellH_);
+
+            // Background (skip black to save fills).
+            if (cell.bg.r || cell.bg.g || cell.bg.b) {
+                brush_->SetColor(toColorF(cell.bg));
+                d2dContext_->FillRectangle(rect, brush_.Get());
+            }
+            // Foreground glyph. Stage 2 replaces this per-cell DrawText with a
+            // single instanced draw over a glyph atlas.
+            if (!cell.ch.empty() && cell.ch != L" ") {
+                brush_->SetColor(toColorF(cell.fg));
+                d2dContext_->DrawText(
+                    cell.ch.c_str(), static_cast<UINT32>(cell.ch.size()),
+                    textFormat_.Get(), rect, brush_.Get(),
+                    D2D1_DRAW_TEXT_OPTIONS_CLIP);
+            }
+        }
+    }
+
+    d2dContext_->EndDraw();
+    swapChain_->Present(1, 0);
+}
+
+} // namespace liney
