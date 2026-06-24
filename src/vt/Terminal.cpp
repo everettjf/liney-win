@@ -123,13 +123,33 @@ bool Terminal::snapshotInto(Grid& grid) {
     return true;
 }
 
-#else // !LINEY_WITH_LIBGHOSTTY — stub so the scaffold builds without Zig.
+#else // !LINEY_WITH_LIBGHOSTTY — built-in VTEmulator (the default MVP core).
 
 Terminal::~Terminal() = default;
-bool Terminal::create(int, int) { return false; }
-void Terminal::write(const char*, size_t) {}
-void Terminal::resize(int, int, int, int) {}
-bool Terminal::snapshotInto(Grid&) { return false; }
+
+bool Terminal::create(int cols, int rows) {
+    if (cols <= 0 || rows <= 0) return false;
+    emu_.resize(cols, rows);
+    active_ = true;
+    return true;
+}
+
+void Terminal::write(const char* data, size_t len) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (active_) emu_.write(data, len);
+}
+
+void Terminal::resize(int cols, int rows, int /*cellWidthPx*/, int /*cellHeightPx*/) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (active_ && cols > 0 && rows > 0) emu_.resize(cols, rows);
+}
+
+bool Terminal::snapshotInto(Grid& grid) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!active_) return false;
+    emu_.snapshotInto(grid);
+    return true;
+}
 
 #endif
 

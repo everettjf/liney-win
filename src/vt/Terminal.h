@@ -10,6 +10,8 @@
 extern "C" {
 #include <ghostty/vt.h>
 }
+#else
+#include "vt/VTEmulator.h"
 #endif
 
 namespace liney {
@@ -19,10 +21,10 @@ namespace liney {
 // libghostty-vt maintains the screen grid, scrollback, reflow and Unicode; we
 // only translate its render-state snapshot into our Grid.
 //
-// Built with real calls only when LINEY_WITH_LIBGHOSTTY is defined (requires
-// the Zig-built ghostty-vt library, wired via CMake's LINEY_WITH_LIBGHOSTTY
-// option). Otherwise create() returns false and callers fall back to the
-// scaffold's demo grid.
+// When LINEY_WITH_LIBGHOSTTY is defined this delegates to the Zig-built
+// ghostty-vt library (wired via CMake's LINEY_WITH_LIBGHOSTTY option).
+// Otherwise (the default) it delegates to the self-contained VTEmulator, so
+// liney-win builds and runs a real interactive shell with only MSVC.
 //
 // Thread-safety: write() runs on the PTY reader thread while snapshotInto()
 // runs on the UI thread; both take the same lock.
@@ -55,6 +57,9 @@ private:
     GhosttyRenderState state_ = nullptr;
     GhosttyRenderStateRowIterator rowIter_ = nullptr;
     GhosttyRenderStateRowCells rowCells_ = nullptr;
+#else
+    VTEmulator emu_;
+    bool active_ = false;
 #endif
 };
 

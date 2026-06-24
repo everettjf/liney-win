@@ -30,11 +30,17 @@ struct Cell {
 };
 
 // A fixed-size, row-major grid of cells. This is what the renderer consumes;
-// it will eventually be produced from a libghostty-vt screen snapshot.
+// it is produced from a terminal screen snapshot (built-in emulator or
+// libghostty-vt).
 struct Grid {
     int cols = 0;
     int rows = 0;
     std::vector<Cell> cells;
+
+    // Cursor position (cell coordinates) and whether it should be drawn.
+    int cursorX = 0;
+    int cursorY = 0;
+    bool cursorVisible = false;
 
     void resize(int c, int r) {
         cols = c < 0 ? 0 : c;

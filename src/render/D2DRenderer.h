@@ -47,6 +47,7 @@ private:
     ComPtr<ID2D1SolidColorBrush> brush_;
     ComPtr<IDWriteFactory> dwriteFactory_;
     ComPtr<IDWriteTextFormat> textFormat_;
+    ComPtr<IDWriteTextFormat> textFormatBold_;
 };
 
 } // namespace liney

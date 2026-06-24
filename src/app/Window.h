@@ -12,9 +12,9 @@
 
 namespace liney {
 
-// Top-level Win32 window. When libghostty-vt is available it runs a real local
-// shell: ConPTY output -> Terminal (libghostty-vt) -> Grid -> renderer. Without
-// it, the window falls back to rendering a static demo grid.
+// Top-level Win32 window. Runs a real local shell: keyboard -> ConPTY ->
+// Terminal (built-in VTEmulator, or libghostty-vt when compiled in) -> Grid ->
+// renderer. If the shell fails to start it falls back to a static demo grid.
 class Window {
 public:
     Window();
@@ -34,6 +34,11 @@ private:
     void rebuildDemoGrid();
     void renderFrame();
 
+    // Input: translate keystrokes to PTY bytes.
+    void onChar(wchar_t unit);            // WM_CHAR (printable + control chars)
+    bool onKeyDown(WPARAM vk);            // special keys; returns true if handled
+    void sendUtf16(const wchar_t* s, size_t len);  // UTF-16 -> UTF-8 -> PTY
+
     HWND hwnd_ = nullptr;
     std::unique_ptr<IRenderer> renderer_;
     Grid grid_;
@@ -45,6 +50,7 @@ private:
     ConPty pty_;
     bool sessionActive_ = false;
     std::wstring shell_ = L"cmd.exe";
+    wchar_t pendingHighSurrogate_ = 0;  // for split UTF-16 WM_CHAR pairs
 };
 
 } // namespace liney

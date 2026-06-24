@@ -20,6 +20,7 @@ add_executable(liney_win WIN32
   src/render/D2DRenderer.cpp
   src/pty/ConPty.cpp
   src/vt/Terminal.cpp
+  src/vt/VTEmulator.cpp
 )
 
 target_include_directories(liney_win PRIVATE src)

@@ -10,11 +10,9 @@
 namespace liney {
 
 // Minimal ConPTY wrapper: spawns a child shell attached to a Windows pseudo
-// console and streams its output via a callback.
-//
-// Implemented and self-contained, but NOT yet wired into the renderer - that
-// arrives with libghostty-vt integration (milestone S1). The output bytes will
-// be fed to libghostty-vt, which maintains the screen grid the renderer draws.
+// console and streams its output via a callback. The output bytes are fed to
+// the terminal core (src/vt), which maintains the screen grid the renderer
+// draws; keystrokes are sent back via write().
 class ConPty {
 public:
     using OutputHandler = std::function<void(const char* data, size_t len)>;

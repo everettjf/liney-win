@@ -79,6 +79,16 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_SIZE:
         onResize(LOWORD(lParam), HIWORD(lParam));
         return 0;
+    case WM_CHAR:
+        onChar(static_cast<wchar_t>(wParam));
+        return 0;
+    case WM_KEYDOWN:
+    case WM_SYSKEYDOWN:
+        if (onKeyDown(wParam)) return 0;
+        return DefWindowProcW(hwnd_, msg, wParam, lParam);
+    case WM_SETFOCUS:
+    case WM_KILLFOCUS:
+        return 0;
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
@@ -157,6 +167,67 @@ void Window::rebuildDemoGrid() {
             cell.fg = (row == 0) ? accent : Color{ 210, 210, 210 };
         }
     }
+}
+
+void Window::sendUtf16(const wchar_t* s, size_t len) {
+    if (!sessionActive_ || len == 0) return;
+    int bytes = WideCharToMultiByte(CP_UTF8, 0, s, static_cast<int>(len),
+                                    nullptr, 0, nullptr, nullptr);
+    if (bytes <= 0) return;
+    std::string utf8(static_cast<size_t>(bytes), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, s, static_cast<int>(len), utf8.data(), bytes,
+                        nullptr, nullptr);
+    pty_.write(utf8.data(), utf8.size());
+}
+
+void Window::onChar(wchar_t unit) {
+    // Reassemble surrogate pairs that arrive as two WM_CHAR messages.
+    if (unit >= 0xD800 && unit <= 0xDBFF) {
+        pendingHighSurrogate_ = unit;
+        return;
+    }
+    if (unit >= 0xDC00 && unit <= 0xDFFF) {
+        if (pendingHighSurrogate_) {
+            wchar_t pair[2] = { pendingHighSurrogate_, unit };
+            sendUtf16(pair, 2);
+            pendingHighSurrogate_ = 0;
+        }
+        return;
+    }
+    pendingHighSurrogate_ = 0;
+    sendUtf16(&unit, 1);
+}
+
+bool Window::onKeyDown(WPARAM vk) {
+    // Keys that do not produce a WM_CHAR: translate to xterm escape sequences.
+    const char* seq = nullptr;
+    switch (vk) {
+    case VK_UP:     seq = "\x1b[A"; break;
+    case VK_DOWN:   seq = "\x1b[B"; break;
+    case VK_RIGHT:  seq = "\x1b[C"; break;
+    case VK_LEFT:   seq = "\x1b[D"; break;
+    case VK_HOME:   seq = "\x1b[H"; break;
+    case VK_END:    seq = "\x1b[F"; break;
+    case VK_PRIOR:  seq = "\x1b[5~"; break;  // Page Up
+    case VK_NEXT:   seq = "\x1b[6~"; break;  // Page Down
+    case VK_INSERT: seq = "\x1b[2~"; break;
+    case VK_DELETE: seq = "\x1b[3~"; break;
+    case VK_F1:  seq = "\x1bOP"; break;
+    case VK_F2:  seq = "\x1bOQ"; break;
+    case VK_F3:  seq = "\x1bOR"; break;
+    case VK_F4:  seq = "\x1bOS"; break;
+    case VK_F5:  seq = "\x1b[15~"; break;
+    case VK_F6:  seq = "\x1b[17~"; break;
+    case VK_F7:  seq = "\x1b[18~"; break;
+    case VK_F8:  seq = "\x1b[19~"; break;
+    case VK_F9:  seq = "\x1b[20~"; break;
+    case VK_F10: seq = "\x1b[21~"; break;
+    case VK_F11: seq = "\x1b[23~"; break;
+    case VK_F12: seq = "\x1b[24~"; break;
+    default: return false;  // let WM_CHAR handle character keys
+    }
+    if (sessionActive_) pty_.write(seq, std::char_traits<char>::length(seq));
+    return true;
 }
 
 void Window::renderFrame() {

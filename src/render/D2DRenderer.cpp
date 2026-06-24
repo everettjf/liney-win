@@ -1,5 +1,7 @@
 #include "render/D2DRenderer.h"
 
+#include <utility>
+
 namespace liney {
 
 static D2D1_COLOR_F toColorF(const Color& c) {
@@ -42,20 +44,31 @@ bool D2DRenderer::createDeviceResources() {
     if (FAILED(hr)) return false;
 
     const float fontSize = 16.0f;
+    const wchar_t* family = L"Cascadia Mono";
     hr = dwriteFactory_->CreateTextFormat(
-        L"Cascadia Mono", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+        family, nullptr, DWRITE_FONT_WEIGHT_NORMAL,
         DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, fontSize,
         L"en-us", textFormat_.GetAddressOf());
     if (FAILED(hr)) {
         // Cascadia Mono may be absent; fall back to a guaranteed monospace font.
+        family = L"Consolas";
         hr = dwriteFactory_->CreateTextFormat(
-            L"Consolas", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+            family, nullptr, DWRITE_FONT_WEIGHT_NORMAL,
             DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, fontSize,
             L"en-us", textFormat_.GetAddressOf());
         if (FAILED(hr)) return false;
     }
     textFormat_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
     textFormat_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+
+    // Bold variant for SGR-bold cells (best-effort; ignore failure).
+    if (SUCCEEDED(dwriteFactory_->CreateTextFormat(
+            family, nullptr, DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL, fontSize, L"en-us",
+            textFormatBold_.GetAddressOf()))) {
+        textFormatBold_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+        textFormatBold_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+    }
 
     // Derive the monospace cell size from a representative glyph.
     ComPtr<IDWriteTextLayout> layout;
@@ -164,21 +177,46 @@ void D2DRenderer::render(const Grid& grid) {
             const D2D1_RECT_F rect =
                 D2D1::RectF(px, py, px + cellW_, py + cellH_);
 
+            // Inverse video swaps foreground and background.
+            Color fg = cell.fg, bg = cell.bg;
+            if (cell.flags & kFlagInverse) std::swap(fg, bg);
+
             // Background (skip black to save fills).
-            if (cell.bg.r || cell.bg.g || cell.bg.b) {
-                brush_->SetColor(toColorF(cell.bg));
+            if (bg.r || bg.g || bg.b) {
+                brush_->SetColor(toColorF(bg));
                 d2dContext_->FillRectangle(rect, brush_.Get());
             }
             // Foreground glyph. Stage 2 replaces this per-cell DrawText with a
             // single instanced draw over a glyph atlas.
             if (!cell.ch.empty() && cell.ch != L" ") {
-                brush_->SetColor(toColorF(cell.fg));
+                IDWriteTextFormat* fmt =
+                    (cell.flags & kFlagBold) && textFormatBold_
+                        ? textFormatBold_.Get()
+                        : textFormat_.Get();
+                brush_->SetColor(toColorF(fg));
                 d2dContext_->DrawText(
-                    cell.ch.c_str(), static_cast<UINT32>(cell.ch.size()),
-                    textFormat_.Get(), rect, brush_.Get(),
-                    D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                    cell.ch.c_str(), static_cast<UINT32>(cell.ch.size()), fmt,
+                    rect, brush_.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+            }
+            if (cell.flags & kFlagUnderline) {
+                brush_->SetColor(toColorF(fg));
+                const float uy = py + cellH_ - 1.0f;
+                d2dContext_->DrawLine(D2D1::Point2F(px, uy),
+                                      D2D1::Point2F(px + cellW_, uy),
+                                      brush_.Get(), 1.0f);
             }
         }
+    }
+
+    // Cursor: a block over the cell, drawn with the foreground color so the
+    // glyph beneath shows through as a "hollow"-ish inverse.
+    if (grid.cursorVisible && grid.cursorX < grid.cols &&
+        grid.cursorY < grid.rows) {
+        const float px = grid.cursorX * cellW_;
+        const float py = grid.cursorY * cellH_;
+        const D2D1_RECT_F cur = D2D1::RectF(px, py, px + cellW_, py + cellH_);
+        brush_->SetColor(D2D1::ColorF(0.80f, 0.80f, 0.80f, 0.55f));
+        d2dContext_->FillRectangle(cur, brush_.Get());
     }
 
     d2dContext_->EndDraw();

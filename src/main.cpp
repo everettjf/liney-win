@@ -1,8 +1,9 @@
 // liney-win - entry point.
 //
-// Stage-1 scaffold: opens a Win32 window and renders a sample monospace cell
-// grid through the Direct2D/DirectWrite renderer (see RENDERING.md). ConPTY
-// (src/pty) and libghostty-vt integration are the next milestones.
+// MVP: opens a Win32 window and runs a real interactive local shell. Pipeline:
+// ConPTY (src/pty) -> terminal core (src/vt) -> cell Grid -> Direct2D/DirectWrite
+// renderer (src/render). The terminal core is the self-contained VTEmulator by
+// default, or libghostty-vt when built with -DLINEY_WITH_LIBGHOSTTY=ON.
 
 #include <windows.h>
 
