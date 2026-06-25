@@ -27,6 +27,7 @@ add_executable(liney_win WIN32
   src/workspace/Workspace.cpp
   src/util/Process.cpp
   src/util/Json.cpp
+  src/util/InputBox.cpp
 )
 
 target_include_directories(liney_win PRIVATE src)

@@ -135,6 +135,29 @@ Pane* Tab::hitTest(float x, float y) const {
     return nullptr;
 }
 
+namespace {
+Pane* findDivider(Pane* p, float x, float y, float tol) {
+    if (!p || !p->isSplit) return nullptr;
+    // Children first so the deepest (most specific) divider wins.
+    if (Pane* c = findDivider(p->a.get(), x, y, tol)) return c;
+    if (Pane* c = findDivider(p->b.get(), x, y, tol)) return c;
+    if (p->dir == SplitDir::Cols) {
+        float dx = (p->a->rect.right() + p->b->rect.x) * 0.5f;
+        if (std::fabs(x - dx) <= tol && y >= p->rect.y && y <= p->rect.bottom())
+            return p;
+    } else {
+        float dy = (p->a->rect.bottom() + p->b->rect.y) * 0.5f;
+        if (std::fabs(y - dy) <= tol && x >= p->rect.x && x <= p->rect.right())
+            return p;
+    }
+    return nullptr;
+}
+}  // namespace
+
+Pane* Tab::splitDividerAt(float x, float y, float tol) const {
+    return findDivider(root_.get(), x, y, tol);
+}
+
 void Tab::focusDir(SplitDir axis, bool positive) {
     if (!active_) return;
     std::vector<Pane*> ls;

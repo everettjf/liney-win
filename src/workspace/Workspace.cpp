@@ -18,6 +18,13 @@ std::wstring basename(const std::wstring& path) {
     return path.substr(start, end - start);
 }
 
+std::wstring parentDir(const std::wstring& path) {
+    size_t end = path.size();
+    while (end > 0 && (path[end - 1] == L'\\' || path[end - 1] == L'/')) --end;
+    size_t slash = path.find_last_of(L"\\/", end ? end - 1 : 0);
+    return (slash == std::wstring::npos) ? path : path.substr(0, slash);
+}
+
 bool isGitRepo(const std::wstring& dir) {
     DWORD attr = GetFileAttributesW((dir + L"\\.git").c_str());
     return attr != INVALID_FILE_ATTRIBUTES;  // .git may be a dir or a file
@@ -91,6 +98,33 @@ void Workspace::loadWorktrees(Repo& repo) {
     // Fallback: if git wasn't available, at least show the repo root itself.
     if (repo.worktrees.empty())
         repo.worktrees.push_back(Worktree{ repo.path, basename(repo.path) });
+}
+
+std::wstring Workspace::addWorktree(Repo& repo, const std::wstring& name) {
+    if (name.empty()) return L"";
+    const std::wstring path =
+        parentDir(repo.path) + L"\\" + basename(repo.path) + L"-" + name;
+
+    bool ok = false;
+    runCapture(L"git worktree add \"" + path + L"\" -b \"" + name + L"\"",
+               repo.path, &ok);
+    if (!ok) {
+        // Branch may already exist; check it out into the worktree instead.
+        runCapture(L"git worktree add \"" + path + L"\" \"" + name + L"\"",
+                   repo.path, &ok);
+    }
+    repo.loaded = false;
+    loadWorktrees(repo);
+    repo.expanded = true;
+    return ok ? path : L"";
+}
+
+bool Workspace::removeWorktree(Repo& repo, const std::wstring& path) {
+    bool ok = false;
+    runCapture(L"git worktree remove \"" + path + L"\"", repo.path, &ok);
+    repo.loaded = false;
+    loadWorktrees(repo);
+    return ok;
 }
 
 } // namespace liney

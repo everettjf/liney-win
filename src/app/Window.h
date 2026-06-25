@@ -62,6 +62,7 @@ private:
     void onChar(wchar_t unit);
     bool onKeyDown(WPARAM vk);
     void onMouseDown(int x, int y);
+    void onMouseDownRight(int x, int y);   // sidebar worktree create/remove
     void onMouseMove(int x, int y);
     void onMouseUp(int x, int y);
     void onWheel(int delta);
@@ -101,7 +102,8 @@ private:
     Rect plusRect_{};
 
     // Selection (over the focused pane's viewport, in that pane's cell coords).
-    bool selecting_ = false;       // a drag is in progress
+    bool selecting_ = false;       // a text-selection drag is in progress
+    Pane* dragDivider_ = nullptr;  // split node being resized by a divider drag
     bool hasSelection_ = false;
     Pane* selPane_ = nullptr;      // pane the selection belongs to
     int selAX_ = 0, selAY_ = 0;    // anchor

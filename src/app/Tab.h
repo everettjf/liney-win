@@ -34,6 +34,8 @@ public:
     void layout(const Rect& area, const Metrics& m);
 
     Pane* hitTest(float x, float y) const;          // leaf at point, or nullptr
+    // Split node whose divider is within `tol` px of the point, or nullptr.
+    Pane* splitDividerAt(float x, float y, float tol) const;
     void focusDir(SplitDir axis, bool positive);     // move focus geometrically
     std::vector<Pane*> leaves() const;
     std::wstring title() const;

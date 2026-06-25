@@ -34,6 +34,13 @@ public:
     // Populate repo.worktrees via `git worktree list` (no-op if already loaded).
     void loadWorktrees(Repo& repo);
 
+    // Create a worktree + branch `name` for `repo` as a sibling directory.
+    // Returns the new path on success (empty on failure); refreshes the list.
+    std::wstring addWorktree(Repo& repo, const std::wstring& name);
+
+    // Remove the worktree at `path` (git refuses the main one). Refreshes list.
+    bool removeWorktree(Repo& repo, const std::wstring& path);
+
 private:
     std::wstring root_;
     std::vector<Repo> repos_;

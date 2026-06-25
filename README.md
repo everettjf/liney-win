@@ -48,8 +48,9 @@ Windows 版终端工作区(对标 macOS 的 [liney](https://github.com/everettjf
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | 复制选区 / 粘贴(支持 bracketed paste) |
 | `Ctrl++` / `Ctrl+-` / `Ctrl+0` | 放大 / 缩小 / 重置字号 |
 | 滚轮 / `Shift+PgUp·PgDn·Home·End` | 在 scrollback 历史中滚动(输入时自动回到底部) |
-| 鼠标拖选 | 在 pane 内选择文本 |
-| 鼠标点击 | 点标签切换、点 `+` 新标签、点 pane 聚焦、点仓库展开、点 worktree 在其目录开新标签 |
+| 鼠标拖选 | 在 pane 内选择文本;拖动分屏分隔线调整 pane 比例 |
+| 鼠标左键 | 点标签切换、点 `+` 新标签、点 pane 聚焦、点仓库展开、点 worktree 在其目录开新标签 |
+| 鼠标右键 | 右键仓库 → 新建 worktree(输入分支名);右键 worktree → 删除(确认) |
 
 ## 技术选型(见调研文档)
 

@@ -9,6 +9,7 @@
 
 #include "core/Config.h"
 #include "render/D2DRenderer.h"
+#include "util/InputBox.h"
 #include "util/Json.h"
 
 namespace liney {
@@ -174,6 +175,9 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
     case WM_LBUTTONUP:
         onMouseUp(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+        return 0;
+    case WM_RBUTTONDOWN:
+        onMouseDownRight(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
         return 0;
     case WM_COPY:
         copySelection();
@@ -682,6 +686,12 @@ void Window::onMouseDown(int xi, int yi) {
     if (panes.contains(x, y)) {
         Tab* t = activeTab();
         if (!t) return;
+        // A click near a split divider starts a resize drag instead of a select.
+        if (Pane* divider = t->splitDividerAt(x, y, 4.0f)) {
+            dragDivider_ = divider;
+            SetCapture(hwnd_);
+            return;
+        }
         Pane* leaf = t->hitTest(x, y);
         if (!leaf) return;
         t->setActive(leaf);
@@ -699,7 +709,56 @@ void Window::onMouseDown(int xi, int yi) {
     }
 }
 
+void Window::onMouseDownRight(int xi, int yi) {
+    const float x = static_cast<float>(xi), y = static_cast<float>(yi);
+    Rect sidebar, tabBar, panes;
+    regions(sidebar, tabBar, panes);
+    if (!sidebarVisible_ || !sidebar.contains(x, y)) return;
+
+    for (const SidebarRow& row : sidebarRows_) {
+        if (!row.rect.contains(x, y)) continue;
+        auto& repos = workspace_.repos();
+        if (row.repo < 0 || row.repo >= static_cast<int>(repos.size())) return;
+        Repo& repo = repos[row.repo];
+
+        if (row.worktree < 0) {
+            // Repo header: create a new worktree (prompt for a branch name).
+            std::wstring name = inputBox(hwnd_, L"New worktree",
+                                         L"New branch / worktree name:", L"");
+            if (name.empty()) return;
+            std::wstring path = workspace_.addWorktree(repo, name);
+            if (!path.empty()) newTab(path);  // open a terminal in it
+            else MessageBoxW(hwnd_, L"git worktree add failed.", L"liney-win",
+                             MB_OK | MB_ICONERROR);
+        } else if (row.worktree < static_cast<int>(repo.worktrees.size())) {
+            // Worktree row: confirm and remove.
+            const Worktree& wt = repo.worktrees[row.worktree];
+            std::wstring msg = L"Remove worktree?\n\n" + wt.path;
+            if (MessageBoxW(hwnd_, msg.c_str(), L"Remove worktree",
+                            MB_YESNO | MB_ICONWARNING) == IDYES) {
+                if (!workspace_.removeWorktree(repo, wt.path))
+                    MessageBoxW(hwnd_,
+                                L"git worktree remove failed (the main worktree "
+                                L"can't be removed).",
+                                L"liney-win", MB_OK | MB_ICONERROR);
+            }
+        }
+        return;
+    }
+}
+
 void Window::onMouseMove(int xi, int yi) {
+    if (dragDivider_) {
+        Pane* s = dragDivider_;
+        const float x = static_cast<float>(xi), y = static_cast<float>(yi);
+        float r = s->ratio;
+        if (s->dir == SplitDir::Cols && s->rect.w > 1.0f)
+            r = (x - s->rect.x) / s->rect.w;
+        else if (s->dir == SplitDir::Rows && s->rect.h > 1.0f)
+            r = (y - s->rect.y) / s->rect.h;
+        s->ratio = r < 0.05f ? 0.05f : (r > 0.95f ? 0.95f : r);
+        return;
+    }
     if (!selecting_ || !selPane_) return;
     int cx = 0, cy = 0;
     if (!paneCellAt(selPane_, xi, yi, cx, cy)) return;
@@ -709,6 +768,11 @@ void Window::onMouseMove(int xi, int yi) {
 }
 
 void Window::onMouseUp(int /*xi*/, int /*yi*/) {
+    if (dragDivider_) {
+        dragDivider_ = nullptr;
+        ReleaseCapture();
+        return;
+    }
     if (selecting_) {
         selecting_ = false;
         ReleaseCapture();
@@ -730,6 +794,7 @@ void Window::clearSelection() {
     selecting_ = false;
     hasSelection_ = false;
     selPane_ = nullptr;
+    dragDivider_ = nullptr;
 }
 
 void Window::applySelectionToGrid() {

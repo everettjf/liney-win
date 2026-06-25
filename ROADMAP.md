@@ -69,8 +69,9 @@ SSH / agent / tmux / 打包更新 体量大、相对独立,排在后面;diff/his
 
 ### P3 — 工作区深化(liney 差异化)🟡 进行中
 - ✅ **布局持久化**:标签 + 分屏树 + 每个 pane 的 cwd → `%USERPROFILE%\.liney\layout.json`,重开恢复(liney 核心卖点;确定性验证:已知布局恢复出 3 个 shell,优雅关闭后回写结构正确)
-- ⬜ **拖拽分隔条**调 pane 比例;**标签拖拽**重排
-- ⬜ **worktree 操作**:新建 / 删除 worktree、切分支(shell out `git`)
+- ✅ **拖拽分隔条**调 pane 比例(命中分隔线即拖动改 ratio)
+- ✅ **worktree 操作**:右键仓库新建 worktree(InputBox 输入分支名,`git worktree add`)、右键 worktree 删除(确认,`git worktree remove`)——git 命令形态与 porcelain 解析已验证
+- ⬜ **标签拖拽**重排
 - ⬜ **文件树**:跟随聚焦 pane cwd 的本地文件树面板
 
 ### P4 — 集成与通知
