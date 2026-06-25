@@ -188,10 +188,11 @@ SFTP remote file tree, a glyph-atlas renderer, native tmux control-mode.
 
 ## 🤝 Contributing
 
-Issues and PRs are welcome. Build with the steps above; the codebase is plain
-C++20 + Win32 + Direct2D with no third-party runtime deps, and the source is split
-into small, cohesive files (see [`src/`](src)). Please keep new code matched to the
-surrounding style.
+Issues and PRs are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full
+setup. The one thing to get right: the build needs **Zig 0.15.2** (not 0.16.x) to
+compile the libghostty-vt core. The codebase is plain C++20 + Win32 + Direct2D,
+split into small, cohesive files (see [`src/`](src)); please match the surrounding
+style.
 
 ## 🙏 Acknowledgements
 

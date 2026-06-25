@@ -178,8 +178,9 @@ TerminalSession = Terminal + ConPty + Grid
 
 ## 🤝 贡献
 
-欢迎 Issue 与 PR。按上面的步骤构建即可;代码是纯 C++20 + Win32 + Direct2D,无第三方
-运行时依赖,且源码已拆成小而内聚的文件(见 [`src/`](src))。新增代码请与周围风格保持一致。
+欢迎 Issue 与 PR —— 完整环境搭建见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。最关键的一点:
+构建 libghostty-vt 内核需要 **Zig 0.15.2**(不是 0.16.x)。代码是纯 C++20 + Win32 +
+Direct2D,已拆成小而内聚的文件(见 [`src/`](src)),新增代码请与周围风格保持一致。
 
 ## 🙏 致谢
 
