@@ -105,6 +105,10 @@ cmake --build build
 - `agents`:`[{ "name", "command", "cwd" }]` —— 出现在侧边栏 AGENTS 区,点击在新标签起该命令(对标 liney 的 agent 会话)
 - `theme`:`{ "background": "#102840", "foreground": "#e8e8d0", "palette": ["#..." ×16] }` —— 终端前景/背景与 16 色 ANSI 调色板(缺省即内置配色)
 
+完整示例见仓库根目录 [`config.example.json`](./config.example.json)。
+
+> **tmux / WSL**:把 `shell` 设为 `wsl tmux`(或在 `agents` 里加一条 `wsl tmux`)即可在 pane 内跑 tmux/WSL 会话——ConPTY 起任意程序,终端核心负责渲染。
+
 布局(标签 + 分屏树 + 各 pane 的 cwd)在关闭时写入 `%USERPROFILE%\.liney\layout.json`,下次启动自动恢复。
 
 ## 通知 / `liney` CLI

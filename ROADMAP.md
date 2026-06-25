@@ -84,7 +84,8 @@ SSH / agent / tmux / 打包更新 体量大、相对独立,排在后面;diff/his
 ### P5 — 远程与高级会话(体量大,独立推进)🟡 进行中
 - ✅ **SSH 会话**:config `sshHosts` → 侧边栏 SSH 区,点击在新标签起 `ssh <host>`(ConPTY,Windows 自带 OpenSSH);会话 shell 命令随布局持久化(SSH 标签可恢复)。确定性验证:点击后 liney 子进程出现 `ssh test@192.0.2.1`
 - ✅ **agent 会话**:config `agents: [{name, command, cwd}]` → 侧边栏 AGENTS 区,点击在新标签起该命令(对标 liney 的 agent 会话)。确定性验证:点击后 liney 子进程出现配置的命令
-- ⬜ 远程文件树(SFTP)、**tmux 集成**
+- 🟡 **tmux 集成**:可通过把 `shell` 设为 `wsl tmux` 或在 `agents` 加一条命令实现(ConPTY 起任意程序);原生 tmux control-mode 集成留待后续
+- ⬜ 远程文件树(SFTP)
 - ⬜ **glyph atlas + D3D11** 渲染升级(性能/连字)
 
 ### P6 — 分发 🟡 进行中
