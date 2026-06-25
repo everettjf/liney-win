@@ -119,6 +119,8 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     wc.lpfnWndProc = &Window::wndProcThunk;
     wc.hInstance = hInstance;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wc.hIcon = LoadIconW(hInstance, MAKEINTRESOURCEW(1));    // app icon (resource)
+    wc.hIconSm = wc.hIcon;
     wc.lpszClassName = kClassName;
     RegisterClassExW(&wc);
 

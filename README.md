@@ -132,10 +132,15 @@ liney title  <text>            # 设置标签/窗口标题
 # 便携版:构建 Release 并打成 dist\liney-win-portable.zip(解压即用,免安装)
 powershell -ExecutionPolicy Bypass -File tools\make-portable.ps1
 
+# NSIS 安装包:dist\liney-win-Setup.exe(每用户安装,免管理员;含开始菜单快捷方式 + 卸载)
+winget install NSIS.NSIS    # 若未安装 NSIS
+powershell -ExecutionPolicy Bypass -File tools\make-installer.ps1
+
 # MSIX 安装包(需 Windows SDK 的 makeappx;本地安装需签名)
-powershell -ExecutionPolicy Bypass -File tools\gen-assets.ps1   # 生成占位图标
 powershell -ExecutionPolicy Bypass -File tools\make-msix.ps1 -SelfSign
 ```
+
+应用图标在 `res\liney.ico`(`tools\gen-icon.ps1` 生成),通过 `res\resource.rc` 编入 exe(Explorer/任务栏/标题栏可见)。
 
 - `tools/make-portable.ps1` —— 便携 zip(已验证可产出)
 - `tools/make-msix.ps1` + `packaging/AppxManifest.xml` + `tools/gen-assets.ps1` —— MSIX 包(身份 `everettjf.liney-win`)

@@ -15,6 +15,7 @@ endif()
 option(LINEY_WITH_LIBGHOSTTY "Integrate libghostty-vt (requires Zig)" OFF)
 
 add_executable(liney_win WIN32
+  res/resource.rc
   src/main.cpp
   src/app/Window.cpp
   src/app/Tab.cpp

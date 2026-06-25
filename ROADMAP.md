@@ -89,6 +89,8 @@ SSH / agent / tmux / 打包更新 体量大、相对独立,排在后面;diff/his
 - ⬜ **glyph atlas + D3D11** 渲染升级(性能/连字)
 
 ### P6 — 分发 🟡 进行中
+- ✅ **应用图标**:`res/liney.ico`(多尺寸,`tools/gen-icon.ps1` 生成)经 `res/resource.rc` 编入 exe(已验证可从 exe 提取)
+- ✅ **NSIS 安装包**:`packaging/liney-win.nsi` + `tools/make-installer.ps1`(每用户安装、开始菜单快捷方式、Add/Remove、卸载;已验证静默安装/卸载完整闭环)
 - ✅ **便携 zip 打包**:`tools/make-portable.ps1`(已验证产出 `dist\liney-win-portable.zip`,含两个 exe + 文档)
 - ✅ **MSIX 脚手架**:`packaging/AppxManifest.xml`(身份 `everettjf.liney-win`)+ `tools/gen-assets.ps1`(已验证生成图标)+ `tools/make-msix.ps1`(makeappx 打包 + 可选自签)
 - ✅ **WinGet 清单模板**:`packaging/winget/*.yaml`(installer / locale / version)
