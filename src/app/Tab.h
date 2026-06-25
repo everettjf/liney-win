@@ -14,6 +14,9 @@ namespace liney {
 class Tab {
 public:
     explicit Tab(std::unique_ptr<TerminalSession> first);
+    // Build from a pre-assembled pane tree (used to restore a saved layout).
+    // Fixes up parent pointers and focuses the first leaf.
+    explicit Tab(std::unique_ptr<Pane> root);
 
     Pane* root() const { return root_.get(); }
     Pane* active() const { return active_; }

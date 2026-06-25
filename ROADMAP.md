@@ -67,12 +67,11 @@ SSH / agent / tmux / 打包更新 体量大、相对独立,排在后面;diff/his
 - ✅ **工作区根可配置**(`workspaceRoot`,留空回退父目录)
 - ⬜ **配色主题**:留到后续(当前为内置配色)
 
-### P3 — 工作区深化(liney 差异化)
-- **布局持久化**:按 工作区根 / 仓库 记忆标签+分屏树,重开恢复(liney 核心卖点)
-- **拖拽分隔条**调 pane 比例;**标签拖拽**重排
-- **worktree 操作**:新建 / 删除 worktree、切分支(shell out `git`)
-- **文件树**:跟随聚焦 pane cwd 的本地文件树面板
-- 验收:重开恢复上次布局;能新建一个 worktree 并开终端
+### P3 — 工作区深化(liney 差异化)🟡 进行中
+- ✅ **布局持久化**:标签 + 分屏树 + 每个 pane 的 cwd → `%USERPROFILE%\.liney\layout.json`,重开恢复(liney 核心卖点;确定性验证:已知布局恢复出 3 个 shell,优雅关闭后回写结构正确)
+- ⬜ **拖拽分隔条**调 pane 比例;**标签拖拽**重排
+- ⬜ **worktree 操作**:新建 / 删除 worktree、切分支(shell out `git`)
+- ⬜ **文件树**:跟随聚焦 pane cwd 的本地文件树面板
 
 ### P4 — 集成与通知
 - **`liney notify` CLI**(独立 `liney.exe`)+ **OSC 9/777 解析** → **Windows 토스트通知**

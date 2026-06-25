@@ -2,11 +2,14 @@
 
 #include <windowsx.h>  // GET_X_LPARAM / GET_Y_LPARAM
 
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <utility>
 
 #include "core/Config.h"
 #include "render/D2DRenderer.h"
+#include "util/Json.h"
 
 namespace liney {
 
@@ -31,6 +34,41 @@ std::wstring parentDir(const std::wstring& path) {
     return path.substr(0, slash);
 }
 bool keyDown(int vk) { return (GetKeyState(vk) & 0x8000) != 0; }
+
+std::string wideToUtf8(const std::wstring& w) {
+    if (w.empty()) return "";
+    int n = WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()),
+                                nullptr, 0, nullptr, nullptr);
+    std::string s(static_cast<size_t>(n), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), s.data(),
+                        n, nullptr, nullptr);
+    return s;
+}
+
+std::wstring utf8ToWide(const std::string& s) {
+    if (s.empty()) return L"";
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
+                                nullptr, 0);
+    std::wstring w(static_cast<size_t>(n), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), w.data(), n);
+    return w;
+}
+
+// Serialize a pane subtree: splits carry dir/ratio/children, leaves carry cwd.
+Json paneToJson(const Pane* p) {
+    Json j = Json::object();
+    if (p->isSplit) {
+        j.set("type", Json::str("split"));
+        j.set("dir", Json::str(p->dir == SplitDir::Rows ? "rows" : "cols"));
+        j.set("ratio", Json::number(p->ratio));
+        j.set("a", paneToJson(p->a.get()));
+        j.set("b", paneToJson(p->b.get()));
+    } else {
+        j.set("type", Json::str("leaf"));
+        j.set("cwd", Json::str(wideToUtf8(p->session ? p->session->cwd() : L"")));
+    }
+    return j;
+}
 }  // namespace
 
 Window::Window() : renderer_(std::make_unique<D2DRenderer>()) {}
@@ -73,7 +111,8 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     workspace_.scan(cfg.workspaceRoot.empty() ? parentDir(startCwd)
                                               : cfg.workspaceRoot);
 
-    newTab(startCwd);
+    // Restore the saved tab/pane layout if any; otherwise open one tab.
+    if (!restoreLayout()) newTab(startCwd);
     if (tabs_.empty()) return false;  // shell failed to launch
     return true;
 }
@@ -87,7 +126,10 @@ int Window::runMessageLoop() {
     MSG msg{};
     for (;;) {
         while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
-            if (msg.message == WM_QUIT) return static_cast<int>(msg.wParam);
+            if (msg.message == WM_QUIT) {
+                saveLayout();  // persist tabs/panes for next launch
+                return static_cast<int>(msg.wParam);
+            }
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
@@ -375,6 +417,87 @@ void Window::zoomFont(int step) {
     if (fontSize_ < 6.0f) fontSize_ = 6.0f;
     if (fontSize_ > 72.0f) fontSize_ = 72.0f;
     applyFont();
+}
+
+void Window::saveLayout() const {
+    const std::wstring dir = configDir();
+    if (dir.empty() || tabs_.empty()) return;
+    Json root = Json::object();
+    Json tabs = Json::array();
+    for (const auto& tab : tabs_) {
+        Json t = Json::object();
+        t.set("root", paneToJson(tab->root()));
+        tabs.push(std::move(t));
+    }
+    root.set("tabs", std::move(tabs));
+    root.set("activeTab", Json::number(static_cast<double>(activeTab_)));
+
+    std::ofstream f((dir + L"\\layout.json").c_str(), std::ios::binary);
+    if (f) {
+        const std::string s = root.dump(2);
+        f.write(s.data(), static_cast<std::streamsize>(s.size()));
+    }
+}
+
+std::unique_ptr<Pane> Window::paneFromJson(const Json& j, int cols, int rows) {
+    if (!j.isObject()) return nullptr;
+    if (j["type"].asString() == "split") {
+        auto p = std::make_unique<Pane>();
+        p->isSplit = true;
+        p->dir = (j["dir"].asString() == "rows") ? SplitDir::Rows : SplitDir::Cols;
+        p->ratio = static_cast<float>(j["ratio"].asNumber(0.5));
+        if (p->ratio < 0.05f) p->ratio = 0.05f;
+        if (p->ratio > 0.95f) p->ratio = 0.95f;
+        auto a = paneFromJson(j["a"], cols, rows);
+        auto b = paneFromJson(j["b"], cols, rows);
+        if (a && b) { p->a = std::move(a); p->b = std::move(b); return p; }
+        // A child failed (e.g. its cwd is gone): collapse to the survivor.
+        if (a) return a;
+        if (b) return b;
+        return nullptr;
+    }
+    // Leaf: start a session in the saved cwd.
+    const std::wstring cwd = utf8ToWide(j["cwd"].asString());
+    auto s = std::make_unique<TerminalSession>();
+    if (!s->start(shell_, cwd, cols, rows)) return nullptr;
+    auto p = std::make_unique<Pane>();
+    p->session = std::move(s);
+    return p;
+}
+
+bool Window::restoreLayout() {
+    const std::wstring dir = configDir();
+    if (dir.empty()) return false;
+    std::ifstream f((dir + L"\\layout.json").c_str(), std::ios::binary);
+    if (!f) return false;
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    const std::string text = ss.str();
+    if (text.empty()) return false;
+
+    bool ok = false;
+    Json root = Json::parse(text, &ok);
+    if (!ok || !root.isObject()) return false;
+    const Json& tabsJ = root["tabs"];
+    if (!tabsJ.isArray() || tabsJ.size() == 0) return false;
+
+    Rect sidebar, tabBar, panes;
+    regions(sidebar, tabBar, panes);
+    int cols = 80, rows = 24;
+    cellsForRect(panes, cols, rows);
+
+    for (const Json& t : tabsJ.items()) {
+        auto pane = paneFromJson(t["root"], cols, rows);
+        if (pane) tabs_.push_back(std::make_unique<Tab>(std::move(pane)));
+    }
+    if (tabs_.empty()) return false;
+
+    const int at = static_cast<int>(root["activeTab"].asNumber(0));
+    activeTab_ = (at >= 0 && at < static_cast<int>(tabs_.size()))
+                     ? static_cast<size_t>(at)
+                     : 0;
+    updateTitle();
+    return true;
 }
 
 // ---------------------------------------------------------------------------

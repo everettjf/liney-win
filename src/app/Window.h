@@ -53,6 +53,11 @@ private:
     void applyFont();        // push current family/size to the renderer + metrics
     void zoomFont(int step); // step font size by `step` points (0 == reset)
 
+    // Layout persistence (%USERPROFILE%\.liney\layout.json).
+    void saveLayout() const;
+    bool restoreLayout();    // returns true if at least one tab was restored
+    std::unique_ptr<Pane> paneFromJson(const class Json& j, int cols, int rows);
+
     // Input.
     void onChar(wchar_t unit);
     bool onKeyDown(WPARAM vk);

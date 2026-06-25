@@ -96,6 +96,8 @@ cmake --build build
 - `fontFamily` / `fontSize`:等宽字体与字号(也可运行时 `Ctrl++/-/0` 调整)
 - `workspaceRoot`:侧边栏扫描的根目录;留空则用启动目录的父目录
 
+布局(标签 + 分屏树 + 各 pane 的 cwd)在关闭时写入 `%USERPROFILE%\.liney\layout.json`,下次启动自动恢复。
+
 ## 目录结构
 
 ```

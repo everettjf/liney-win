@@ -18,6 +18,15 @@ void collect(Pane* p, std::vector<Pane*>& out) {
     collect(p->b.get(), out);
 }
 
+void fixParents(Pane* p, Pane* parent) {
+    if (!p) return;
+    p->parent = parent;
+    if (p->isSplit) {
+        fixParents(p->a.get(), p);
+        fixParents(p->b.get(), p);
+    }
+}
+
 void layoutRec(Pane* p, const Rect& area, const Metrics& m) {
     p->rect = area;
     if (p->leaf()) {
@@ -55,6 +64,12 @@ Tab::Tab(std::unique_ptr<TerminalSession> first) {
     root_ = std::make_unique<Pane>();
     root_->session = std::move(first);
     active_ = root_.get();
+}
+
+Tab::Tab(std::unique_ptr<Pane> root) {
+    root_ = std::move(root);
+    fixParents(root_.get(), nullptr);
+    active_ = firstLeaf(root_.get());
 }
 
 void Tab::setActive(Pane* leaf) {
