@@ -36,9 +36,10 @@ private:
     LRESULT wndProc(UINT msg, WPARAM wParam, LPARAM lParam);
 
     // Layout / rendering.
-    void regions(Rect& sidebar, Rect& tabBar, Rect& panes) const;
+    void regions(Rect& leftBar, Rect& rightPanel, Rect& tabBar, Rect& panes) const;
     void renderFrame();
-    void drawSidebar(const Rect& r);
+    void drawLeftSidebar(const Rect& r);   // WORKSPACE / SSH / AGENTS
+    void drawFilesPanel(const Rect& r);    // FILES (folder tree, right side)
     void drawTabBar(const Rect& r);
     void drawPanes(const Rect& r);
     void reapExitedPanes();
@@ -108,7 +109,8 @@ private:
 
     std::vector<std::unique_ptr<Tab>> tabs_;
     size_t activeTab_ = 0;
-    bool sidebarVisible_ = true;
+    bool sidebarVisible_ = true;      // left WORKSPACE/SSH/AGENTS panel
+    bool filesPanelVisible_ = true;   // right FILES (folder tree) panel
 
     std::wstring shell_ = L"cmd.exe";
     std::wstring fontFamily_ = L"Cascadia Mono";

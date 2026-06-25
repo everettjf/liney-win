@@ -19,6 +19,7 @@ struct Metrics {
     float cellH = 16.0f;
 
     float sidebarW() const { return cellW * 26.0f; }   // ~26 chars wide
+    float filesPanelW() const { return cellW * 26.0f; } // right folder-tree panel
     float tabBarH() const { return cellH + 10.0f; }
     float rowH() const { return cellH + 4.0f; }         // sidebar row height
     float gutter() const { return 1.0f; }               // gap between split panes

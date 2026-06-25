@@ -285,16 +285,20 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
 // Layout / rendering
 // ---------------------------------------------------------------------------
 
-void Window::regions(Rect& sidebar, Rect& tabBar, Rect& panes) const {
+void Window::regions(Rect& leftBar, Rect& rightPanel, Rect& tabBar,
+                     Rect& panes) const {
     RECT rc{};
     GetClientRect(hwnd_, &rc);
     const float W = static_cast<float>(rc.right - rc.left);
     const float H = static_cast<float>(rc.bottom - rc.top);
     const float sw = sidebarVisible_ ? metrics_.sidebarW() : 0.0f;
+    const float fw = filesPanelVisible_ ? metrics_.filesPanelW() : 0.0f;
     const float tb = metrics_.tabBarH();
-    sidebar = { 0, 0, sw, H };
-    tabBar = { sw, 0, W - sw, tb };
-    panes = { sw, tb, W - sw, H - tb };
+    const float midW = W - sw - fw;
+    leftBar = { 0, 0, sw, H };
+    rightPanel = { W - fw, 0, fw, H };
+    tabBar = { sw, 0, midW, tb };
+    panes = { sw, tb, midW, H - tb };
 }
 
 void Window::renderFrame() {
@@ -309,18 +313,19 @@ void Window::renderFrame() {
     if (t) for (Pane* leaf : t->leaves())
         if (leaf->session) leaf->session->snapshot();
 
-    Rect sidebar, tabBar, panes;
-    regions(sidebar, tabBar, panes);
+    Rect leftBar, rightPanel, tabBar, panes;
+    regions(leftBar, rightPanel, tabBar, panes);
 
     renderer_->beginFrame();
-    if (sidebarVisible_) drawSidebar(sidebar);
+    sidebarRows_.clear();
+    if (sidebarVisible_) drawLeftSidebar(leftBar);
+    if (filesPanelVisible_) drawFilesPanel(rightPanel);
     drawTabBar(tabBar);
     drawPanes(panes);
     renderer_->endFrame();
 }
 
-void Window::drawSidebar(const Rect& r) {
-    sidebarRows_.clear();
+void Window::drawLeftSidebar(const Rect& r) {
     renderer_->fillRect(r.x, r.y, r.w, r.h, kSidebarBg);
 
     const float pad = 8.0f;
@@ -357,35 +362,6 @@ void Window::drawSidebar(const Rect& r) {
         }
     }
 
-    // ---- FILES: directory of the focused pane, navigable -------------------
-    refreshFileList();
-    y += rowH * 0.5f;
-    std::wstring header = L"FILES";
-    if (!browsePath_.empty()) {
-        size_t s = browsePath_.find_last_of(L"\\/");
-        header += L"  " + (s == std::wstring::npos ? browsePath_
-                                                   : browsePath_.substr(s + 1));
-    }
-    renderer_->drawText(header, r.x + pad, y, r.w - pad, rowH, kSidebarHdr, true);
-    y += rowH + 2.0f;
-
-    if (!browsePath_.empty()) {
-        renderer_->drawText(L".. ", r.x + pad, y, r.w - pad, rowH, kDim, false);
-        sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::FileUp, -1, -1, L"" });
-        y += rowH;
-    }
-    for (const FileEntry& e : fileEntries_) {
-        if (y > r.bottom()) break;
-        const std::wstring text =
-            (e.isDir ? L"> " : L"  ") + e.name + (e.isDir ? L"/" : L"");
-        renderer_->drawText(text, r.x + pad, y, r.w - pad, rowH,
-                            e.isDir ? kText : kDim, false);
-        sidebarRows_.push_back(
-            { { r.x, y, r.w, rowH },
-              e.isDir ? RowKind::FileDir : RowKind::FileEntry, -1, -1, e.path });
-        y += rowH;
-    }
-
     // ---- SSH: configured hosts; click to open `ssh <host>` in a new tab -----
     if (!sshHosts_.empty()) {
         y += rowH * 0.5f;
@@ -412,6 +388,40 @@ void Window::drawSidebar(const Rect& r) {
             sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::Agent, i, -1, L"" });
             y += rowH;
         }
+    }
+}
+
+void Window::drawFilesPanel(const Rect& r) {
+    renderer_->fillRect(r.x, r.y, r.w, r.h, kSidebarBg);
+    const float pad = 8.0f;
+    const float rowH = metrics_.rowH();
+    float y = r.y + 6.0f;
+
+    refreshFileList();
+    std::wstring header = L"FILES";
+    if (!browsePath_.empty()) {
+        size_t s = browsePath_.find_last_of(L"\\/");
+        header += L"  " + (s == std::wstring::npos ? browsePath_
+                                                   : browsePath_.substr(s + 1));
+    }
+    renderer_->drawText(header, r.x + pad, y, r.w - pad, rowH, kSidebarHdr, true);
+    y += rowH + 2.0f;
+
+    if (!browsePath_.empty()) {
+        renderer_->drawText(L".. ", r.x + pad, y, r.w - pad, rowH, kDim, false);
+        sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::FileUp, -1, -1, L"" });
+        y += rowH;
+    }
+    for (const FileEntry& e : fileEntries_) {
+        if (y > r.bottom()) break;
+        const std::wstring text =
+            (e.isDir ? L"> " : L"  ") + e.name + (e.isDir ? L"/" : L"");
+        renderer_->drawText(text, r.x + pad, y, r.w - pad, rowH,
+                            e.isDir ? kText : kDim, false);
+        sidebarRows_.push_back(
+            { { r.x, y, r.w, rowH },
+              e.isDir ? RowKind::FileDir : RowKind::FileEntry, -1, -1, e.path });
+        y += rowH;
     }
 }
 
@@ -532,8 +542,8 @@ void Window::newTab(const std::wstring& cwd) { newTabShell(shell_, cwd); }
 
 void Window::newTabShell(const std::wstring& shellCmd, const std::wstring& cwd) {
     clearSelection();
-    Rect sidebar, tabBar, panes;
-    regions(sidebar, tabBar, panes);
+    Rect leftBar, rightPanel, tabBar, panes;
+    regions(leftBar, rightPanel, tabBar, panes);
     int cols = 80, rows = 24;
     cellsForRect(panes, cols, rows);
 
@@ -827,8 +837,8 @@ bool Window::restoreLayout() {
     const Json& tabsJ = root["tabs"];
     if (!tabsJ.isArray() || tabsJ.size() == 0) return false;
 
-    Rect sidebar, tabBar, panes;
-    regions(sidebar, tabBar, panes);
+    Rect leftBar, rightPanel, tabBar, panes;
+    regions(leftBar, rightPanel, tabBar, panes);
     int cols = 80, rows = 24;
     cellsForRect(panes, cols, rows);
 
@@ -966,6 +976,7 @@ bool Window::onKeyDown(WPARAM vk) {
             case 'E': splitActive(SplitDir::Cols); swallowNextChar_ = true; return true;  // side by side
             case 'O': splitActive(SplitDir::Rows); swallowNextChar_ = true; return true;  // stacked
             case 'B': sidebarVisible_ = !sidebarVisible_; swallowNextChar_ = true; return true;
+            case 'F': filesPanelVisible_ = !filesPanelVisible_; swallowNextChar_ = true; return true;
             case 'U': checkForUpdates(); swallowNextChar_ = true; return true;
             case 'C': copySelection(); swallowNextChar_ = true; return true;
             case 'V': paste(); swallowNextChar_ = true; return true;
@@ -1035,10 +1046,11 @@ bool Window::onKeyDown(WPARAM vk) {
 
 void Window::onMouseDown(int xi, int yi) {
     const float x = static_cast<float>(xi), y = static_cast<float>(yi);
-    Rect sidebar, tabBar, panes;
-    regions(sidebar, tabBar, panes);
+    Rect leftBar, rightPanel, tabBar, panes;
+    regions(leftBar, rightPanel, tabBar, panes);
 
-    if (sidebarVisible_ && sidebar.contains(x, y)) {
+    if ((sidebarVisible_ && leftBar.contains(x, y)) ||
+        (filesPanelVisible_ && rightPanel.contains(x, y))) {
         for (const SidebarRow& row : sidebarRows_) {
             if (!row.rect.contains(x, y)) continue;
             switch (row.kind) {
@@ -1137,9 +1149,9 @@ void Window::onMouseDown(int xi, int yi) {
 
 void Window::onMouseDownRight(int xi, int yi) {
     const float x = static_cast<float>(xi), y = static_cast<float>(yi);
-    Rect sidebar, tabBar, panes;
-    regions(sidebar, tabBar, panes);
-    if (!sidebarVisible_ || !sidebar.contains(x, y)) return;
+    Rect leftBar, rightPanel, tabBar, panes;
+    regions(leftBar, rightPanel, tabBar, panes);
+    if (!sidebarVisible_ || !leftBar.contains(x, y)) return;
 
     for (const SidebarRow& row : sidebarRows_) {
         if (!row.rect.contains(x, y)) continue;
