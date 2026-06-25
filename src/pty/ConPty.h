@@ -24,13 +24,17 @@ public:
     ConPty& operator=(const ConPty&) = delete;
 
     // Spawn `command` (e.g. L"cmd.exe") attached to a pseudo console of the
-    // given size. `onOutput` is invoked from a reader thread.
+    // given size, starting in `cwd` (empty = inherit). `onOutput` is invoked
+    // from a reader thread.
     bool start(const std::wstring& command, short cols, short rows,
-               OutputHandler onOutput);
+               const std::wstring& cwd, OutputHandler onOutput);
 
     void write(const char* data, size_t len);
     void resize(short cols, short rows);
     void stop();
+
+    // True once the child shell has exited (reader thread reached EOF).
+    bool hasExited() const { return exited_.load(); }
 
 private:
     HPCON hpc_ = nullptr;
@@ -39,6 +43,7 @@ private:
     PROCESS_INFORMATION procInfo_{};
     std::thread readThread_;
     std::atomic<bool> running_{ false };
+    std::atomic<bool> exited_{ false };
     OutputHandler onOutput_;
 };
 

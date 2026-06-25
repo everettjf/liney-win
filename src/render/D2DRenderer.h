@@ -22,7 +22,15 @@ public:
     bool initialize(void* hwnd) override;
     void resize(unsigned widthPx, unsigned heightPx) override;
     void cellSize(unsigned& wPx, unsigned& hPx) const override;
-    void render(const Grid& grid) override;
+
+    void beginFrame() override;
+    void endFrame() override;
+    void fillRect(float x, float y, float w, float h, const Color& c) override;
+    void strokeRect(float x, float y, float w, float h, const Color& c,
+                    float thickness) override;
+    void drawText(const std::wstring& text, float x, float y, float maxW,
+                  float rowH, const Color& c, bool bold) override;
+    void drawGrid(const Grid& grid, float originX, float originY) override;
 
 private:
     template <class T>

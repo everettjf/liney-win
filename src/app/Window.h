@@ -4,17 +4,20 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
-#include "pty/ConPty.h"
-#include "render/Cell.h"
+#include "app/Layout.h"
+#include "app/Tab.h"
 #include "render/IRenderer.h"
-#include "vt/Terminal.h"
+#include "workspace/Workspace.h"
 
 namespace liney {
 
-// Top-level Win32 window. Runs a real local shell: keyboard -> ConPTY ->
-// Terminal (built-in VTEmulator, or libghostty-vt when compiled in) -> Grid ->
-// renderer. If the shell fails to start it falls back to a static demo grid.
+// Top-level Win32 window and workspace shell. Composes a self-drawn UI:
+//   [ sidebar (repos/worktrees) ] [ tab strip            ]
+//                                 [ pane tree of terminals ]
+// Keyboard goes to the focused pane's shell; app shortcuts manage tabs/splits/
+// focus/sidebar; mouse switches tabs, focuses panes, and opens worktrees.
 class Window {
 public:
     Window();
@@ -28,29 +31,49 @@ private:
     static LRESULT CALLBACK wndProcThunk(HWND, UINT, WPARAM, LPARAM);
     LRESULT wndProc(UINT msg, WPARAM wParam, LPARAM lParam);
 
-    void onResize(unsigned widthPx, unsigned heightPx);
-    void clientCells(int& cols, int& rows) const;
-    void startSession(int cols, int rows);
-    void rebuildDemoGrid();
+    // Layout / rendering.
+    void regions(Rect& sidebar, Rect& tabBar, Rect& panes) const;
     void renderFrame();
+    void drawSidebar(const Rect& r);
+    void drawTabBar(const Rect& r);
+    void drawPanes(const Rect& r);
+    void reapExitedPanes();
 
-    // Input: translate keystrokes to PTY bytes.
-    void onChar(wchar_t unit);            // WM_CHAR (printable + control chars)
-    bool onKeyDown(WPARAM vk);            // special keys; returns true if handled
-    void sendUtf16(const wchar_t* s, size_t len);  // UTF-16 -> UTF-8 -> PTY
+    // Workspace / tabs.
+    Tab* activeTab() const;
+    TerminalSession* activeSession() const;
+    void cellsForRect(const Rect& r, int& cols, int& rows) const;
+    void newTab(const std::wstring& cwd);
+    void splitActive(SplitDir dir);
+    void closeActivePane();
+    void switchTab(int delta);
+    void updateTitle();
+
+    // Input.
+    void onChar(wchar_t unit);
+    bool onKeyDown(WPARAM vk);
+    void onMouseDown(int x, int y);
+    void sendToActive(const char* data, size_t len);
+    void sendUtf16(const wchar_t* s, size_t len);
 
     HWND hwnd_ = nullptr;
     std::unique_ptr<IRenderer> renderer_;
-    Grid grid_;
+    Metrics metrics_;
+    Workspace workspace_;
 
-    // Session: terminal_ must outlive pty_ so the reader thread (which calls
-    // terminal_.write) is joined before terminal_ is destroyed. Members destruct
-    // in reverse declaration order, so declare terminal_ first.
-    Terminal terminal_;
-    ConPty pty_;
-    bool sessionActive_ = false;
+    std::vector<std::unique_ptr<Tab>> tabs_;
+    size_t activeTab_ = 0;
+    bool sidebarVisible_ = true;
+
     std::wstring shell_ = L"cmd.exe";
-    wchar_t pendingHighSurrogate_ = 0;  // for split UTF-16 WM_CHAR pairs
+    wchar_t pendingHighSurrogate_ = 0;
+    bool swallowNextChar_ = false;  // drop the WM_CHAR following a shortcut
+
+    // Hit-test rects rebuilt each frame.
+    struct SidebarRow { Rect rect; int repo; int worktree; };  // worktree<0 => header
+    std::vector<SidebarRow> sidebarRows_;
+    std::vector<Rect> tabRects_;
+    Rect plusRect_{};
 };
 
 } // namespace liney

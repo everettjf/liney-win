@@ -4,18 +4,48 @@ Windows 版终端工作区(对标 macOS 的 [liney](https://github.com/everettjf
 
 ## 当前状态
 
-**MVP:可交互的本地终端(仅需 MSVC,已在 Windows 上编译并运行验证)**。
+**MVP:可交互的本地终端工作区——多标签 / 分屏 / 仓库·worktree 侧边栏(仅需 MSVC,已在 Windows 上编译并运行验证)**。
 
-完整链路:**键盘 → ConPTY → 终端核心(VT 解析/屏幕缓冲)→ Grid → Direct2D/DirectWrite 渲染**。
+界面布局(全自绘 Win32 + Direct2D,无 XAML):
 
-- `Window`(Win32):窗口 + 消息循环;`WM_CHAR`/`WM_KEYDOWN` 把按键编码成 UTF-8 / xterm 转义序列回写 PTY
-- `ConPty`:Windows 伪控制台封装(起 shell `cmd.exe`、读输出、回写输入、resize)
+```
+┌──────────────┬───────────────────────────────┐
+│  WORKSPACE   │  tab1 │ tab2 │ +               │  ← 标签栏
+│  > repoA     ├───────────────┬───────────────┤
+│  v repoB     │   pane (cmd)  │   pane (cmd)   │  ← 分屏的 pane 树
+│    - main    │               ├───────────────┤
+│    - feature │               │   pane (cmd)   │
+│  > repoC     │               │                │
+└──────────────┴───────────────┴───────────────┘
+  侧边栏(仓库/worktree)        每个 pane 一个 shell 会话
+```
+
+单 pane 链路:**键盘 → ConPTY → 终端核心(VT 解析/屏幕缓冲)→ Grid → Direct2D/DirectWrite 渲染**。
+
+- `Window`:窗口 + 消息循环 + 工作区编排;合成侧边栏 / 标签栏 / pane 树;键盘路由到聚焦 pane,应用快捷键管理标签·分屏·焦点·侧边栏,鼠标切标签 / 聚焦 pane / 打开 worktree
+- `Tab` + `Pane`:每个标签是一棵二叉分屏树,叶子托管一个 `TerminalSession`
+- `TerminalSession`:`Terminal` + `ConPty` + `Grid` + cwd/title,一个 pane 一个
+- `Workspace`:侧边栏数据模型——扫描根目录下一层的 git 仓库,展开时惰性 `git worktree list`
+- `ConPty`:Windows 伪控制台封装(在指定 cwd 起 shell、读输出、回写输入、resize、退出检测)
 - `Terminal`:终端核心封装,两种后端二选一:
   - **默认:内置 `VTEmulator`**——自带的 xterm 子集解析器 + 屏幕缓冲(光标、UTF-8、CSI 光标移动、擦除、SGR 颜色/粗体/下划线/反显、滚动区、插入/删除行列)。**仅需 MSVC,无外部依赖。**
   - 可选:`-DLINEY_WITH_LIBGHOSTTY=ON` 接入 [libghostty-vt](https://github.com/ghostty-org/ghostty)(需 **Zig** 工具链),复用其完整缓冲/scrollback/reflow
-- `D2DRenderer`:Direct2D 画背景填充 + DirectWrite 画字形,DXGI/D3D11 swap chain 呈现;画光标、反显、粗体、下划线
+- `D2DRenderer`:帧生命周期 + chrome 图元(填充/描边/文本)+ 在像素原点绘制 pane 网格;画光标、反显、粗体、下划线
 
-已验证:在 VS 2022 的 MSVC/Ninja 下构建通过,运行后窗口内 `cmd.exe` 可正常输入命令并显示输出(`echo` / `ver` / `dir` 等)。
+已验证:VS 2022 的 MSVC/Ninja 下构建通过;运行后窗口内 `cmd.exe` 可输入命令并显示输出;分屏与新标签各自拉起独立 shell(以子进程计数确定性验证:1→2→3 分屏、新标签 +1);侧边栏列出 `D:\GitHub` 下的多个 git 仓库。
+
+## 快捷键
+
+| 键 | 作用 |
+|---|---|
+| `Ctrl+Shift+T` | 新建标签(继承当前 pane 的 cwd) |
+| `Ctrl+Shift+W` | 关闭当前 pane(最后一个 pane 则关标签;最后一个标签则退出) |
+| `Ctrl+Shift+E` | 左右分屏(竖直分隔) |
+| `Ctrl+Shift+O` | 上下分屏(水平分隔) |
+| `Ctrl+Shift+B` | 折叠/展开侧边栏 |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | 下一个 / 上一个标签 |
+| `Alt+方向键` | 在分屏 pane 间移动焦点 |
+| 鼠标 | 点标签切换、点 `+` 新标签、点 pane 聚焦、点仓库展开、点 worktree 在其目录开新标签 |
 
 ## 技术选型(见调研文档)
 
@@ -49,16 +79,23 @@ cmake --build build
 
 ```
 src/
-  main.cpp            入口(wWinMain)
-  app/Window.*        Win32 窗口、消息循环、键盘输入编码
+  main.cpp                入口(wWinMain)
+  app/
+    Window.*              Win32 窗口、工作区编排、输入路由、绘制
+    Layout.h              Rect + 由字号派生的 UI 度量
+    Pane.h                分屏树节点(叶=会话,内部=二叉分屏)
+    Tab.*                 标签 = 分屏树 + 聚焦叶;分屏/关闭/布局/命中测试/方向聚焦
+  core/TerminalSession.*  一个 pane 的终端会话(Terminal + ConPty + Grid + cwd)
+  workspace/Workspace.*   侧边栏模型:git 仓库扫描 + worktree 惰性加载
+  util/Process.*          无窗口子进程捕获(给 git worktree list 用)
   render/
-    Cell.h            cell / grid(含光标)数据结构
-    IRenderer.h       渲染器接口
-    D2DRenderer.*     Direct2D/DirectWrite 直绘实现(阶段一)
-  pty/ConPty.*        ConPTY 封装(起 shell + 读输出 + 回写输入)
+    Cell.h                cell / grid(含光标)数据结构
+    IRenderer.h           渲染器接口(帧生命周期 + chrome 图元 + 网格)
+    D2DRenderer.*         Direct2D/DirectWrite 直绘实现(阶段一)
+  pty/ConPty.*            ConPTY 封装(在 cwd 起 shell + 读输出 + 回写 + 退出检测)
   vt/
-    Terminal.*        终端核心封装(内置 VTEmulator 或 libghostty-vt → Grid)
-    VTEmulator.*      内置 xterm 子集解析器 + 屏幕缓冲(MVP 默认核心)
+    Terminal.*            终端核心封装(内置 VTEmulator 或 libghostty-vt → Grid)
+    VTEmulator.*          内置 xterm 子集解析器 + 屏幕缓冲(MVP 默认核心)
 ```
 
 ## 里程碑(自建本地终端 MVP)
@@ -66,7 +103,8 @@ src/
 - **S0** 骨架 + 渲染管线打通 ✓
 - **S1** ConPTY 输出 → 网格 → 渲染(只读)✓
 - **S2** 键盘输入回写 ConPTY ✓
-- **S3** 内置 VT 核心:光标、SGR 颜色/属性、擦除、滚动区、插入/删除行列 ✓(MVP)
-  - 待办:scrollback 历史回滚、选择/复制粘贴、resize reflow、备用屏幕(vim/less 全屏应用)、鼠标、IME
-- **S4** 配置/字体/配色,单窗口可用
-- **S5** UI 外壳(tab/分屏)+ 仓库/worktree 侧边栏(liney 价值闭环)
+- **S3** 内置 VT 核心:光标、SGR 颜色/属性、擦除、滚动区、插入/删除行列 ✓
+  - 待办:scrollback 历史回滚、选择/复制粘贴、resize reflow、备用屏幕(vim/less 全屏应用)、鼠标滚轮、IME
+- **S4** 配置/字体/配色,单窗口可用(部分:字号派生度量已就位)
+- **S5** UI 外壳(多标签 / 分屏)+ 仓库/worktree 侧边栏(liney 价值闭环)✓
+  - 待办:拖拽分隔条调整 pane 比例、标签拖动重排、worktree 增删操作、布局持久化

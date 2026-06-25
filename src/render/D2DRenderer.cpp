@@ -163,31 +163,72 @@ void D2DRenderer::cellSize(unsigned& wPx, unsigned& hPx) const {
     hPx = static_cast<unsigned>(cellH_ + 0.5f);
 }
 
-void D2DRenderer::render(const Grid& grid) {
+void D2DRenderer::beginFrame() {
     if (!d2dContext_ || !targetBitmap_ || !brush_) return;
-
     d2dContext_->BeginDraw();
-    d2dContext_->Clear(D2D1::ColorF(D2D1::ColorF::Black));
+    d2dContext_->Clear(D2D1::ColorF(0.05f, 0.05f, 0.06f));  // workspace bg
+}
+
+void D2DRenderer::endFrame() {
+    if (!d2dContext_ || !swapChain_) return;
+    d2dContext_->EndDraw();
+    swapChain_->Present(1, 0);
+}
+
+void D2DRenderer::fillRect(float x, float y, float w, float h, const Color& c) {
+    if (!d2dContext_ || !brush_) return;
+    brush_->SetColor(toColorF(c));
+    d2dContext_->FillRectangle(D2D1::RectF(x, y, x + w, y + h), brush_.Get());
+}
+
+void D2DRenderer::strokeRect(float x, float y, float w, float h, const Color& c,
+                             float thickness) {
+    if (!d2dContext_ || !brush_) return;
+    brush_->SetColor(toColorF(c));
+    // Inset by half the stroke so the border stays inside the rect.
+    const float i = thickness * 0.5f;
+    d2dContext_->DrawRectangle(D2D1::RectF(x + i, y + i, x + w - i, y + h - i),
+                               brush_.Get(), thickness);
+}
+
+void D2DRenderer::drawText(const std::wstring& text, float x, float y,
+                           float maxW, float rowH, const Color& c, bool bold) {
+    if (!d2dContext_ || !brush_ || text.empty()) return;
+    IDWriteTextFormat* fmt =
+        bold && textFormatBold_ ? textFormatBold_.Get() : textFormat_.Get();
+    brush_->SetColor(toColorF(c));
+    d2dContext_->DrawText(text.c_str(), static_cast<UINT32>(text.size()), fmt,
+                          D2D1::RectF(x, y, x + maxW, y + rowH), brush_.Get(),
+                          D2D1_DRAW_TEXT_OPTIONS_CLIP);
+}
+
+void D2DRenderer::drawGrid(const Grid& grid, float originX, float originY) {
+    if (!d2dContext_ || !brush_) return;
+
+    const D2D1_RECT_F clip = D2D1::RectF(
+        originX, originY, originX + grid.cols * cellW_,
+        originY + grid.rows * cellH_);
+    d2dContext_->PushAxisAlignedClip(clip, D2D1_ANTIALIAS_MODE_ALIASED);
+
+    // Terminal default background (cells with black bg are skipped below).
+    brush_->SetColor(D2D1::ColorF(D2D1::ColorF::Black));
+    d2dContext_->FillRectangle(clip, brush_.Get());
 
     for (int y = 0; y < grid.rows; ++y) {
         for (int x = 0; x < grid.cols; ++x) {
             const Cell& cell = grid.at(x, y);
-            const float px = x * cellW_;
-            const float py = y * cellH_;
-            const D2D1_RECT_F rect =
-                D2D1::RectF(px, py, px + cellW_, py + cellH_);
+            const float px = originX + x * cellW_;
+            const float py = originY + y * cellH_;
+            const D2D1_RECT_F rect = D2D1::RectF(px, py, px + cellW_, py + cellH_);
 
             // Inverse video swaps foreground and background.
             Color fg = cell.fg, bg = cell.bg;
             if (cell.flags & kFlagInverse) std::swap(fg, bg);
 
-            // Background (skip black to save fills).
             if (bg.r || bg.g || bg.b) {
                 brush_->SetColor(toColorF(bg));
                 d2dContext_->FillRectangle(rect, brush_.Get());
             }
-            // Foreground glyph. Stage 2 replaces this per-cell DrawText with a
-            // single instanced draw over a glyph atlas.
             if (!cell.ch.empty() && cell.ch != L" ") {
                 IDWriteTextFormat* fmt =
                     (cell.flags & kFlagBold) && textFormatBold_
@@ -208,19 +249,16 @@ void D2DRenderer::render(const Grid& grid) {
         }
     }
 
-    // Cursor: a block over the cell, drawn with the foreground color so the
-    // glyph beneath shows through as a "hollow"-ish inverse.
     if (grid.cursorVisible && grid.cursorX < grid.cols &&
         grid.cursorY < grid.rows) {
-        const float px = grid.cursorX * cellW_;
-        const float py = grid.cursorY * cellH_;
-        const D2D1_RECT_F cur = D2D1::RectF(px, py, px + cellW_, py + cellH_);
+        const float px = originX + grid.cursorX * cellW_;
+        const float py = originY + grid.cursorY * cellH_;
         brush_->SetColor(D2D1::ColorF(0.80f, 0.80f, 0.80f, 0.55f));
-        d2dContext_->FillRectangle(cur, brush_.Get());
+        d2dContext_->FillRectangle(
+            D2D1::RectF(px, py, px + cellW_, py + cellH_), brush_.Get());
     }
 
-    d2dContext_->EndDraw();
-    swapChain_->Present(1, 0);
+    d2dContext_->PopAxisAlignedClip();
 }
 
 } // namespace liney

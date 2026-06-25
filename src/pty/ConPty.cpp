@@ -7,7 +7,7 @@ namespace liney {
 ConPty::~ConPty() { stop(); }
 
 bool ConPty::start(const std::wstring& command, short cols, short rows,
-                   OutputHandler onOutput) {
+                   const std::wstring& cwd, OutputHandler onOutput) {
     onOutput_ = std::move(onOutput);
 
     HANDLE inputRead = nullptr;
@@ -43,8 +43,9 @@ bool ConPty::start(const std::wstring& command, short cols, short rows,
 
     if (ok) {
         std::wstring cmd = command;  // CreateProcessW may mutate the buffer.
+        const wchar_t* workDir = cwd.empty() ? nullptr : cwd.c_str();
         ok = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE,
-                            EXTENDED_STARTUPINFO_PRESENT, nullptr, nullptr,
+                            EXTENDED_STARTUPINFO_PRESENT, nullptr, workDir,
                             &si.StartupInfo, &procInfo_) != FALSE;
     }
 
@@ -64,6 +65,7 @@ bool ConPty::start(const std::wstring& command, short cols, short rows,
             }
             if (onOutput_) onOutput_(buf.data(), read);
         }
+        exited_ = true;
     });
     return true;
 }
