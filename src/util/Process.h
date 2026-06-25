@@ -11,4 +11,8 @@ namespace liney {
 std::wstring runCapture(const std::wstring& commandLine, const std::wstring& cwd,
                         bool* ok = nullptr);
 
+// Launch `commandLine` via `cmd /c` without waiting (fire-and-forget, no window).
+// Used for lifecycle hooks (session/app exit).
+void runDetached(const std::wstring& commandLine, const std::wstring& cwd);
+
 } // namespace liney

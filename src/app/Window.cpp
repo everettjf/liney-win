@@ -13,6 +13,7 @@
 #include "render/D2DRenderer.h"
 #include "util/InputBox.h"
 #include "util/Json.h"
+#include "util/Process.h"
 
 namespace liney {
 
@@ -107,6 +108,8 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     fontSize_ = cfg.fontSize;
     defaultFontSize_ = cfg.fontSize;
     sessionStartHook_ = cfg.sessionStartHook;
+    sessionExitHook_ = cfg.sessionExitHook;
+    appExitHook_ = cfg.appExitHook;
     sshHosts_ = cfg.sshHosts;
     agents_ = cfg.agents;
     theme_ = cfg.theme;
@@ -140,6 +143,7 @@ int Window::runMessageLoop() {
         while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_QUIT) {
                 saveLayout();  // persist tabs/panes for next launch
+                runDetached(appExitHook_, L"");  // hooks.appExit
                 return static_cast<int>(msg.wParam);
             }
             TranslateMessage(&msg);
@@ -504,6 +508,7 @@ void Window::splitActive(SplitDir dir) {
 
 void Window::closeActivePane() {
     clearSelection();
+    runDetached(sessionExitHook_, L"");  // hooks.sessionExit
     Tab* t = activeTab();
     if (!t) return;
     if (!t->closeActive()) {

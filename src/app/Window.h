@@ -107,6 +107,8 @@ private:
     float fontSize_ = 16.0f;
     float defaultFontSize_ = 16.0f;
     std::wstring sessionStartHook_; // command sent to each newly started shell
+    std::wstring sessionExitHook_;  // command run when a pane closes
+    std::wstring appExitHook_;      // command run on app quit
     std::vector<std::wstring> sshHosts_;
     std::vector<AgentDef> agents_;
     Theme theme_;

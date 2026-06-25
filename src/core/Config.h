@@ -23,6 +23,8 @@ struct Config {
     float fontSize = 16.0f;
     std::wstring workspaceRoot;             // empty => parent of launch directory
     std::wstring sessionStartHook;          // command run in each new shell
+    std::wstring sessionExitHook;           // command run when a pane closes
+    std::wstring appExitHook;               // command run on app quit
     std::vector<std::wstring> sshHosts;     // e.g. "user@host"; sidebar SSH list
     std::vector<AgentDef> agents;           // sidebar AGENTS list
     Theme theme;                            // colors (defaults = built-in palette)

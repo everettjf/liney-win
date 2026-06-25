@@ -78,9 +78,8 @@ SSH / agent / tmux / 打包更新 体量大、相对独立,排在后面;diff/his
 
 ### P4 — 集成与通知 🟡 进行中
 - ✅ **`liney notify` CLI**(独立 `liney.exe`:`notify` / `title`)+ **OSC 0/2/7/9/777 解析** → 托盘气泡通知 + 实时标题(确定性验证:CLI 输出 OSC 字节正确;窗口标题随 OSC 实时变化;`sessionStart` hook 写出标记文件)
-- ✅ **生命周期 hooks**:`hooks.sessionStart`(config)→ 新 shell 执行命令
+- ✅ **生命周期 hooks**:`hooks.sessionStart`(新 shell 执行)、`hooks.sessionExit`(pane 关闭时)、`hooks.appExit`(退出时,确定性验证:优雅关闭后标记文件已写)
 - ✅ **Git history / diff 视图**:`Ctrl+Shift+L` 在新标签开 `git log`(图形化历史,走 pager + alt 屏)、`Ctrl+Shift+G` 开 `git diff`
-- ⬜ app/session exit hooks:留到后续
 
 ### P5 — 远程与高级会话(体量大,独立推进)🟡 进行中
 - ✅ **SSH 会话**:config `sshHosts` → 侧边栏 SSH 区,点击在新标签起 `ssh <host>`(ConPTY,Windows 自带 OpenSSH);会话 shell 命令随布局持久化(SSH 标签可恢复)。确定性验证:点击后 liney 子进程出现 `ssh test@192.0.2.1`

@@ -109,9 +109,10 @@ Config loadConfig() {
         cfg.fontSize = static_cast<float>(j["fontSize"].asNumber(cfg.fontSize));
     if (j.contains("workspaceRoot"))
         cfg.workspaceRoot = utf8ToWide(j["workspaceRoot"].asString());
-    // hooks.sessionStart: command sent to each new shell.
-    cfg.sessionStartHook =
-        utf8ToWide(j["hooks"]["sessionStart"].asString());
+    // hooks.{sessionStart,sessionExit,appExit}
+    cfg.sessionStartHook = utf8ToWide(j["hooks"]["sessionStart"].asString());
+    cfg.sessionExitHook = utf8ToWide(j["hooks"]["sessionExit"].asString());
+    cfg.appExitHook = utf8ToWide(j["hooks"]["appExit"].asString());
     // sshHosts: ["user@host", ...]
     if (j["sshHosts"].isArray())
         for (const Json& host : j["sshHosts"].items())

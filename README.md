@@ -100,7 +100,7 @@ cmake --build build
 - `shell`:新标签使用的 shell(如 `powershell.exe` / `pwsh.exe` / `wsl.exe` / `cmd.exe`)
 - `fontFamily` / `fontSize`:等宽字体与字号(也可运行时 `Ctrl++/-/0` 调整)
 - `workspaceRoot`:侧边栏扫描的根目录;留空则用启动目录的父目录
-- `hooks.sessionStart`:每个新 shell 启动后自动执行的命令(如激活虚拟环境)
+- `hooks.sessionStart` / `hooks.sessionExit` / `hooks.appExit`:新 shell 启动后 / pane 关闭时 / 程序退出时执行的命令
 - `sshHosts`:`["user@host", ...]` —— 出现在侧边栏 SSH 区,点击在新标签起 `ssh <host>`(用 Windows 自带 OpenSSH;会话随布局持久化)
 - `agents`:`[{ "name", "command", "cwd" }]` —— 出现在侧边栏 AGENTS 区,点击在新标签起该命令(对标 liney 的 agent 会话)
 - `theme`:`{ "background": "#102840", "foreground": "#e8e8d0", "palette": ["#..." ×16] }` —— 终端前景/背景与 16 色 ANSI 调色板(缺省即内置配色)

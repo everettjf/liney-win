@@ -63,4 +63,18 @@ std::wstring runCapture(const std::wstring& commandLine, const std::wstring& cwd
     return wide;
 }
 
+void runDetached(const std::wstring& commandLine, const std::wstring& cwd) {
+    if (commandLine.empty()) return;
+    std::wstring cmd = L"cmd /c " + commandLine;  // CreateProcessW may mutate it
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    const wchar_t* workDir = cwd.empty() ? nullptr : cwd.c_str();
+    if (CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE,
+                       CREATE_NO_WINDOW, nullptr, workDir, &si, &pi)) {
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+}
+
 } // namespace liney
