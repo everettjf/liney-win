@@ -80,6 +80,17 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     sessionExitHook_ = cfg.sessionExitHook;
     appExitHook_ = cfg.appExitHook;
     if (cfg.unixTools) addGitUnixToolsToPath();  // ls/cat/grep/… in spawned shells
+    // cmd shell integration: prepend an OSC 7 cwd report to PROMPT so the files
+    // panel can follow `cd` (cmd.exe doesn't emit OSC 7 on its own). $e=ESC,
+    // $p=current path, then the normal prompt. PowerShell ignores PROMPT.
+    {
+        wchar_t cur[1024]{};
+        DWORD n = GetEnvironmentVariableW(L"PROMPT", cur, 1024);
+        std::wstring base = (n > 0 && n < 1024) ? std::wstring(cur) : L"$p$g";
+        if (base.find(L"]7;") == std::wstring::npos)  // don't double-add
+            SetEnvironmentVariableW(
+                L"PROMPT", (L"$e]7;file://localhost/$p$e\\" + base).c_str());
+    }
     sshHosts_ = cfg.sshHosts;
     agents_ = cfg.agents;
     projectIcons_ = cfg.projectIcons;

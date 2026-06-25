@@ -123,7 +123,7 @@ private:
     std::vector<std::unique_ptr<Tab>> tabs_;
     size_t activeTab_ = 0;
     bool sidebarVisible_ = true;      // left WORKSPACE/SSH/AGENTS panel
-    bool filesPanelVisible_ = true;   // right FILES (folder tree) panel
+    bool filesPanelVisible_ = false;  // right FILES (folder tree) panel (Ctrl+Shift+F)
     bool keepAwake_ = false;          // SetThreadExecutionState keep-awake state
 
     std::wstring shell_ = L"cmd.exe";
