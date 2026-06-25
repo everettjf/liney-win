@@ -104,7 +104,7 @@ The first build fetches Ghostty and compiles `libghostty-vt`, so it takes a whil
 | Key | Action |
 |---|---|
 | `Ctrl+Shift+T` / `Ctrl+Shift+W` | New tab / close current pane |
-| `Ctrl+Shift+E` / `Ctrl+Shift+O` | Split left-right / top-bottom |
+| `Alt+D` / `Shift+Alt+D` | Split side by side (left∣right) / stacked (top/bottom) |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous tab |
 | `Alt+Arrows` | Move focus between split panes |
 | `Ctrl+Shift+B` / `Ctrl+Shift+F` | Toggle the left sidebar / right files panel |

@@ -160,6 +160,10 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_SYSKEYDOWN:
         if (onKeyDown(wParam)) return 0;
         return DefWindowProcW(hwnd_, msg, wParam, lParam);
+    case WM_SYSCHAR:
+        // Swallow Alt+<key> chars (e.g. Alt+D) so they don't ring the system
+        // bell — there's no menu bar to drive. Alt+F4 etc. stay on WM_SYSKEYDOWN.
+        return 0;
     case WM_LBUTTONDOWN:
         SetFocus(hwnd_);
         onMouseDown(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));

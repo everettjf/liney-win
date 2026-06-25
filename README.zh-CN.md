@@ -98,7 +98,7 @@ powershell -ExecutionPolicy Bypass -File tools\build.ps1
 | 键 | 作用 |
 |---|---|
 | `Ctrl+Shift+T` / `Ctrl+Shift+W` | 新建标签 / 关闭当前 pane |
-| `Ctrl+Shift+E` / `Ctrl+Shift+O` | 左右分屏 / 上下分屏 |
+| `Alt+D` / `Shift+Alt+D` | 左右分屏(并排) / 上下分屏(堆叠) |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | 下一个 / 上一个标签 |
 | `Alt+方向键` | 在分屏 pane 间移动焦点 |
 | `Ctrl+Shift+B` / `Ctrl+Shift+F` | 切换左侧边栏 / 右侧文件面板 |

@@ -90,7 +90,7 @@ bool Window::onKeyDown(WPARAM vk) {
     const bool shift = keyDown(VK_SHIFT);
     const bool alt = keyDown(VK_MENU);
 
-    // Alt + arrows: move pane focus.
+    // Alt + arrows: move pane focus.  Alt+D / Shift+Alt+D: split panes.
     if (alt && !ctrl) {
         Tab* t = activeTab();
         switch (vk) {
@@ -98,6 +98,9 @@ bool Window::onKeyDown(WPARAM vk) {
         case VK_RIGHT: if (t) t->focusDir(SplitDir::Cols, true);  swallowNextChar_ = true; return true;
         case VK_UP:    if (t) t->focusDir(SplitDir::Rows, false); swallowNextChar_ = true; return true;
         case VK_DOWN:  if (t) t->focusDir(SplitDir::Rows, true);  swallowNextChar_ = true; return true;
+        case 'D':  // Alt+D side by side; Shift+Alt+D stacked
+            splitActive(shift ? SplitDir::Rows : SplitDir::Cols);
+            swallowNextChar_ = true; return true;
         default: break;
         }
     }
@@ -120,8 +123,6 @@ bool Window::onKeyDown(WPARAM vk) {
             switch (vk) {
             case 'T': newTab(activeSession() ? activeSession()->cwd() : workspace_.root()); swallowNextChar_ = true; return true;
             case 'W': closeActivePane(); swallowNextChar_ = true; return true;
-            case 'E': splitActive(SplitDir::Cols); swallowNextChar_ = true; return true;  // side by side
-            case 'O': splitActive(SplitDir::Rows); swallowNextChar_ = true; return true;  // stacked
             case 'B': sidebarVisible_ = !sidebarVisible_; swallowNextChar_ = true; return true;
             case 'F': filesPanelVisible_ = !filesPanelVisible_; swallowNextChar_ = true; return true;
             case 'K': toggleKeepAwake(); swallowNextChar_ = true; return true;
