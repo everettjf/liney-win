@@ -177,8 +177,8 @@ src/
 - **S1** ConPTY 输出 → 网格 → 渲染(只读)✓
 - **S2** 键盘输入回写 ConPTY ✓
 - **S3** 内置 VT 核心:光标、SGR 颜色/属性、擦除、滚动区、插入/删除行列 ✓
-- **P1** 终端完整度:备用屏 alt-screen(vim/less)、scrollback 历史 + 滚动、选择 + 复制粘贴 ✓
-  - 待办:resize reflow(长行重排)、鼠标上报、IME、glyph atlas 渲染
+- **P1** 终端完整度:备用屏 alt-screen(vim/less)、scrollback 历史 + 滚动 + 重排(reflow)、选择 + 复制粘贴、IME 候选定位 ✓
+  - 待办:鼠标上报(受 ConPTY 限制)、glyph atlas 渲染
 - **S4** 配置/字体/配色,单窗口可用(部分:字号派生度量已就位)
 - **S5** UI 外壳(多标签 / 分屏)+ 仓库/worktree 侧边栏(liney 价值闭环)✓
   - 待办:拖拽分隔条调整 pane 比例、标签拖动重排、worktree 增删操作、布局持久化

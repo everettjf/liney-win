@@ -106,8 +106,12 @@ void VTEmulator::clearCell(Cell& c) const {
 }
 
 void VTEmulator::clearRegion(int x0, int y0, int x1, int y1) {
-    for (int y = y0; y <= y1 && y < rows_; ++y)
+    for (int y = y0; y <= y1 && y < rows_; ++y) {
         for (int x = x0; x <= x1 && x < cols_; ++x) clearCell(cell(x, y));
+        // A fully-cleared row no longer soft-wraps.
+        if (x0 == 0 && x1 >= cols_ - 1 && y < static_cast<int>(rowWrapped_.size()))
+            rowWrapped_[y] = 0;
+    }
 }
 
 void VTEmulator::resizeBuffer(std::vector<Cell>& buf, int oldCols, int oldRows,
@@ -132,9 +136,19 @@ void VTEmulator::resize(int cols, int rows) {
     if (!savedPrimary_.empty())
         resizeBuffer(savedPrimary_, oldCols, oldRows, cols, rows);
 
-    // Adjust scrollback rows to the new width (truncate / pad; no reflow).
-    if (cols != oldCols)
-        for (auto& row : scrollback_) row.resize(static_cast<size_t>(cols), Cell{});
+    // Rewrap scrollback history to the new width (rejoin soft-wrapped runs and
+    // re-split). The screen itself is re-drawn by the shell after the resize.
+    if (cols != oldCols) reflowScrollback(cols);
+
+    // Resize the screen wrap flags (preserve overlap); reset on width change.
+    {
+        std::vector<uint8_t> nextWrap(static_cast<size_t>(rows), 0);
+        if (cols == oldCols) {
+            const int rr = std::min(rows, static_cast<int>(rowWrapped_.size()));
+            for (int y = 0; y < rr; ++y) nextWrap[y] = rowWrapped_[y];
+        }
+        rowWrapped_ = std::move(nextWrap);
+    }
 
     cols_ = cols;
     rows_ = rows;
@@ -172,6 +186,20 @@ static void scrollRegion(std::vector<Cell>& cells, int cols, int top, int bot,
     }
 }
 
+void VTEmulator::shiftWrapFlags(int top, int bot, int n, bool up) {
+    if (n <= 0 || top > bot) return;
+    const int span = bot - top + 1;
+    if (n > span) n = span;
+    if (static_cast<int>(rowWrapped_.size()) < rows_) rowWrapped_.assign(rows_, 0);
+    if (up) {
+        for (int y = top; y <= bot - n; ++y) rowWrapped_[y] = rowWrapped_[y + n];
+        for (int y = bot - n + 1; y <= bot; ++y) rowWrapped_[y] = 0;
+    } else {
+        for (int y = bot; y >= top + n; --y) rowWrapped_[y] = rowWrapped_[y - n];
+        for (int y = top; y < top + n; ++y) rowWrapped_[y] = 0;
+    }
+}
+
 void VTEmulator::scrollUp(int n) {
     if (n <= 0) return;
     // Lines scrolling off the top of the full primary screen enter scrollback.
@@ -180,7 +208,10 @@ void VTEmulator::scrollUp(int n) {
         const int cap = std::min(n, span);
         for (int i = 0; i < cap; ++i) {
             auto begin = cells_.begin() + static_cast<size_t>(i) * cols_;
-            scrollback_.emplace_back(begin, begin + cols_);
+            ScrollLine sl;
+            sl.cells.assign(begin, begin + cols_);
+            sl.wrapped = i < static_cast<int>(rowWrapped_.size()) && rowWrapped_[i];
+            scrollback_.push_back(std::move(sl));
         }
         while (scrollback_.size() > maxScrollback_) scrollback_.pop_front();
         // If the user is viewing history, keep the same content in view.
@@ -189,11 +220,13 @@ void VTEmulator::scrollUp(int n) {
     }
     Cell blank; clearCell(blank);
     scrollRegion(cells_, cols_, scrollTop_, scrollBot_, n, true, blank);
+    shiftWrapFlags(scrollTop_, scrollBot_, n, true);
 }
 
 void VTEmulator::scrollDown(int n) {
     Cell blank; clearCell(blank);
     scrollRegion(cells_, cols_, scrollTop_, scrollBot_, n, false, blank);
+    shiftWrapFlags(scrollTop_, scrollBot_, n, false);
 }
 
 void VTEmulator::newline() {
@@ -210,8 +243,14 @@ void VTEmulator::putGlyph(const std::wstring& g, int width) {
         cell(tx, cy_).ch += g;
         return;
     }
-    if (wrapPending_) { cx_ = 0; newline(); wrapPending_ = false; }
-    if (cx_ + width > cols_) { cx_ = 0; newline(); }
+    if (wrapPending_) {
+        if (cy_ < static_cast<int>(rowWrapped_.size())) rowWrapped_[cy_] = 1;
+        cx_ = 0; newline(); wrapPending_ = false;
+    }
+    if (cx_ + width > cols_) {
+        if (cy_ < static_cast<int>(rowWrapped_.size())) rowWrapped_[cy_] = 1;
+        cx_ = 0; newline();
+    }
 
     Cell& c = cell(cx_, cy_);
     c.ch = g;
@@ -424,15 +463,17 @@ void VTEmulator::csiDispatch(uint32_t finalByte) {
     case 'L':  // IL: insert lines at cursor (within scroll region)
         if (cy_ >= scrollTop_ && cy_ <= scrollBot_) {
             Cell blank; clearCell(blank);
-            scrollRegion(cells_, cols_, cy_, scrollBot_, std::max(1, param(0, 1)),
-                         false, blank);
+            const int n = std::max(1, param(0, 1));
+            scrollRegion(cells_, cols_, cy_, scrollBot_, n, false, blank);
+            shiftWrapFlags(cy_, scrollBot_, n, false);
         }
         break;
     case 'M':  // DL: delete lines at cursor
         if (cy_ >= scrollTop_ && cy_ <= scrollBot_) {
             Cell blank; clearCell(blank);
-            scrollRegion(cells_, cols_, cy_, scrollBot_, std::max(1, param(0, 1)),
-                         true, blank);
+            const int n = std::max(1, param(0, 1));
+            scrollRegion(cells_, cols_, cy_, scrollBot_, n, true, blank);
+            shiftWrapFlags(cy_, scrollBot_, n, true);
         }
         break;
     case 'S': scrollUp(std::max(1, param(0, 1))); break;
@@ -554,7 +595,7 @@ void VTEmulator::snapshotInto(Grid& grid) const {
         if (gi < 0) {
             for (int x = 0; x < cols_; ++x) dst[x] = Cell{};
         } else if (gi < sb) {
-            const std::vector<Cell>& row = scrollback_[gi];
+            const std::vector<Cell>& row = scrollback_[gi].cells;
             for (int x = 0; x < cols_; ++x)
                 dst[x] = (x < static_cast<int>(row.size())) ? row[x] : Cell{};
         } else {
@@ -573,8 +614,10 @@ void VTEmulator::enterAlt(bool saveCursor) {
     if (altScreen_) return;
     if (saveCursor) { altSavedCx_ = cx_; altSavedCy_ = cy_; }
     savedPrimary_ = std::move(cells_);
+    savedWrapped_ = std::move(rowWrapped_);
     Cell blank; clearCell(blank);
     cells_.assign(static_cast<size_t>(cols_) * rows_, blank);
+    rowWrapped_.assign(static_cast<size_t>(rows_), 0);
     altScreen_ = true;
     viewOffset_ = 0;
     scrollTop_ = 0;
@@ -587,6 +630,10 @@ void VTEmulator::leaveAlt(bool restoreCursor) {
     savedPrimary_.clear();
     if (static_cast<int>(cells_.size()) != cols_ * rows_)
         cells_.assign(static_cast<size_t>(cols_) * rows_, Cell{});
+    rowWrapped_ = std::move(savedWrapped_);
+    savedWrapped_.clear();
+    if (static_cast<int>(rowWrapped_.size()) != rows_)
+        rowWrapped_.assign(static_cast<size_t>(rows_), 0);
     altScreen_ = false;
     if (restoreCursor) {
         cx_ = clampi(altSavedCx_, 0, cols_ - 1);
@@ -604,6 +651,48 @@ void VTEmulator::scrollViewport(int deltaLines) {
 }
 
 void VTEmulator::scrollToBottom() { viewOffset_ = 0; }
+
+void VTEmulator::reflowScrollback(int newCols) {
+    if (newCols < 1 || scrollback_.empty()) return;
+
+    // 1) Rejoin soft-wrapped runs into logical lines.
+    std::vector<std::vector<Cell>> logical;
+    std::vector<Cell> cur;
+    for (const ScrollLine& sl : scrollback_) {
+        if (sl.wrapped) {
+            cur.insert(cur.end(), sl.cells.begin(), sl.cells.end());
+        } else {
+            // Line end: append, trimming trailing blank cells (padding).
+            int last = static_cast<int>(sl.cells.size()) - 1;
+            while (last >= 0 && sl.cells[last].ch.empty()) --last;
+            cur.insert(cur.end(), sl.cells.begin(), sl.cells.begin() + (last + 1));
+            logical.push_back(std::move(cur));
+            cur.clear();
+        }
+    }
+    if (!cur.empty()) logical.push_back(std::move(cur));
+
+    // 2) Re-split each logical line to newCols, marking soft-wrap flags.
+    std::deque<ScrollLine> next;
+    for (auto& L : logical) {
+        if (L.empty()) {
+            next.push_back(ScrollLine{ std::vector<Cell>(newCols), false });
+            continue;
+        }
+        for (size_t i = 0; i < L.size(); i += newCols) {
+            const size_t end = std::min(i + newCols, L.size());
+            ScrollLine sl;
+            sl.cells.assign(L.begin() + i, L.begin() + end);
+            sl.cells.resize(static_cast<size_t>(newCols));  // pad to width
+            sl.wrapped = (end < L.size());
+            next.push_back(std::move(sl));
+        }
+    }
+
+    while (next.size() > maxScrollback_) next.pop_front();
+    scrollback_ = std::move(next);
+    viewOffset_ = clampi(viewOffset_, 0, static_cast<int>(scrollback_.size()));
+}
 
 void VTEmulator::oscDispatch() {
     const std::string& s = oscBuf_;

@@ -11,6 +11,13 @@
 
 namespace liney {
 
+// One line of scrollback history. `wrapped` is true when the line was soft-
+// wrapped into the next (so reflow can rejoin and re-split logical lines).
+struct ScrollLine {
+    std::vector<Cell> cells;
+    bool wrapped = false;
+};
+
 // A small, self-contained terminal emulator: an xterm-subset VT parser plus a
 // screen buffer with a cursor. It is the MVP's terminal core, used when
 // libghostty-vt is not compiled in (the default), so liney-win builds and runs
@@ -73,6 +80,8 @@ private:
     void leaveAlt(bool restoreCursor);
     void resizeBuffer(std::vector<Cell>& buf, int oldCols, int oldRows,
                       int newCols, int newRows) const;
+    void shiftWrapFlags(int top, int bot, int n, bool up);
+    void reflowScrollback(int newCols);  // rejoin + re-split history at new width
 
     // --- byte / UTF-8 layer ------------------------------------------------
     void consume(uint8_t byte);
@@ -106,12 +115,16 @@ private:
     // screen (with its scrollback) is stashed in savedPrimary_.
     bool altScreen_ = false;
     std::vector<Cell> savedPrimary_;
+    std::vector<uint8_t> savedWrapped_;
     int altSavedCx_ = 0, altSavedCy_ = 0;
 
-    // Scrollback history for the primary screen (each entry is one cols_-wide
-    // row that scrolled off the top), and the viewport offset from the live
-    // bottom (0 == live). Alternate screen has no scrollback.
-    std::deque<std::vector<Cell>> scrollback_;
+    // Per-row soft-wrap flags for the screen (1 == row wrapped into the next).
+    std::vector<uint8_t> rowWrapped_;
+
+    // Scrollback history for the primary screen (each entry is one row that
+    // scrolled off the top, with its wrap flag), and the viewport offset from
+    // the live bottom (0 == live). Alternate screen has no scrollback.
+    std::deque<ScrollLine> scrollback_;
     size_t maxScrollback_ = 5000;
     int viewOffset_ = 0;
 

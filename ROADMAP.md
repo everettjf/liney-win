@@ -58,7 +58,7 @@ SSH / agent / tmux / 打包更新 体量大、相对独立,排在后面;diff/his
 - ✅ **备用屏 alt-screen**(`?1049/?47/?1047`):vim/less/git log/htop 不再错乱
 - ✅ **scrollback 历史 + 滚轮/Shift+PgUp·PgDn·Home·End 滚动**(确定性验证:滚动后可见早期行)
 - ✅ **选择 + 复制粘贴**:鼠标拖选、`Ctrl+Shift+C/V`、bracketed paste(`?2004`)、`WM_COPY/WM_PASTE`
-- ⬜ **resize reflow**:窗口变化时长行重排(当前为截断/补齐,未重排)— 留到后续
+- ✅ **resize reflow(scrollback 重排)**:记录每行软换行标记,改变列宽时把历史里的软换行行重新拼接成逻辑行再按新宽度重排(确定性验证:窄化后行尾 `_ENDMARK` 仍在、内容不丢;旧的截断行为会丢失)。活动屏由 shell 收到 resize 后重绘
 - ✅ **IME(中日韩输入)**:已提交字符走 `WM_CHAR`(含代理对);组词/候选窗口跟随光标定位(`WM_IME_STARTCOMPOSITION/COMPOSITION` + `ImmSetCompositionWindow/CandidateWindow`)
 - ⬜ **鼠标上报**:受 ConPTY 影响——经验证,子程序输出里的 `?1000h` 会被 ConPTY 吸收(host 输出流里收不到),需走 ConPTY 的鼠标透传机制(类似 Windows Terminal 的处理),非简单解析即可,留到后续专门处理
 
