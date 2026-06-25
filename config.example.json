@@ -18,6 +18,10 @@
     { "name": "my-agent", "command": "claude", "cwd": "" }
   ],
 
+  "projectIcons": {
+    "my-repo": "C:\\path\\to\\icon.png"
+  },
+
   "theme": {
     "background": "#102840",
     "foreground": "#e8e8d0",

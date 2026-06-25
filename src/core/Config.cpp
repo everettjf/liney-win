@@ -146,6 +146,12 @@ Config loadConfig() {
     }
 
     if (j.contains("unixTools")) cfg.unixTools = j["unixTools"].asBool(true);
+    // projectIcons: { "<repoName>": "<icon path>" }
+    const Json& pi = j["projectIcons"];
+    if (pi.isObject())
+        for (const auto& kv : pi.members())
+            cfg.projectIcons.push_back(
+                { utf8ToWide(kv.first), utf8ToWide(kv.second.asString()) });
 
     if (cfg.shell.empty()) cfg.shell = L"cmd.exe";
     if (cfg.fontFamily.empty()) cfg.fontFamily = L"Cascadia Mono";

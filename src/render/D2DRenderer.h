@@ -6,7 +6,10 @@
 #include <d3d11.h>
 #include <dwrite.h>
 #include <dxgi1_2.h>
+#include <wincodec.h>
 #include <wrl/client.h>
+
+#include <unordered_map>
 
 #include "render/IRenderer.h"
 
@@ -32,6 +35,8 @@ public:
                     float thickness) override;
     void drawText(const std::wstring& text, float x, float y, float maxW,
                   float rowH, const Color& c, bool bold) override;
+    bool drawImage(const std::wstring& path, float x, float y, float w,
+                   float h) override;
     void drawGrid(const Grid& grid, float originX, float originY) override;
 
 private:
@@ -63,6 +68,9 @@ private:
     ComPtr<IDWriteFactory> dwriteFactory_;
     ComPtr<IDWriteTextFormat> textFormat_;
     ComPtr<IDWriteTextFormat> textFormatBold_;
+    ComPtr<IWICImagingFactory> wicFactory_;
+    // Cache of loaded images by path (null entry = failed-to-load, don't retry).
+    std::unordered_map<std::wstring, ComPtr<ID2D1Bitmap>> imageCache_;
 };
 
 } // namespace liney

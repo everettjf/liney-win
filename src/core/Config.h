@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "render/Cell.h"
@@ -29,6 +30,8 @@ struct Config {
     std::vector<AgentDef> agents;           // sidebar AGENTS list
     Theme theme;                            // colors (defaults = built-in palette)
     bool unixTools = true;                  // append Git's usr/bin to PATH (ls/cat/…)
+    // Per-project sidebar icons: repo name -> icon file path (png/ico).
+    std::vector<std::pair<std::wstring, std::wstring>> projectIcons;
 };
 
 // %USERPROFILE%\.liney (created if missing). Empty if USERPROFILE is unset.

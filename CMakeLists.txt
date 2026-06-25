@@ -45,7 +45,7 @@ target_compile_definitions(liney_win PRIVATE
   UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 
 target_link_libraries(liney_win PRIVATE
-  d2d1 dwrite d3d11 dxgi imm32 winhttp)
+  d2d1 dwrite d3d11 dxgi imm32 winhttp windowscodecs ole32)
 
 # Companion CLI: liney.exe (console). `liney notify ...` emits OSC sequences a
 # liney-win pane turns into notifications.

@@ -44,6 +44,11 @@ public:
     virtual void drawText(const std::wstring& text, float x, float y, float maxW,
                           float rowH, const Color& c, bool bold = false) = 0;
 
+    // Draw an image file (png/ico/…) into the rect, loaded + cached by path.
+    // Returns false if the image couldn't be loaded.
+    virtual bool drawImage(const std::wstring& path, float x, float y, float w,
+                           float h) = 0;
+
     // Draw a terminal grid (cells + cursor) with its top-left at (originX,
     // originY), clipped to the grid's pixel extent.
     virtual void drawGrid(const Grid& grid, float originX, float originY) = 0;

@@ -40,6 +40,7 @@ private:
     void renderFrame();
     void drawLeftSidebar(const Rect& r);   // WORKSPACE / SSH / AGENTS
     void drawFilesPanel(const Rect& r);    // FILES (folder tree, right side)
+    std::wstring resolveRepoIcon(const Repo& repo) const;  // config or repo-local
     void drawTabBar(const Rect& r);
     void drawPanes(const Rect& r);
     void reapExitedPanes();
@@ -121,6 +122,7 @@ private:
     std::wstring appExitHook_;      // command run on app quit
     std::vector<std::wstring> sshHosts_;
     std::vector<AgentDef> agents_;
+    std::vector<std::pair<std::wstring, std::wstring>> projectIcons_;
     Theme theme_;
     std::wstring lastTitle_;        // avoid redundant SetWindowText calls
     NOTIFYICONDATAW nid_{};

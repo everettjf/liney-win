@@ -43,6 +43,10 @@ bool D2DRenderer::createDeviceResources() {
         reinterpret_cast<IUnknown**>(dwriteFactory_.GetAddressOf()));
     if (FAILED(hr)) return false;
 
+    // WIC factory for loading image files (best-effort; drawImage no-ops if null).
+    CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                     IID_PPV_ARGS(wicFactory_.GetAddressOf()));
+
     return buildTextFormats();
 }
 
@@ -218,6 +222,39 @@ void D2DRenderer::drawText(const std::wstring& text, float x, float y,
     d2dContext_->DrawText(text.c_str(), static_cast<UINT32>(text.size()), fmt,
                           D2D1::RectF(x, y, x + maxW, y + rowH), brush_.Get(),
                           D2D1_DRAW_TEXT_OPTIONS_CLIP);
+}
+
+bool D2DRenderer::drawImage(const std::wstring& path, float x, float y, float w,
+                            float h) {
+    if (!d2dContext_) return false;
+
+    auto it = imageCache_.find(path);
+    if (it == imageCache_.end()) {
+        // Load via WIC, convert to a Direct2D bitmap, and cache (null on fail).
+        ComPtr<ID2D1Bitmap> bmp;
+        if (wicFactory_) {
+            ComPtr<IWICBitmapDecoder> decoder;
+            ComPtr<IWICBitmapFrameDecode> frame;
+            ComPtr<IWICFormatConverter> conv;
+            if (SUCCEEDED(wicFactory_->CreateDecoderFromFilename(
+                    path.c_str(), nullptr, GENERIC_READ,
+                    WICDecodeMetadataCacheOnLoad, decoder.GetAddressOf())) &&
+                SUCCEEDED(decoder->GetFrame(0, frame.GetAddressOf())) &&
+                SUCCEEDED(wicFactory_->CreateFormatConverter(conv.GetAddressOf())) &&
+                SUCCEEDED(conv->Initialize(
+                    frame.Get(), GUID_WICPixelFormat32bppPBGRA,
+                    WICBitmapDitherTypeNone, nullptr, 0.0,
+                    WICBitmapPaletteTypeMedianCut))) {
+                d2dContext_->CreateBitmapFromWicBitmap(conv.Get(), nullptr,
+                                                       bmp.GetAddressOf());
+            }
+        }
+        it = imageCache_.emplace(path, bmp).first;
+    }
+    if (!it->second) return false;
+    d2dContext_->DrawBitmap(it->second.Get(), D2D1::RectF(x, y, x + w, y + h),
+                            1.0f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+    return true;
 }
 
 void D2DRenderer::drawGrid(const Grid& grid, float originX, float originY) {

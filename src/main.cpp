@@ -6,10 +6,12 @@
 // default, or libghostty-vt when built with -DLINEY_WITH_LIBGHOSTTY=ON.
 
 #include <windows.h>
+#include <objbase.h>  // CoInitializeEx (WIN32_LEAN_AND_MEAN excludes it)
 
 #include "app/Window.h"
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
+    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);  // for WIC image loading
     liney::Window window;
     if (!window.create(hInstance, L"liney-win", 1000, 640)) {
         return 1;

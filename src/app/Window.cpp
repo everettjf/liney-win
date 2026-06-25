@@ -175,6 +175,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     if (cfg.unixTools) addGitUnixToolsToPath();  // ls/cat/grep/… in spawned shells
     sshHosts_ = cfg.sshHosts;
     agents_ = cfg.agents;
+    projectIcons_ = cfg.projectIcons;
     theme_ = cfg.theme;
     renderer_->setColors(theme_.background, theme_.background);
     applyFont();
@@ -325,6 +326,20 @@ void Window::renderFrame() {
     renderer_->endFrame();
 }
 
+std::wstring Window::resolveRepoIcon(const Repo& repo) const {
+    // 1) explicit config mapping (repo name -> icon path)
+    for (const auto& pi : projectIcons_)
+        if (pi.first == repo.name && !pi.second.empty()) return pi.second;
+    // 2) a repo-local icon file
+    static const wchar_t* kCandidates[] = {
+        L"\\icon.png", L"\\icon.ico", L"\\logo.png", L"\\.liney\\icon.png" };
+    for (const wchar_t* c : kCandidates) {
+        std::wstring p = repo.path + c;
+        if (GetFileAttributesW(p.c_str()) != INVALID_FILE_ATTRIBUTES) return p;
+    }
+    return L"";
+}
+
 void Window::drawLeftSidebar(const Rect& r) {
     renderer_->fillRect(r.x, r.y, r.w, r.h, kSidebarBg);
 
@@ -342,11 +357,23 @@ void Window::drawLeftSidebar(const Rect& r) {
                             rowH, kDim, false);
         y += rowH;
     }
+    const float iconSz = metrics_.cellH;  // square project icon
     for (int i = 0; i < static_cast<int>(repos.size()); ++i) {
         if (y > r.bottom()) break;
         Repo& repo = repos[i];
-        const std::wstring marker = repo.expanded ? L"v " : L"> ";
-        renderer_->drawText(marker + repo.name, r.x + pad, y, r.w - pad, rowH,
+        // expand chevron, then a project icon, then the name.
+        renderer_->drawText(repo.expanded ? L"v" : L">", r.x + pad, y,
+                            metrics_.cellW * 1.5f, rowH, kDim, true);
+        const float iconX = r.x + pad + metrics_.cellW * 1.5f;
+        const float iconY = y + (rowH - iconSz) * 0.5f;
+        std::wstring iconPath = resolveRepoIcon(repo);
+        if (iconPath.empty() ||
+            !renderer_->drawImage(iconPath, iconX, iconY, iconSz, iconSz)) {
+            // Placeholder slot when no icon resolves.
+            renderer_->fillRect(iconX, iconY, iconSz, iconSz, Color{ 60, 64, 78 });
+        }
+        const float nameX = iconX + iconSz + 6.0f;
+        renderer_->drawText(repo.name, nameX, y, r.x + r.w - nameX - pad, rowH,
                             kText, true);
         sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::RepoHeader, i, -1, L"" });
         y += rowH;
