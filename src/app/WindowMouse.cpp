@@ -68,6 +68,15 @@ void Window::onMouseDown(int xi, int yi) {
     }
 
     if (tabBar.contains(x, y)) {
+        for (const ToolButton& b : toolButtons_) {
+            if (!b.rect.contains(x, y)) continue;
+            switch (b.action) {
+            case ToolAction::KeepAwake: toggleKeepAwake(); break;
+            case ToolAction::Settings: openConfigFile(); break;
+            case ToolAction::Update: checkForUpdates(); break;
+            }
+            return;
+        }
         if (plusRect_.contains(x, y)) {
             newTab(activeSession() ? activeSession()->cwd() : workspace_.root());
             return;

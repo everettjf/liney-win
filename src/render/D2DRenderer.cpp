@@ -257,6 +257,86 @@ bool D2DRenderer::drawImage(const std::wstring& path, float x, float y, float w,
     return true;
 }
 
+void D2DRenderer::drawIcon(IconKind kind, float x, float y, float size,
+                           const Color& c) {
+    if (!d2dContext_ || !brush_) return;
+    brush_->SetColor(toColorF(c));
+    ID2D1DeviceContext* dc = d2dContext_.Get();
+    ID2D1SolidColorBrush* br = brush_.Get();
+    const float p = size * 0.16f;             // padding
+    const float bx = x + p, by = y + p, s = size - 2 * p;
+    const float cx = x + size * 0.5f, cy = y + size * 0.5f;
+    const float t = size * 0.085f < 1.2f ? 1.2f : size * 0.085f;
+    auto line = [&](float x1, float y1, float x2, float y2) {
+        dc->DrawLine(D2D1::Point2F(x1, y1), D2D1::Point2F(x2, y2), br, t);
+    };
+    auto fillR = [&](float x1, float y1, float x2, float y2) {
+        dc->FillRectangle(D2D1::RectF(x1, y1, x2, y2), br);
+    };
+    auto ring = [&](float ex, float ey, float rx, float ry) {
+        dc->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(ex, ey), rx, ry), br, t);
+    };
+    auto dot = [&](float ex, float ey, float r) {
+        dc->FillEllipse(D2D1::Ellipse(D2D1::Point2F(ex, ey), r, r), br);
+    };
+    switch (kind) {
+    case IconKind::Folder:
+        fillR(bx, by + s * 0.16f, bx + s * 0.42f, by + s * 0.34f);     // tab
+        fillR(bx, by + s * 0.30f, bx + s, by + s * 0.84f);             // body
+        break;
+    case IconKind::File: {
+        const float lx = bx + s * 0.20f, rx = bx + s * 0.80f;
+        dc->DrawRectangle(D2D1::RectF(lx, by, rx, by + s), br, t);
+        line(bx + s * 0.34f, by + s * 0.40f, bx + s * 0.66f, by + s * 0.40f);
+        line(bx + s * 0.34f, by + s * 0.58f, bx + s * 0.66f, by + s * 0.58f);
+        break;
+    }
+    case IconKind::Branch: {
+        const float r = s * 0.13f;
+        const float tx = bx + s * 0.28f, ty = by + s * 0.22f;
+        const float btmY = by + s * 0.80f, brx = bx + s * 0.74f, bry = by + s * 0.50f;
+        line(tx, ty, tx, btmY);            // trunk
+        line(tx, bry, brx, bry);           // branch
+        dot(tx, ty, r); dot(tx, btmY, r); dot(brx, bry, r);
+        break;
+    }
+    case IconKind::Globe:
+        ring(cx, cy, s * 0.46f, s * 0.46f);
+        ring(cx, cy, s * 0.18f, s * 0.46f);            // meridian
+        line(cx - s * 0.46f, cy, cx + s * 0.46f, cy);  // equator
+        break;
+    case IconKind::Spark:
+        line(cx, by, cx, by + s);                              // |
+        line(bx + s * 0.18f, cy, bx + s * 0.82f, cy);          // -
+        line(bx + s * 0.22f, by + s * 0.22f, bx + s * 0.78f, by + s * 0.78f);  // \
+        line(bx + s * 0.78f, by + s * 0.22f, bx + s * 0.22f, by + s * 0.78f);  // /
+        break;
+    case IconKind::Power:
+        ring(cx, cy + s * 0.06f, s * 0.40f, s * 0.40f);
+        fillR(cx - t * 0.5f, by, cx + t * 0.5f, cy);   // top stem (overdraws ring gap)
+        break;
+    case IconKind::Settings:
+        for (int i = 0; i < 3; ++i) {
+            float ly = by + s * (0.22f + 0.28f * i);
+            line(bx, ly, bx + s, ly);
+            float kx = bx + s * (i == 0 ? 0.66f : i == 1 ? 0.30f : 0.54f);
+            fillR(kx - s * 0.07f, ly - s * 0.09f, kx + s * 0.07f, ly + s * 0.09f);
+        }
+        break;
+    case IconKind::Download:
+        line(cx, by + s * 0.10f, cx, by + s * 0.60f);              // shaft
+        line(cx - s * 0.20f, by + s * 0.40f, cx, by + s * 0.62f);  // chevron
+        line(cx + s * 0.20f, by + s * 0.40f, cx, by + s * 0.62f);
+        line(bx + s * 0.18f, by + s * 0.86f, bx + s * 0.82f, by + s * 0.86f);  // base
+        break;
+    case IconKind::Up:
+        line(cx, by + s * 0.85f, cx, by + s * 0.20f);             // shaft
+        line(cx - s * 0.22f, by + s * 0.42f, cx, by + s * 0.18f); // chevron up
+        line(cx + s * 0.22f, by + s * 0.42f, cx, by + s * 0.18f);
+        break;
+    }
+}
+
 void D2DRenderer::drawGrid(const Grid& grid, float originX, float originY) {
     if (!d2dContext_ || !brush_) return;
 

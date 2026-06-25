@@ -27,6 +27,15 @@ void Window::drawLeftSidebar(const Rect& r) {
     const float rowH = metrics_.rowH();
     float y = r.y + 6.0f;
 
+    // Draw a small vector icon at ix, then the label after it.
+    auto iconRow = [&](IconKind k, float ix, float ty, const std::wstring& txt,
+                       const Color& tc, const Color& ic) {
+        const float isz = metrics_.cellH * 0.78f;
+        renderer_->drawIcon(k, ix, ty + (rowH - isz) * 0.5f, isz, ic);
+        const float tx = ix + isz + 5.0f;
+        renderer_->drawText(txt, tx, ty, r.x + r.w - tx - pad, rowH, tc, false);
+    };
+
     renderer_->drawText(L"WORKSPACE", r.x + pad, y, r.w - pad, rowH, kSidebarHdr,
                         true);
     y += rowH + 2.0f;
@@ -60,9 +69,8 @@ void Window::drawLeftSidebar(const Rect& r) {
 
         if (repo.expanded) {
             for (int w = 0; w < static_cast<int>(repo.worktrees.size()); ++w) {
-                renderer_->drawText(L"- " + repo.worktrees[w].label,
-                                    r.x + pad + metrics_.cellW * 2.0f, y,
-                                    r.w - pad, rowH, kDim, false);
+                iconRow(IconKind::Branch, r.x + pad + metrics_.cellW * 2.0f, y,
+                        repo.worktrees[w].label, kDim, kAccent);
                 sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::Worktree, i, w, L"" });
                 y += rowH;
             }
@@ -76,8 +84,7 @@ void Window::drawLeftSidebar(const Rect& r) {
         y += rowH + 2.0f;
         for (int i = 0; i < static_cast<int>(sshHosts_.size()); ++i) {
             if (y > r.bottom()) break;
-            renderer_->drawText(L"@ " + sshHosts_[i], r.x + pad, y, r.w - pad,
-                                rowH, kText, false);
+            iconRow(IconKind::Globe, r.x + pad, y, sshHosts_[i], kText, kAccent);
             sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::SshHost, i, -1, L"" });
             y += rowH;
         }
@@ -90,8 +97,7 @@ void Window::drawLeftSidebar(const Rect& r) {
         y += rowH + 2.0f;
         for (int i = 0; i < static_cast<int>(agents_.size()); ++i) {
             if (y > r.bottom()) break;
-            renderer_->drawText(L"* " + agents_[i].name, r.x + pad, y, r.w - pad,
-                                rowH, kText, false);
+            iconRow(IconKind::Spark, r.x + pad, y, agents_[i].name, kText, kAccent);
             sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::Agent, i, -1, L"" });
             y += rowH;
         }
@@ -114,17 +120,23 @@ void Window::drawFilesPanel(const Rect& r) {
     renderer_->drawText(header, r.x + pad, y, r.w - pad, rowH, kSidebarHdr, true);
     y += rowH + 2.0f;
 
+    const float isz = metrics_.cellH * 0.78f;
+    auto iconRow = [&](IconKind k, const std::wstring& txt, const Color& tc,
+                       const Color& ic) {
+        renderer_->drawIcon(k, r.x + pad, y + (rowH - isz) * 0.5f, isz, ic);
+        const float tx = r.x + pad + isz + 5.0f;
+        renderer_->drawText(txt, tx, y, r.x + r.w - tx - pad, rowH, tc, false);
+    };
+
     if (!browsePath_.empty()) {
-        renderer_->drawText(L".. ", r.x + pad, y, r.w - pad, rowH, kDim, false);
+        iconRow(IconKind::Up, L"..", kDim, kDim);
         sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::FileUp, -1, -1, L"" });
         y += rowH;
     }
     for (const FileEntry& e : fileEntries_) {
         if (y > r.bottom()) break;
-        const std::wstring text =
-            (e.isDir ? L"> " : L"  ") + e.name + (e.isDir ? L"/" : L"");
-        renderer_->drawText(text, r.x + pad, y, r.w - pad, rowH,
-                            e.isDir ? kText : kDim, false);
+        iconRow(e.isDir ? IconKind::Folder : IconKind::File, e.name,
+                e.isDir ? kText : kDim, e.isDir ? Color{ 220, 190, 110 } : kDim);
         sidebarRows_.push_back(
             { { r.x, y, r.w, rowH },
               e.isDir ? RowKind::FileDir : RowKind::FileEntry, -1, -1, e.path });
@@ -189,6 +201,25 @@ void Window::drawTabBar(const Rect& r) {
     plusRect_ = { x, r.y, plusW, r.h };
     renderer_->drawText(L"+", x + metrics_.cellW, r.y + 5.0f, plusW,
                         metrics_.cellH, kDim, true);
+
+    // ---- top-right quick-access toolbar (liney.dev style) ------------------
+    toolButtons_.clear();
+    const float bw = r.h;                       // square buttons, tab-bar tall
+    const float isz = bw * 0.5f;                // icon size within a button
+    const ToolAction order[] = { ToolAction::KeepAwake, ToolAction::Settings,
+                                 ToolAction::Update };
+    float bx = r.x + r.w - bw * 3.0f;
+    for (ToolAction a : order) {
+        const bool on = (a == ToolAction::KeepAwake && keepAwake_);
+        if (on) renderer_->fillRect(bx, r.y, bw, r.h, kTabActiveBg);
+        IconKind icon = a == ToolAction::KeepAwake ? IconKind::Power
+                      : a == ToolAction::Settings  ? IconKind::Settings
+                                                   : IconKind::Download;
+        renderer_->drawIcon(icon, bx + (bw - isz) * 0.5f, r.y + (r.h - isz) * 0.5f,
+                            isz, on ? kAccent : kDim);
+        toolButtons_.push_back({ { bx, r.y, bw, r.h }, a });
+        bx += bw;
+    }
 }
 
 void Window::drawPanes(const Rect& r) {

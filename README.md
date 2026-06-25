@@ -1,56 +1,85 @@
+<div align="center">
+
+<img src="res/liney-icon.png" width="116" alt="liney-win logo" />
+
 # liney-win
+
+**A terminal workspace for Windows** — keep your repositories, worktrees, splits,
+and tabs in a single window.
+
+A Windows take on macOS [liney](https://github.com/everettjf/liney). Self-built
+terminal core, fully self-drawn Win32 / Direct2D — **needs only MSVC, zero runtime
+dependencies.**
+
+[![release](https://img.shields.io/github/v/release/everettjf/liney-win?color=22c55e&label=release)](https://github.com/everettjf/liney-win/releases)
+[![downloads](https://img.shields.io/github/downloads/everettjf/liney-win/total?color=8b5cf6&label=downloads)](https://github.com/everettjf/liney-win/releases)
+![platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0078D6?logo=windows&logoColor=white)
+![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 **English** · [中文](README.zh-CN.md)
 
-A **terminal workspace for Windows** — keep multiple repositories / worktrees,
-splits, and tabs in a single window. A Windows take on macOS
-[liney](https://github.com/everettjf/liney). Self-built terminal core, fully
-self-drawn Win32 / Direct2D, **needs only MSVC — no runtime dependencies**.
+</div>
 
 ![liney-win screenshot](docs/screenshot.png)
 
 ---
 
+## Why liney-win?
+
+A normal terminal gives you tabs. **liney-win gives you a workspace.** Your git
+repos and their worktrees live in the sidebar, every project carries its own icon,
+the folder tree follows whatever pane you're typing in, and your whole split layout
+comes back exactly as you left it. It's the multi-repo, multi-pane cockpit that
+Windows never shipped — drawn from scratch, so it starts instantly and depends on
+nothing but the OS.
+
 ## ✨ Features
 
-**Terminal** (built-in xterm-subset core `VTEmulator`)
-- VT parsing: cursor moves / erase / scroll regions / insert-delete lines & chars,
-  SGR 16/256/truecolor + bold/italic/underline/inverse, UTF-8, wide chars
-- **Scrollback** + wheel / `Shift+PgUp` scrolling; long lines **reflow** on resize
-- **Alternate screen** — vim / less / `git log` and other full-screen apps work
-- **Selection + copy/paste** (`Ctrl+Shift+C/V`, bracketed paste)
-- **IME** (CJK input) with the candidate window at the cursor
-- Font zoom and a configurable **color theme**
-- **Unix tools**: when Git for Windows is installed, `ls` / `cat` / `grep` / `rm`
-  / `sed` / `awk` / … work in any shell (its `usr\bin` is added to PATH)
+**🖥️ Terminal** — a built-in xterm-subset core (`VTEmulator`)
+- Full VT parsing: cursor / erase / scroll regions / insert-delete, SGR
+  16/256/truecolor + bold/italic/underline/inverse, UTF-8, wide chars
+- **Scrollback** (wheel · `Shift+PgUp`) with **reflow** of long lines on resize
+- **Alternate screen** — vim / less / `git log` and other full-screen apps just work
+- **Selection + copy/paste**, **IME** (CJK) with the candidate window at the cursor
+- Font zoom, configurable **color theme**
+- **Unix tools** — with Git for Windows installed, `ls` / `cat` / `grep` / `rm` /
+  `sed` / `awk` / … work in any shell
 
-**Workspace** (liney's differentiator)
-- Multiple tabs + binary **splits** (drag dividers to resize, drag tabs to
-  reorder), `Alt+Arrows` to move focus
-- A left sidebar of **repositories** with **project icons** (config or repo-local),
-  expandable to **worktrees**; right-click to create / remove a worktree
-- Click a worktree / SSH host / agent to open a tab in its directory
-- A right-side **folder-tree** panel that follows the focused pane
-- **Layout persistence** — tabs + split tree + per-pane cwd restore next launch
+**🗂️ Workspace** — liney's differentiator
+- Tabs + binary **splits** (drag dividers to resize, drag tabs to reorder),
+  `Alt+Arrows` to move focus
+- A **repository** sidebar with **per-project icons**, expandable to **worktrees**;
+  right-click to create / remove a worktree
+- A right-side **folder tree** that follows the focused pane
+- **SSH** hosts and **agent** sessions, each with its own icon, one click to open
+- **Layout persistence** — tabs + split tree + per-pane cwd restored next launch
 
-**Sessions & integrations**
-- Local shells (cmd / PowerShell / pwsh / wsl…), **SSH**, **agent** sessions
-  (tmux via `wsl tmux`)
-- **Notifications**: a `liney notify` CLI + OSC `9` / `777` → Windows tray balloons
-- **Git**: `Ctrl+Shift+L/G` opens `git log` / `git diff` in a new tab
-- **Lifecycle hooks**: run a command on session start/exit and app exit
-- **Auto-update**: `Ctrl+Shift+U` checks GitHub releases and installs the new build
+**⚡ Built-in tooling**
+- A top-right **quick-access toolbar**: keep-awake · settings · check-for-updates
+- **Keep awake** (`Ctrl+Shift+K`) — block system/display sleep for long-running jobs
+- **Git**: `Ctrl+Shift+L/G` open `git log` / `git diff` in a new tab
+- **Notifications**: a `liney notify` CLI + OSC `9`/`777` → Windows tray balloons
+- **Lifecycle hooks** on session start/exit and app exit
+- **Auto-update** from GitHub releases (`Ctrl+Shift+U`)
 
----
+## 📸 Screenshots
+
+| Workspace + sidebar | Split panes |
+|---|---|
+| ![workspace](docs/screenshot.png) | ![splits](docs/screenshot-splits.png) |
 
 ## 📦 Install
 
-**Download** (recommended): from [Releases](https://github.com/everettjf/liney-win/releases)
-- `liney-win-setup.exe` — installer (per-user, no admin; Start Menu + uninstall)
-- `liney-win-portable.zip` — portable, unzip and run `liney_win.exe`
+**Download** — from the [Releases](https://github.com/everettjf/liney-win/releases) page:
 
-**Build from source** (Windows 10 1809+/11, Visual Studio 2022 Desktop C++,
-CMake ≥ 3.20; VS 2022 bundles CMake/Ninja):
+| File | Description |
+|---|---|
+| `liney-win-setup.exe` | Installer — per-user, no admin, Start Menu + uninstall |
+| `liney-win-portable.zip` | Portable — unzip and run `liney_win.exe` |
+
+**Build from source** — Windows 10 1809+/11, Visual Studio 2022 Desktop C++,
+CMake ≥ 3.20 (VS 2022 bundles CMake/Ninja):
 
 ```powershell
 # in the "x64 Native Tools Command Prompt for VS 2022"
@@ -59,36 +88,31 @@ cmake --build build
 .\build\liney_win.exe
 ```
 
-> Optional: `-DLINEY_WITH_LIBGHOSTTY=ON` uses
+> Optional: `-DLINEY_WITH_LIBGHOSTTY=ON` swaps in
 > [libghostty-vt](https://github.com/ghostty-org/ghostty) as the terminal core
-> (needs Zig); the default built-in `VTEmulator` needs nothing extra.
-
----
+> (needs Zig). The default built-in `VTEmulator` needs nothing extra.
 
 ## ⌨️ Shortcuts
 
 | Key | Action |
 |---|---|
 | `Ctrl+Shift+T` / `Ctrl+Shift+W` | New tab / close current pane |
-| `Ctrl+Shift+E` / `Ctrl+Shift+O` | Split left/right · top/bottom |
+| `Ctrl+Shift+E` / `Ctrl+Shift+O` | Split left-right / top-bottom |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous tab |
 | `Alt+Arrows` | Move focus between split panes |
 | `Ctrl+Shift+B` / `Ctrl+Shift+F` | Toggle the left sidebar / right files panel |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | Copy selection / paste |
 | `Ctrl++` / `Ctrl+-` / `Ctrl+0` | Zoom font in / out / reset |
 | `Ctrl+Shift+L` / `Ctrl+Shift+G` | `git log` / `git diff` for the current repo |
+| `Ctrl+Shift+K` | Keep awake (block sleep) on / off |
 | `Ctrl+Shift+U` | Check for & install updates |
-| Wheel · `Shift+PgUp/PgDn/Home/End` | Scroll through scrollback history |
-| Mouse drag | Select text in a pane; drag dividers to resize; drag tabs to reorder |
-| Mouse left / right | Switch tab · focus pane · expand repo · open worktree/SSH/agent / right-click to manage worktrees |
-
----
+| Wheel · `Shift+PgUp/PgDn/Home/End` | Scroll through scrollback |
+| Mouse | Switch tab · focus pane · expand repo · open worktree/SSH/agent · drag to select / resize / reorder · right-click a worktree to manage |
 
 ## ⚙️ Configuration
 
-The first run writes a default config to `%USERPROFILE%\.liney\config.json`
-(mirroring macOS liney's `~/.liney/`; full sample in
-[`config.example.json`](./config.example.json)):
+The first run writes `%USERPROFILE%\.liney\config.json` (mirroring macOS liney's
+`~/.liney/`; full sample in [`config.example.json`](config.example.json)):
 
 ```json
 {
@@ -105,74 +129,68 @@ The first run writes a default config to `%USERPROFILE%\.liney\config.json`
 }
 ```
 
-- `shell` — shell for new tabs (`powershell.exe` / `pwsh.exe` / `wsl.exe`; `wsl tmux` for tmux)
-- `workspaceRoot` — directory scanned for repos; empty = the launch directory's parent
-- `unixTools` — append Git's `usr\bin` to PATH so `ls`/`cat`/`grep`/… work
-- `sshHosts` / `agents` — entries in the sidebar SSH / AGENTS sections
-- `projectIcons` — per-repo sidebar icons (else a repo-local `icon.png`/`logo.png`)
-- `theme` — terminal fg/bg + the 16-color ANSI palette
-- `hooks` — commands run on session start/exit and app exit
+| Key | Meaning |
+|---|---|
+| `shell` | Shell for new tabs (`powershell.exe` / `pwsh.exe` / `wsl.exe`; `wsl tmux` for tmux) |
+| `workspaceRoot` | Directory scanned for repos; empty = the launch directory's parent |
+| `unixTools` | Append Git's `usr\bin` to PATH so `ls`/`cat`/`grep`/… work |
+| `sshHosts` / `agents` | Entries in the sidebar SSH / AGENTS sections |
+| `projectIcons` | Per-repo sidebar icons (else a repo-local `icon.png`/`logo.png`) |
+| `theme` | Terminal fg/bg + the 16-color ANSI palette |
+| `hooks` | Commands run on session start/exit and app exit |
 
 The window layout is saved to `%USERPROFILE%\.liney\layout.json` and restored on
 the next launch.
 
----
-
 ## 🔔 `liney` CLI & notifications
 
-A companion CLI `liney.exe` ships with the app; run it inside a pane to drive the
+A companion CLI `liney.exe` ships with the app; run it in a pane to drive the
 terminal over OSC (mirrors macOS liney's `liney notify`):
 
 ```
 liney notify <body>            # Windows tray notification
 liney notify <title> <body>
-liney title  <text>           # set the tab/window title
+liney title  <text>            # set the tab/window title
 ```
 
-Put `liney.exe` on PATH and `liney notify "done"` notifies you when a long task
-finishes. The terminal also parses common OSC: `0/2` (title), `7` (cwd), `9` and
+Put `liney.exe` on PATH and `liney notify "done"` pings you when a long task
+finishes. The terminal also parses OSC `0/2` (title), `7` (cwd), `9` and
 `777;notify` (notifications).
-
----
-
-## 📦 Packaging
-
-Scripts in `tools/`, manifests in `packaging/`:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File tools\make-installer.ps1   # NSIS setup (winget install NSIS.NSIS)
-powershell -ExecutionPolicy Bypass -File tools\make-portable.ps1    # portable zip
-powershell -ExecutionPolicy Bypass -File tools\make-msix.ps1 -SelfSign  # MSIX (Windows SDK)
-```
-
-The app icon (`res/liney.ico`, generated by `tools/gen-icon.ps1` from liney's
-own icon) is embedded via `res/resource.rc`. WinGet manifest templates are in
-`packaging/winget/`.
-
----
 
 ## 🏗️ Architecture
 
 ```
 keyboard/mouse → Window (workspace orchestration) → routes to the focused pane
-                 ↑ composes sidebar / tab strip / split tree / files panel
+                 ↑ composes sidebar · tab strip · split tree · files panel · toolbar
 TerminalSession = Terminal + ConPty + Grid
    ConPty      — Windows pseudoconsole (spawn shell, read/write, resize)
    Terminal    — built-in VTEmulator (or libghostty-vt) parses PTY bytes → Grid
    D2DRenderer — Direct2D/DirectWrite draws the Grid + chrome to the window
 ```
 
-Source map: [`src/`](./src). Design / research notes: [`RESEARCH.md`](./RESEARCH.md),
-[`ALT_PLAN_SELFBUILT.md`](./ALT_PLAN_SELFBUILT.md),
-[`TERMINAL_LANDSCAPE.md`](./TERMINAL_LANDSCAPE.md); rendering plan:
-[`RENDERING.md`](./RENDERING.md).
+Source map in [`src/`](src). Design / research notes: [`RESEARCH.md`](RESEARCH.md),
+[`ALT_PLAN_SELFBUILT.md`](ALT_PLAN_SELFBUILT.md),
+[`TERMINAL_LANDSCAPE.md`](TERMINAL_LANDSCAPE.md); rendering plan:
+[`RENDERING.md`](RENDERING.md).
 
 ## 🗺️ Roadmap
 
-Done and remaining items (with a macOS-liney comparison) are in
-[`ROADMAP.md`](./ROADMAP.md). Still pending: mouse reporting (ConPTY-limited),
+Done & remaining items (with a macOS-liney comparison) live in
+[`ROADMAP.md`](ROADMAP.md). Still pending: mouse reporting (ConPTY-limited),
 SFTP remote file tree, a glyph-atlas renderer, native tmux control-mode.
 
-## License
+## 🤝 Contributing
 
-[Apache-2.0](./LICENSE) (same as liney).
+Issues and PRs are welcome. Build with the steps above; the codebase is plain
+C++20 + Win32 + Direct2D with no third-party runtime deps, and the source is split
+into small, cohesive files (see [`src/`](src)). Please keep new code matched to the
+surrounding style.
+
+## 🙏 Acknowledgements
+
+- [liney](https://github.com/everettjf/liney) by [@everettjf](https://github.com/everettjf) — the macOS original this follows, and the source of the app icon.
+- [Ghostty](https://github.com/ghostty-org/ghostty) — optional `libghostty-vt` terminal core.
+
+## 📄 License
+
+[Apache-2.0](LICENSE) — same as liney.

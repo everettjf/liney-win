@@ -3,6 +3,7 @@
   "fontFamily": "Cascadia Mono",
   "fontSize": 16,
   "workspaceRoot": "",
+  "unixTools": true,
 
   "hooks": {
     "sessionStart": "",

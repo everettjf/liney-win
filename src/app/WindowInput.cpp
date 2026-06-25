@@ -124,6 +124,7 @@ bool Window::onKeyDown(WPARAM vk) {
             case 'O': splitActive(SplitDir::Rows); swallowNextChar_ = true; return true;  // stacked
             case 'B': sidebarVisible_ = !sidebarVisible_; swallowNextChar_ = true; return true;
             case 'F': filesPanelVisible_ = !filesPanelVisible_; swallowNextChar_ = true; return true;
+            case 'K': toggleKeepAwake(); swallowNextChar_ = true; return true;
             case 'U': checkForUpdates(); swallowNextChar_ = true; return true;
             case 'C': copySelection(); swallowNextChar_ = true; return true;
             case 'V': paste(); swallowNextChar_ = true; return true;

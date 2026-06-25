@@ -357,5 +357,23 @@ void Window::zoomFont(int step) {
     applyFont();
 }
 
+void Window::toggleKeepAwake() {
+    keepAwake_ = !keepAwake_;
+    // ES_CONTINUOUS persists the request; SYSTEM/DISPLAY keep both awake.
+    SetThreadExecutionState(keepAwake_
+        ? (ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED)
+        : ES_CONTINUOUS);
+    showBalloon(L"liney-win",
+                keepAwake_ ? L"Keep awake: on — sleep is blocked"
+                           : L"Keep awake: off");
+}
+
+void Window::openConfigFile() {
+    const std::wstring dir = configDir();
+    if (dir.empty()) return;
+    ShellExecuteW(hwnd_, L"open", (dir + L"\\config.json").c_str(), nullptr,
+                  nullptr, SW_SHOWNORMAL);
+}
+
 
 } // namespace liney

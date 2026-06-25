@@ -61,6 +61,10 @@ private:
     void applyFont();        // push current family/size to the renderer + metrics
     void zoomFont(int step); // step font size by `step` points (0 == reset)
 
+    // Top-right toolbar + quick actions.
+    void toggleKeepAwake();  // prevent/allow system+display sleep (caffeine)
+    void openConfigFile();   // open %USERPROFILE%\.liney\config.json in the editor
+
     // Layout persistence (%USERPROFILE%\.liney\layout.json).
     void saveLayout() const;
     bool restoreLayout();    // returns true if at least one tab was restored
@@ -112,6 +116,7 @@ private:
     size_t activeTab_ = 0;
     bool sidebarVisible_ = true;      // left WORKSPACE/SSH/AGENTS panel
     bool filesPanelVisible_ = true;   // right FILES (folder tree) panel
+    bool keepAwake_ = false;          // SetThreadExecutionState keep-awake state
 
     std::wstring shell_ = L"cmd.exe";
     std::wstring fontFamily_ = L"Cascadia Mono";
@@ -150,6 +155,11 @@ private:
     std::vector<Rect> tabRects_;
     Rect plusRect_{};
     int tabDragIndex_ = -1;  // tab being dragged in the strip (-1 = none)
+
+    // Top-right toolbar buttons (rebuilt each frame in drawTabBar).
+    enum class ToolAction { KeepAwake, Settings, Update };
+    struct ToolButton { Rect rect; ToolAction action; };
+    std::vector<ToolButton> toolButtons_;
 
     // FILES panel: a navigable listing that follows the focused pane's cwd.
     void refreshFileList();   // re-list browsePath_ when it changes

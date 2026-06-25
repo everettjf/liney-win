@@ -37,6 +37,8 @@ public:
                   float rowH, const Color& c, bool bold) override;
     bool drawImage(const std::wstring& path, float x, float y, float w,
                    float h) override;
+    void drawIcon(IconKind kind, float x, float y, float size,
+                  const Color& c) override;
     void drawGrid(const Grid& grid, float originX, float originY) override;
 
 private:

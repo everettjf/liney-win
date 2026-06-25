@@ -6,6 +6,12 @@
 
 namespace liney {
 
+// Small vector icons drawn from primitives (no image assets) — used for sidebar
+// item glyphs and the top-right toolbar.
+enum class IconKind {
+    Folder, File, Branch, Globe, Spark, Power, Settings, Download, Up
+};
+
 // Renderer abstraction.
 //
 // The MVP ships a Direct2D/DirectWrite implementation (D2DRenderer). A future
@@ -48,6 +54,10 @@ public:
     // Returns false if the image couldn't be loaded.
     virtual bool drawImage(const std::wstring& path, float x, float y, float w,
                            float h) = 0;
+
+    // Draw a built-in vector icon inside the [x, y, x+size, y+size] box.
+    virtual void drawIcon(IconKind kind, float x, float y, float size,
+                          const Color& c) = 0;
 
     // Draw a terminal grid (cells + cursor) with its top-left at (originX,
     // originY), clipped to the grid's pixel extent.
