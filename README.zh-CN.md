@@ -184,7 +184,7 @@ TerminalSession = Terminal + ConPty + Grid
 ## 🙏 致谢
 
 - [liney](https://github.com/everettjf/liney) by [@everettjf](https://github.com/everettjf) —— 本项目对标的 macOS 原版,也是应用图标的来源。
-- [Ghostty](https://github.com/ghostty-org/ghostty) —— 可选的 `libghostty-vt` 终端核心。
+- [Ghostty](https://github.com/ghostty-org/ghostty) —— 提供 `libghostty-vt`,liney-win 的终端核心(经 Zig 从 Ghostty 构建)。
 
 ## 📄 许可
 

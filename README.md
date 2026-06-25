@@ -196,7 +196,7 @@ surrounding style.
 ## 🙏 Acknowledgements
 
 - [liney](https://github.com/everettjf/liney) by [@everettjf](https://github.com/everettjf) — the macOS original this follows, and the source of the app icon.
-- [Ghostty](https://github.com/ghostty-org/ghostty) — optional `libghostty-vt` terminal core.
+- [Ghostty](https://github.com/ghostty-org/ghostty) — provides `libghostty-vt`, liney-win's terminal core (built from Ghostty via Zig).
 
 ## 📄 License
 
