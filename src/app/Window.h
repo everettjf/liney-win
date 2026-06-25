@@ -45,6 +45,7 @@ private:
     TerminalSession* activeSession() const;
     void cellsForRect(const Rect& r, int& cols, int& rows) const;
     void newTab(const std::wstring& cwd);
+    void newTabShell(const std::wstring& shellCmd, const std::wstring& cwd);
     void splitActive(SplitDir dir);
     void runStartHook(TerminalSession* s);  // send sessionStart hook to a shell
     void closeActivePane();
@@ -101,6 +102,7 @@ private:
     float fontSize_ = 16.0f;
     float defaultFontSize_ = 16.0f;
     std::wstring sessionStartHook_; // command sent to each newly started shell
+    std::vector<std::wstring> sshHosts_;
     std::wstring lastTitle_;        // avoid redundant SetWindowText calls
     NOTIFYICONDATAW nid_{};
     bool trayAdded_ = false;
@@ -108,7 +110,7 @@ private:
     bool swallowNextChar_ = false;  // drop the WM_CHAR following a shortcut
 
     // Hit-test rects rebuilt each frame.
-    enum class RowKind { RepoHeader, Worktree, FileUp, FileDir, FileEntry };
+    enum class RowKind { RepoHeader, Worktree, FileUp, FileDir, FileEntry, SshHost };
     struct SidebarRow {
         Rect rect;
         RowKind kind = RowKind::RepoHeader;

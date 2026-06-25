@@ -55,6 +55,9 @@ std::string defaultJson(const Config& c) {
     Json hooks = Json::object();
     hooks.set("sessionStart", Json::str(wideToUtf8(c.sessionStartHook)));
     j.set("hooks", std::move(hooks));
+    Json hosts = Json::array();
+    for (const auto& h : c.sshHosts) hosts.push(Json::str(wideToUtf8(h)));
+    j.set("sshHosts", std::move(hosts));
     return j.dump(2);
 }
 
@@ -95,6 +98,11 @@ Config loadConfig() {
     // hooks.sessionStart: command sent to each new shell.
     cfg.sessionStartHook =
         utf8ToWide(j["hooks"]["sessionStart"].asString());
+    // sshHosts: ["user@host", ...]
+    if (j["sshHosts"].isArray())
+        for (const Json& host : j["sshHosts"].items())
+            if (host.type() == Json::Type::String)
+                cfg.sshHosts.push_back(utf8ToWide(host.asString()));
 
     if (cfg.shell.empty()) cfg.shell = L"cmd.exe";
     if (cfg.fontFamily.empty()) cfg.fontFamily = L"Cascadia Mono";

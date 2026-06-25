@@ -18,6 +18,7 @@ std::wstring basename(const std::wstring& path) {
 bool TerminalSession::start(const std::wstring& shell, const std::wstring& cwd,
                             int cols, int rows) {
     cwd_ = cwd;
+    shell_ = shell;
     title_ = basename(cwd);
     cols_ = cols;
     rows_ = rows;

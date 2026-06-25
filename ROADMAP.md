@@ -79,10 +79,10 @@ SSH / agent / tmux / 打包更新 体量大、相对独立,排在后面;diff/his
 - ✅ **生命周期 hooks**:`hooks.sessionStart`(config)→ 新 shell 执行命令
 - ⬜ app/session exit hooks、**Git diff / history** 视图:留到后续
 
-### P5 — 远程与高级会话(体量大,独立推进)
-- **SSH 会话**(起 `ssh` ConPTY 即可基本可用)+ 远程文件树(SFTP)
-- **agent 会话**、**tmux 集成**
-- **glyph atlas + D3D11** 渲染升级(性能/连字)
+### P5 — 远程与高级会话(体量大,独立推进)🟡 进行中
+- ✅ **SSH 会话**:config `sshHosts` → 侧边栏 SSH 区,点击在新标签起 `ssh <host>`(ConPTY,Windows 自带 OpenSSH);会话 shell 命令随布局持久化(SSH 标签可恢复)。确定性验证:点击后 liney 子进程出现 `ssh test@192.0.2.1`
+- ⬜ 远程文件树(SFTP)、**agent 会话**、**tmux 集成**
+- ⬜ **glyph atlas + D3D11** 渲染升级(性能/连字)
 
 ### P6 — 分发
 - **MSIX 打包** + 应用标识/图标;**WinGet** 清单;自动更新(Squirrel/MSIX)

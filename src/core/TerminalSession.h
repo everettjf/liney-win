@@ -44,6 +44,7 @@ public:
     bool exited() const { return pty_.hasExited(); }
     const std::wstring& cwd() const { return cwd_; }
     const std::wstring& title() const { return title_; }
+    const std::wstring& shellCommand() const { return shell_; }
 
     // Pull OSC-driven updates: refresh title/cwd and append any notifications.
     // Called every frame for every session (so background panes notify too).
@@ -61,6 +62,7 @@ private:
     Grid grid_;
     std::wstring cwd_;
     std::wstring title_;
+    std::wstring shell_;
     int cols_ = 0, rows_ = 0;
     bool active_ = false;
 };

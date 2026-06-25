@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace liney {
 
@@ -12,6 +13,7 @@ struct Config {
     float fontSize = 16.0f;
     std::wstring workspaceRoot;             // empty => parent of launch directory
     std::wstring sessionStartHook;          // command run in each new shell
+    std::vector<std::wstring> sshHosts;     // e.g. "user@host"; sidebar SSH list
 };
 
 // %USERPROFILE%\.liney (created if missing). Empty if USERPROFILE is unset.

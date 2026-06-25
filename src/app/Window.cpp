@@ -68,6 +68,8 @@ Json paneToJson(const Pane* p) {
     } else {
         j.set("type", Json::str("leaf"));
         j.set("cwd", Json::str(wideToUtf8(p->session ? p->session->cwd() : L"")));
+        j.set("shell",
+              Json::str(wideToUtf8(p->session ? p->session->shellCommand() : L"")));
     }
     return j;
 }
@@ -104,6 +106,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     fontSize_ = cfg.fontSize;
     defaultFontSize_ = cfg.fontSize;
     sessionStartHook_ = cfg.sessionStartHook;
+    sshHosts_ = cfg.sshHosts;
     applyFont();
 
     // Workspace root: config override, else the parent of the launch directory
@@ -254,6 +257,7 @@ void Window::drawSidebar(const Rect& r) {
     if (repos.empty()) {
         renderer_->drawText(L"(no git repos found)", r.x + pad, y, r.w - pad,
                             rowH, kDim, false);
+        y += rowH;
     }
     for (int i = 0; i < static_cast<int>(repos.size()); ++i) {
         if (y > r.bottom()) break;
@@ -302,6 +306,20 @@ void Window::drawSidebar(const Rect& r) {
             { { r.x, y, r.w, rowH },
               e.isDir ? RowKind::FileDir : RowKind::FileEntry, -1, -1, e.path });
         y += rowH;
+    }
+
+    // ---- SSH: configured hosts; click to open `ssh <host>` in a new tab -----
+    if (!sshHosts_.empty()) {
+        y += rowH * 0.5f;
+        renderer_->drawText(L"SSH", r.x + pad, y, r.w - pad, rowH, kSidebarHdr, true);
+        y += rowH + 2.0f;
+        for (int i = 0; i < static_cast<int>(sshHosts_.size()); ++i) {
+            if (y > r.bottom()) break;
+            renderer_->drawText(L"@ " + sshHosts_[i], r.x + pad, y, r.w - pad,
+                                rowH, kText, false);
+            sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::SshHost, i, -1, L"" });
+            y += rowH;
+        }
     }
 }
 
@@ -418,7 +436,9 @@ void Window::cellsForRect(const Rect& r, int& cols, int& rows) const {
     if (rows < 1) rows = 1;
 }
 
-void Window::newTab(const std::wstring& cwd) {
+void Window::newTab(const std::wstring& cwd) { newTabShell(shell_, cwd); }
+
+void Window::newTabShell(const std::wstring& shellCmd, const std::wstring& cwd) {
     clearSelection();
     Rect sidebar, tabBar, panes;
     regions(sidebar, tabBar, panes);
@@ -426,7 +446,7 @@ void Window::newTab(const std::wstring& cwd) {
     cellsForRect(panes, cols, rows);
 
     auto session = std::make_unique<TerminalSession>();
-    if (!session->start(shell_, cwd, cols, rows)) return;
+    if (!session->start(shellCmd, cwd, cols, rows)) return;
     runStartHook(session.get());
     tabs_.push_back(std::make_unique<Tab>(std::move(session)));
     activeTab_ = tabs_.size() - 1;
@@ -574,10 +594,12 @@ std::unique_ptr<Pane> Window::paneFromJson(const Json& j, int cols, int rows) {
         if (b) return b;
         return nullptr;
     }
-    // Leaf: start a session in the saved cwd.
+    // Leaf: start a session in the saved cwd with its saved shell command.
     const std::wstring cwd = utf8ToWide(j["cwd"].asString());
+    std::wstring shell = utf8ToWide(j["shell"].asString());
+    if (shell.empty()) shell = shell_;
     auto s = std::make_unique<TerminalSession>();
-    if (!s->start(shell_, cwd, cols, rows)) return nullptr;
+    if (!s->start(shell, cwd, cols, rows)) return nullptr;
     auto p = std::make_unique<Pane>();
     p->session = std::move(s);
     return p;
@@ -803,6 +825,10 @@ void Window::onMouseDown(int xi, int yi) {
                 sendUtf16(ins.c_str(), ins.size());
                 break;
             }
+            case RowKind::SshHost:
+                if (row.repo >= 0 && row.repo < static_cast<int>(sshHosts_.size()))
+                    newTabShell(L"ssh " + sshHosts_[row.repo], L"");
+                break;
             }
             return;
         }
