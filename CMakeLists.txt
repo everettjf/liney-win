@@ -25,6 +25,10 @@ add_executable(liney_win WIN32
   res/resource.rc
   src/main.cpp
   src/app/Window.cpp
+  src/app/WindowRender.cpp
+  src/app/WindowInput.cpp
+  src/app/WindowMouse.cpp
+  src/app/WindowSession.cpp
   src/app/Tab.cpp
   src/core/TerminalSession.cpp
   src/core/Config.cpp
@@ -32,6 +36,7 @@ add_executable(liney_win WIN32
   src/pty/ConPty.cpp
   src/vt/Terminal.cpp
   src/vt/VTEmulator.cpp
+  src/vt/VTParser.cpp
   src/workspace/Workspace.cpp
   src/util/Process.cpp
   src/util/Json.cpp
