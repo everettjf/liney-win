@@ -117,6 +117,19 @@ Config loadConfig() {
         for (const Json& host : j["sshHosts"].items())
             if (host.type() == Json::Type::String)
                 cfg.sshHosts.push_back(utf8ToWide(host.asString()));
+    // agents: [{ name, command, cwd }]
+    if (j["agents"].isArray())
+        for (const Json& a : j["agents"].items())
+            if (a.isObject()) {
+                AgentDef d;
+                d.name = utf8ToWide(a["name"].asString());
+                d.command = utf8ToWide(a["command"].asString());
+                d.cwd = utf8ToWide(a["cwd"].asString());
+                if (!d.command.empty()) {
+                    if (d.name.empty()) d.name = d.command;
+                    cfg.agents.push_back(d);
+                }
+            }
     // theme: { background, foreground, palette:[16] } (hex strings)
     const Json& t = j["theme"];
     if (t.isObject()) {

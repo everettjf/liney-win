@@ -9,6 +9,7 @@
 
 #include "app/Layout.h"
 #include "app/Tab.h"
+#include "core/Config.h"
 #include "render/IRenderer.h"
 #include "workspace/Workspace.h"
 
@@ -103,6 +104,7 @@ private:
     float defaultFontSize_ = 16.0f;
     std::wstring sessionStartHook_; // command sent to each newly started shell
     std::vector<std::wstring> sshHosts_;
+    std::vector<AgentDef> agents_;
     Theme theme_;
     std::wstring lastTitle_;        // avoid redundant SetWindowText calls
     NOTIFYICONDATAW nid_{};
@@ -111,7 +113,7 @@ private:
     bool swallowNextChar_ = false;  // drop the WM_CHAR following a shortcut
 
     // Hit-test rects rebuilt each frame.
-    enum class RowKind { RepoHeader, Worktree, FileUp, FileDir, FileEntry, SshHost };
+    enum class RowKind { RepoHeader, Worktree, FileUp, FileDir, FileEntry, SshHost, Agent };
     struct SidebarRow {
         Rect rect;
         RowKind kind = RowKind::RepoHeader;
@@ -122,6 +124,7 @@ private:
     std::vector<SidebarRow> sidebarRows_;
     std::vector<Rect> tabRects_;
     Rect plusRect_{};
+    int tabDragIndex_ = -1;  // tab being dragged in the strip (-1 = none)
 
     // FILES panel: a navigable listing that follows the focused pane's cwd.
     void refreshFileList();   // re-list browsePath_ when it changes

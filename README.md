@@ -47,12 +47,13 @@ Windows 版终端工作区(对标 macOS 的 [liney](https://github.com/everettjf
 | `Ctrl+Shift+O` | 上下分屏(水平分隔) |
 | `Ctrl+Shift+B` | 折叠/展开侧边栏 |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | 下一个 / 上一个标签 |
+| `Ctrl+Shift+L` / `Ctrl+Shift+G` | 当前 pane 仓库的 `git log` / `git diff`(新标签,pager 视图) |
 | `Alt+方向键` | 在分屏 pane 间移动焦点 |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | 复制选区 / 粘贴(支持 bracketed paste) |
 | `Ctrl++` / `Ctrl+-` / `Ctrl+0` | 放大 / 缩小 / 重置字号 |
 | 滚轮 / `Shift+PgUp·PgDn·Home·End` | 在 scrollback 历史中滚动(输入时自动回到底部) |
-| 鼠标拖选 | 在 pane 内选择文本;拖动分屏分隔线调整 pane 比例 |
-| 鼠标左键 | 点标签切换、点 `+` 新标签、点 pane 聚焦、点仓库展开、点 worktree 在其目录开新标签 |
+| 鼠标拖选 | 在 pane 内选择文本;拖动分屏分隔线调整 pane 比例;拖动标签重排 |
+| 鼠标左键 | 点标签切换、点 `+` 新标签、点 pane 聚焦、点仓库展开、点 worktree/SSH/AGENT 开新标签 |
 | 鼠标右键 | 右键仓库 → 新建 worktree(输入分支名);右键 worktree → 删除(确认) |
 
 ## 技术选型(见调研文档)
@@ -101,6 +102,7 @@ cmake --build build
 - `workspaceRoot`:侧边栏扫描的根目录;留空则用启动目录的父目录
 - `hooks.sessionStart`:每个新 shell 启动后自动执行的命令(如激活虚拟环境)
 - `sshHosts`:`["user@host", ...]` —— 出现在侧边栏 SSH 区,点击在新标签起 `ssh <host>`(用 Windows 自带 OpenSSH;会话随布局持久化)
+- `agents`:`[{ "name", "command", "cwd" }]` —— 出现在侧边栏 AGENTS 区,点击在新标签起该命令(对标 liney 的 agent 会话)
 - `theme`:`{ "background": "#102840", "foreground": "#e8e8d0", "palette": ["#..." ×16] }` —— 终端前景/背景与 16 色 ANSI 调色板(缺省即内置配色)
 
 布局(标签 + 分屏树 + 各 pane 的 cwd)在关闭时写入 `%USERPROFILE%\.liney\layout.json`,下次启动自动恢复。

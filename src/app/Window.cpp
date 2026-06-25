@@ -107,6 +107,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     defaultFontSize_ = cfg.fontSize;
     sessionStartHook_ = cfg.sessionStartHook;
     sshHosts_ = cfg.sshHosts;
+    agents_ = cfg.agents;
     theme_ = cfg.theme;
     renderer_->setColors(theme_.background, theme_.background);
     applyFont();
@@ -320,6 +321,20 @@ void Window::drawSidebar(const Rect& r) {
             renderer_->drawText(L"@ " + sshHosts_[i], r.x + pad, y, r.w - pad,
                                 rowH, kText, false);
             sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::SshHost, i, -1, L"" });
+            y += rowH;
+        }
+    }
+
+    // ---- AGENTS: configured agent sessions; click to open in a new tab ------
+    if (!agents_.empty()) {
+        y += rowH * 0.5f;
+        renderer_->drawText(L"AGENTS", r.x + pad, y, r.w - pad, rowH, kSidebarHdr, true);
+        y += rowH + 2.0f;
+        for (int i = 0; i < static_cast<int>(agents_.size()); ++i) {
+            if (y > r.bottom()) break;
+            renderer_->drawText(L"* " + agents_[i].name, r.x + pad, y, r.w - pad,
+                                rowH, kText, false);
+            sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::Agent, i, -1, L"" });
             y += rowH;
         }
     }
@@ -738,6 +753,22 @@ bool Window::onKeyDown(WPARAM vk) {
             case 'B': sidebarVisible_ = !sidebarVisible_; swallowNextChar_ = true; return true;
             case 'C': copySelection(); swallowNextChar_ = true; return true;
             case 'V': paste(); swallowNextChar_ = true; return true;
+            case 'L':  // git history for the active pane's repo (pager view)
+                if (auto* s = activeSession()) {
+                    const std::wstring cwd = s->cwd();
+                    if (!cwd.empty())
+                        newTabShell(L"git -C \"" + cwd +
+                                        L"\" log --oneline --graph --decorate -300",
+                                    cwd);
+                }
+                swallowNextChar_ = true; return true;
+            case 'G':  // git diff for the active pane's repo (pager view)
+                if (auto* s = activeSession()) {
+                    const std::wstring cwd = s->cwd();
+                    if (!cwd.empty())
+                        newTabShell(L"git -C \"" + cwd + L"\" diff", cwd);
+                }
+                swallowNextChar_ = true; return true;
             default: break;
             }
         }
@@ -834,6 +865,10 @@ void Window::onMouseDown(int xi, int yi) {
                 if (row.repo >= 0 && row.repo < static_cast<int>(sshHosts_.size()))
                     newTabShell(L"ssh " + sshHosts_[row.repo], L"");
                 break;
+            case RowKind::Agent:
+                if (row.repo >= 0 && row.repo < static_cast<int>(agents_.size()))
+                    newTabShell(agents_[row.repo].command, agents_[row.repo].cwd);
+                break;
             }
             return;
         }
@@ -849,6 +884,8 @@ void Window::onMouseDown(int xi, int yi) {
             if (tabRects_[i].contains(x, y)) {
                 clearSelection();
                 activeTab_ = i;
+                tabDragIndex_ = static_cast<int>(i);  // start a potential reorder
+                SetCapture(hwnd_);
                 updateTitle();
                 return;
             }
@@ -921,6 +958,21 @@ void Window::onMouseDownRight(int xi, int yi) {
 }
 
 void Window::onMouseMove(int xi, int yi) {
+    if (tabDragIndex_ >= 0) {
+        const float x = static_cast<float>(xi), y = static_cast<float>(yi);
+        for (size_t i = 0; i < tabRects_.size(); ++i) {
+            if (static_cast<int>(i) == tabDragIndex_) continue;
+            if (!tabRects_[i].contains(x, y)) continue;
+            // Move the dragged tab to position i, keeping it active.
+            auto moved = std::move(tabs_[tabDragIndex_]);
+            tabs_.erase(tabs_.begin() + tabDragIndex_);
+            tabs_.insert(tabs_.begin() + i, std::move(moved));
+            tabDragIndex_ = static_cast<int>(i);
+            activeTab_ = i;
+            break;
+        }
+        return;
+    }
     if (dragDivider_) {
         Pane* s = dragDivider_;
         const float x = static_cast<float>(xi), y = static_cast<float>(yi);
@@ -941,6 +993,11 @@ void Window::onMouseMove(int xi, int yi) {
 }
 
 void Window::onMouseUp(int /*xi*/, int /*yi*/) {
+    if (tabDragIndex_ >= 0) {
+        tabDragIndex_ = -1;
+        ReleaseCapture();
+        return;
+    }
     if (dragDivider_) {
         dragDivider_ = nullptr;
         ReleaseCapture();
@@ -968,6 +1025,7 @@ void Window::clearSelection() {
     hasSelection_ = false;
     selPane_ = nullptr;
     dragDivider_ = nullptr;
+    tabDragIndex_ = -1;
 }
 
 void Window::applySelectionToGrid() {

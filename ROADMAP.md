@@ -73,16 +73,18 @@ SSH / agent / tmux / 打包更新 体量大、相对独立,排在后面;diff/his
 - ✅ **拖拽分隔条**调 pane 比例(命中分隔线即拖动改 ratio)
 - ✅ **worktree 操作**:右键仓库新建 worktree(InputBox 输入分支名,`git worktree add`)、右键 worktree 删除(确认,`git worktree remove`)——git 命令形态与 porcelain 解析已验证
 - ✅ **文件树**:侧边栏 FILES 面板跟随聚焦 pane 的 cwd,目录在前、文件在后;点目录导航、点文件把文件名插入到 pane(PrintWindow 截图确认:点击插入 LICENSE/RENDERING.md/TECH_PLAN.md)
-- ⬜ **标签拖拽**重排
+- ✅ **标签拖拽重排**:在标签栏拖动标签到新位置(reorder tabs_,活动标签跟随)
 
 ### P4 — 集成与通知 🟡 进行中
 - ✅ **`liney notify` CLI**(独立 `liney.exe`:`notify` / `title`)+ **OSC 0/2/7/9/777 解析** → 托盘气泡通知 + 实时标题(确定性验证:CLI 输出 OSC 字节正确;窗口标题随 OSC 实时变化;`sessionStart` hook 写出标记文件)
 - ✅ **生命周期 hooks**:`hooks.sessionStart`(config)→ 新 shell 执行命令
-- ⬜ app/session exit hooks、**Git diff / history** 视图:留到后续
+- ✅ **Git history / diff 视图**:`Ctrl+Shift+L` 在新标签开 `git log`(图形化历史,走 pager + alt 屏)、`Ctrl+Shift+G` 开 `git diff`
+- ⬜ app/session exit hooks:留到后续
 
 ### P5 — 远程与高级会话(体量大,独立推进)🟡 进行中
 - ✅ **SSH 会话**:config `sshHosts` → 侧边栏 SSH 区,点击在新标签起 `ssh <host>`(ConPTY,Windows 自带 OpenSSH);会话 shell 命令随布局持久化(SSH 标签可恢复)。确定性验证:点击后 liney 子进程出现 `ssh test@192.0.2.1`
-- ⬜ 远程文件树(SFTP)、**agent 会话**、**tmux 集成**
+- ✅ **agent 会话**:config `agents: [{name, command, cwd}]` → 侧边栏 AGENTS 区,点击在新标签起该命令(对标 liney 的 agent 会话)。确定性验证:点击后 liney 子进程出现配置的命令
+- ⬜ 远程文件树(SFTP)、**tmux 集成**
 - ⬜ **glyph atlas + D3D11** 渲染升级(性能/连字)
 
 ### P6 — 分发
