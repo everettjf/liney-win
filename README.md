@@ -48,6 +48,7 @@ Windows 版终端工作区(对标 macOS 的 [liney](https://github.com/everettjf
 | `Ctrl+Shift+B` | 折叠/展开侧边栏 |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | 下一个 / 上一个标签 |
 | `Ctrl+Shift+L` / `Ctrl+Shift+G` | 当前 pane 仓库的 `git log` / `git diff`(新标签,pager 视图) |
+| `Ctrl+Shift+U` | 检查更新(查询 GitHub releases,有新版弹托盘通知) |
 | `Alt+方向键` | 在分屏 pane 间移动焦点 |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | 复制选区 / 粘贴(支持 bracketed paste) |
 | `Ctrl++` / `Ctrl+-` / `Ctrl+0` | 放大 / 缩小 / 重置字号 |

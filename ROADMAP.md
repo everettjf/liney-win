@@ -92,7 +92,7 @@ SSH / agent / tmux / 打包更新 体量大、相对独立,排在后面;diff/his
 - ✅ **便携 zip 打包**:`tools/make-portable.ps1`(已验证产出 `dist\liney-win-portable.zip`,含两个 exe + 文档)
 - ✅ **MSIX 脚手架**:`packaging/AppxManifest.xml`(身份 `everettjf.liney-win`)+ `tools/gen-assets.ps1`(已验证生成图标)+ `tools/make-msix.ps1`(makeappx 打包 + 可选自签)
 - ✅ **WinGet 清单模板**:`packaging/winget/*.yaml`(installer / locale / version)
-- ⬜ 自动更新(对标 Sparkle):MSIX/Store 自带或 Squirrel,留待后续
+- 🟡 **更新检查(对标 Sparkle)**:`Ctrl+Shift+U` 查询 GitHub releases(WinHTTP,后台线程),有新版弹托盘通知(确定性验证:无 release 时 404 安全处理、应用不崩);完整自动更新(下载+替换)走 MSIX/Store 或 Squirrel,留待后续
 
 ---
 

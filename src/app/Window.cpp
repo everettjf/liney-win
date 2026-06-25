@@ -7,10 +7,12 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <utility>
 
 #include "core/Config.h"
 #include "render/D2DRenderer.h"
+#include "util/Http.h"
 #include "util/InputBox.h"
 #include "util/Json.h"
 #include "util/Process.h"
@@ -18,6 +20,7 @@
 namespace liney {
 
 static const wchar_t* kClassName = L"LineyWinMainWindow";
+static const wchar_t* kAppVersion = L"0.1.0";  // keep in sync with AppxManifest
 
 // Chrome palette.
 static const Color kSidebarBg{ 24, 24, 28 };
@@ -56,6 +59,34 @@ std::wstring utf8ToWide(const std::string& s) {
     std::wstring w(static_cast<size_t>(n), L'\0');
     MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), w.data(), n);
     return w;
+}
+
+// Parse a "vX.Y.Z" / "X.Y.Z" version into up to 3 integers for comparison.
+void parseVersion(const std::string& s, int out[3]) {
+    out[0] = out[1] = out[2] = 0;
+    size_t i = (!s.empty() && (s[0] == 'v' || s[0] == 'V')) ? 1 : 0;
+    int part = 0;
+    for (; i < s.size() && part < 3; ++part) {
+        int v = 0;
+        bool any = false;
+        while (i < s.size() && s[i] >= '0' && s[i] <= '9') {
+            v = v * 10 + (s[i] - '0');
+            ++i; any = true;
+        }
+        if (any) out[part] = v;
+        if (i < s.size() && s[i] == '.') ++i;
+        else break;
+    }
+}
+
+bool versionNewer(const std::string& remote, const std::string& local) {
+    int r[3], l[3];
+    parseVersion(remote, r);
+    parseVersion(local, l);
+    for (int i = 0; i < 3; ++i) {
+        if (r[i] != l[i]) return r[i] > l[i];
+    }
+    return false;
 }
 
 // Serialize a pane subtree: splits carry dir/ratio/children, leaves carry cwd.
@@ -239,6 +270,7 @@ void Window::renderFrame() {
     if (tabs_.empty()) return;
 
     pollNotifications();  // OSC 9/777 across all sessions -> balloons
+    pollUpdateResult();   // show the update-check result when it arrives
     updateTitle();        // reflect OSC 0/2 title changes live
 
     Tab* t = activeTab();
@@ -572,6 +604,43 @@ void Window::pollNotifications() {
     for (const Notification& n : notes) showBalloon(n.title, n.body);
 }
 
+void Window::checkForUpdates() {
+    showBalloon(L"liney-win", L"Checking for updates…");
+    // Query GitHub off the UI thread; renderFrame shows the result balloon.
+    std::thread([this]() {
+        const std::string body = httpsGet(
+            L"api.github.com", L"/repos/everettjf/liney-win/releases/latest");
+        std::wstring msg;
+        bool ok = false;
+        Json j = body.empty() ? Json() : Json::parse(body, &ok);
+        const std::string tag = ok ? j["tag_name"].asString() : std::string();
+        std::string local;
+        for (const wchar_t* p = kAppVersion; *p; ++p) local.push_back((char)*p);
+        if (tag.empty()) {
+            msg = L"Update check failed (no network / rate limited)";
+        } else if (versionNewer(tag, local)) {
+            msg = L"Update available: " + utf8ToWide(tag);
+        } else {
+            msg = std::wstring(L"You're up to date (") + kAppVersion + L")";
+        }
+        {
+            std::lock_guard<std::mutex> lk(updateMutex_);
+            updateMsg_ = msg;
+        }
+        updateReady_ = true;
+    }).detach();
+}
+
+void Window::pollUpdateResult() {
+    if (!updateReady_.exchange(false)) return;
+    std::wstring msg;
+    {
+        std::lock_guard<std::mutex> lk(updateMutex_);
+        msg = updateMsg_;
+    }
+    showBalloon(L"liney-win", msg);
+}
+
 void Window::applyFont() {
     renderer_->setFont(fontFamily_, fontSize_);
     unsigned cw = 0, ch = 0;
@@ -792,6 +861,7 @@ bool Window::onKeyDown(WPARAM vk) {
             case 'E': splitActive(SplitDir::Cols); swallowNextChar_ = true; return true;  // side by side
             case 'O': splitActive(SplitDir::Rows); swallowNextChar_ = true; return true;  // stacked
             case 'B': sidebarVisible_ = !sidebarVisible_; swallowNextChar_ = true; return true;
+            case 'U': checkForUpdates(); swallowNextChar_ = true; return true;
             case 'C': copySelection(); swallowNextChar_ = true; return true;
             case 'V': paste(); swallowNextChar_ = true; return true;
             case 'L':  // git history for the active pane's repo (pager view)

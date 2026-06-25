@@ -28,6 +28,7 @@ add_executable(liney_win WIN32
   src/util/Process.cpp
   src/util/Json.cpp
   src/util/InputBox.cpp
+  src/util/Http.cpp
 )
 
 target_include_directories(liney_win PRIVATE src)
@@ -36,7 +37,7 @@ target_compile_definitions(liney_win PRIVATE
   UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 
 target_link_libraries(liney_win PRIVATE
-  d2d1 dwrite d3d11 dxgi imm32)
+  d2d1 dwrite d3d11 dxgi imm32 winhttp)
 
 # Companion CLI: liney.exe (console). `liney notify ...` emits OSC sequences a
 # liney-win pane turns into notifications.

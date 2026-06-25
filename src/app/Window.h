@@ -3,7 +3,9 @@
 #include <windows.h>
 #include <shellapi.h>
 
+#include <atomic>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -68,6 +70,10 @@ private:
     void removeTray();
     void pollNotifications();  // drain OSC notifications from all sessions
 
+    // Update check (Sparkle analog): query GitHub releases off-thread.
+    void checkForUpdates();
+    void pollUpdateResult();
+
     // Input.
     void onChar(wchar_t unit);
     bool onKeyDown(WPARAM vk);
@@ -115,6 +121,9 @@ private:
     std::wstring lastTitle_;        // avoid redundant SetWindowText calls
     NOTIFYICONDATAW nid_{};
     bool trayAdded_ = false;
+    std::atomic<bool> updateReady_{ false };
+    std::mutex updateMutex_;
+    std::wstring updateMsg_;
     wchar_t pendingHighSurrogate_ = 0;
     bool swallowNextChar_ = false;  // drop the WM_CHAR following a shortcut
 
