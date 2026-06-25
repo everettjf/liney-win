@@ -43,19 +43,26 @@ bool D2DRenderer::createDeviceResources() {
         reinterpret_cast<IUnknown**>(dwriteFactory_.GetAddressOf()));
     if (FAILED(hr)) return false;
 
-    const float fontSize = 16.0f;
-    const wchar_t* family = L"Cascadia Mono";
-    hr = dwriteFactory_->CreateTextFormat(
-        family, nullptr, DWRITE_FONT_WEIGHT_NORMAL,
-        DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, fontSize,
-        L"en-us", textFormat_.GetAddressOf());
+    return buildTextFormats();
+}
+
+bool D2DRenderer::buildTextFormats() {
+    if (!dwriteFactory_) return false;
+    textFormat_.Reset();
+    textFormatBold_.Reset();
+
+    const wchar_t* family = fontFamily_.c_str();
+    HRESULT hr = dwriteFactory_->CreateTextFormat(
+        family, nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
+        DWRITE_FONT_STRETCH_NORMAL, fontSize_, L"en-us",
+        textFormat_.GetAddressOf());
     if (FAILED(hr)) {
-        // Cascadia Mono may be absent; fall back to a guaranteed monospace font.
+        // Requested family may be absent; fall back to a guaranteed monospace.
         family = L"Consolas";
         hr = dwriteFactory_->CreateTextFormat(
-            family, nullptr, DWRITE_FONT_WEIGHT_NORMAL,
-            DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, fontSize,
-            L"en-us", textFormat_.GetAddressOf());
+            family, nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL, fontSize_, L"en-us",
+            textFormat_.GetAddressOf());
         if (FAILED(hr)) return false;
     }
     textFormat_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
@@ -64,7 +71,7 @@ bool D2DRenderer::createDeviceResources() {
     // Bold variant for SGR-bold cells (best-effort; ignore failure).
     if (SUCCEEDED(dwriteFactory_->CreateTextFormat(
             family, nullptr, DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, fontSize, L"en-us",
+            DWRITE_FONT_STRETCH_NORMAL, fontSize_, L"en-us",
             textFormatBold_.GetAddressOf()))) {
         textFormatBold_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
         textFormatBold_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
@@ -72,18 +79,24 @@ bool D2DRenderer::createDeviceResources() {
 
     // Derive the monospace cell size from a representative glyph.
     ComPtr<IDWriteTextLayout> layout;
-    hr = dwriteFactory_->CreateTextLayout(
-        L"M", 1, textFormat_.Get(), 1000.0f, 1000.0f, layout.GetAddressOf());
+    hr = dwriteFactory_->CreateTextLayout(L"M", 1, textFormat_.Get(), 1000.0f,
+                                          1000.0f, layout.GetAddressOf());
     if (SUCCEEDED(hr)) {
         DWRITE_TEXT_METRICS tm{};
         layout->GetMetrics(&tm);
-        cellW_ = tm.width > 0.0f ? tm.width : fontSize * 0.6f;
-        cellH_ = tm.height > 0.0f ? tm.height : fontSize * 1.2f;
+        cellW_ = tm.width > 0.0f ? tm.width : fontSize_ * 0.6f;
+        cellH_ = tm.height > 0.0f ? tm.height : fontSize_ * 1.2f;
     } else {
-        cellW_ = fontSize * 0.6f;
-        cellH_ = fontSize * 1.2f;
+        cellW_ = fontSize_ * 0.6f;
+        cellH_ = fontSize_ * 1.2f;
     }
     return true;
+}
+
+void D2DRenderer::setFont(const std::wstring& family, float sizePx) {
+    fontFamily_ = family.empty() ? L"Cascadia Mono" : family;
+    fontSize_ = (sizePx < 6.0f) ? 6.0f : (sizePx > 96.0f ? 96.0f : sizePx);
+    buildTextFormats();
 }
 
 bool D2DRenderer::createSwapChainResources() {

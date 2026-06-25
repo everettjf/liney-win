@@ -46,6 +46,7 @@ Windows 版终端工作区(对标 macOS 的 [liney](https://github.com/everettjf
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | 下一个 / 上一个标签 |
 | `Alt+方向键` | 在分屏 pane 间移动焦点 |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | 复制选区 / 粘贴(支持 bracketed paste) |
+| `Ctrl++` / `Ctrl+-` / `Ctrl+0` | 放大 / 缩小 / 重置字号 |
 | 滚轮 / `Shift+PgUp·PgDn·Home·End` | 在 scrollback 历史中滚动(输入时自动回到底部) |
 | 鼠标拖选 | 在 pane 内选择文本 |
 | 鼠标点击 | 点标签切换、点 `+` 新标签、点 pane 聚焦、点仓库展开、点 worktree 在其目录开新标签 |
@@ -78,6 +79,23 @@ cmake -B build -G Ninja -DLINEY_WITH_LIBGHOSTTY=ON
 cmake --build build
 ```
 
+## 配置
+
+首次运行会在 `%USERPROFILE%\.liney\config.json` 写入默认配置(对应 macOS liney 的 `~/.liney/`):
+
+```json
+{
+  "shell": "cmd.exe",
+  "fontFamily": "Cascadia Mono",
+  "fontSize": 16,
+  "workspaceRoot": ""
+}
+```
+
+- `shell`:新标签使用的 shell(如 `powershell.exe` / `pwsh.exe` / `wsl.exe` / `cmd.exe`)
+- `fontFamily` / `fontSize`:等宽字体与字号(也可运行时 `Ctrl++/-/0` 调整)
+- `workspaceRoot`:侧边栏扫描的根目录;留空则用启动目录的父目录
+
 ## 目录结构
 
 ```
@@ -88,9 +106,13 @@ src/
     Layout.h              Rect + 由字号派生的 UI 度量
     Pane.h                分屏树节点(叶=会话,内部=二叉分屏)
     Tab.*                 标签 = 分屏树 + 聚焦叶;分屏/关闭/布局/命中测试/方向聚焦
-  core/TerminalSession.*  一个 pane 的终端会话(Terminal + ConPty + Grid + cwd)
+  core/
+    TerminalSession.*    一个 pane 的终端会话(Terminal + ConPty + Grid + cwd)
+    Config.*             读取 %USERPROFILE%\.liney\config.json
   workspace/Workspace.*   侧边栏模型:git 仓库扫描 + worktree 惰性加载
-  util/Process.*          无窗口子进程捕获(给 git worktree list 用)
+  util/
+    Process.*            无窗口子进程捕获(给 git worktree list 用)
+    Json.*               极简 JSON parse/serialize(配置 + 后续布局持久化)
   render/
     Cell.h                cell / grid(含光标)数据结构
     IRenderer.h           渲染器接口(帧生命周期 + chrome 图元 + 网格)

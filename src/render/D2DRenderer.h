@@ -22,6 +22,7 @@ public:
     bool initialize(void* hwnd) override;
     void resize(unsigned widthPx, unsigned heightPx) override;
     void cellSize(unsigned& wPx, unsigned& hPx) const override;
+    void setFont(const std::wstring& family, float sizePx) override;
 
     void beginFrame() override;
     void endFrame() override;
@@ -37,6 +38,7 @@ private:
     using ComPtr = Microsoft::WRL::ComPtr<T>;
 
     bool createDeviceResources();
+    bool buildTextFormats();
     bool createSwapChainResources();
     bool bindTarget();
     void releaseSwapChainResources();
@@ -44,6 +46,8 @@ private:
     HWND hwnd_ = nullptr;
     unsigned widthPx_ = 0, heightPx_ = 0;
     float cellW_ = 0.0f, cellH_ = 0.0f;
+    std::wstring fontFamily_ = L"Cascadia Mono";
+    float fontSize_ = 16.0f;
 
     ComPtr<ID3D11Device> d3dDevice_;
     ComPtr<ID3D11DeviceContext> d3dContext_;

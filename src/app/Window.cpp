@@ -5,6 +5,7 @@
 #include <string>
 #include <utility>
 
+#include "core/Config.h"
 #include "render/D2DRenderer.h"
 
 namespace liney {
@@ -56,16 +57,21 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     GetClientRect(hwnd_, &rc);
     renderer_->resize(rc.right - rc.left, rc.bottom - rc.top);
 
-    unsigned cw = 0, ch = 0;
-    renderer_->cellSize(cw, ch);
-    metrics_.cellW = cw ? static_cast<float>(cw) : 8.0f;
-    metrics_.cellH = ch ? static_cast<float>(ch) : 16.0f;
+    // User config (shell, font, workspace root); seeds %USERPROFILE%\.liney.
+    const Config cfg = loadConfig();
+    shell_ = cfg.shell;
+    fontFamily_ = cfg.fontFamily;
+    fontSize_ = cfg.fontSize;
+    defaultFontSize_ = cfg.fontSize;
+    applyFont();
 
-    // Workspace root = parent of the launch directory, so sibling repos show up.
+    // Workspace root: config override, else the parent of the launch directory
+    // (so sibling repos show up).
     wchar_t cwd[MAX_PATH]{};
     GetCurrentDirectoryW(MAX_PATH, cwd);
     std::wstring startCwd = cwd;
-    workspace_.scan(parentDir(startCwd));
+    workspace_.scan(cfg.workspaceRoot.empty() ? parentDir(startCwd)
+                                              : cfg.workspaceRoot);
 
     newTab(startCwd);
     if (tabs_.empty()) return false;  // shell failed to launch
@@ -355,6 +361,22 @@ void Window::updateTitle() {
     SetWindowTextW(hwnd_, title.c_str());
 }
 
+void Window::applyFont() {
+    renderer_->setFont(fontFamily_, fontSize_);
+    unsigned cw = 0, ch = 0;
+    renderer_->cellSize(cw, ch);
+    metrics_.cellW = cw ? static_cast<float>(cw) : 8.0f;
+    metrics_.cellH = ch ? static_cast<float>(ch) : 16.0f;
+    // Panes are re-laid out (and sessions resized) on the next frame.
+}
+
+void Window::zoomFont(int step) {
+    fontSize_ = (step == 0) ? defaultFontSize_ : fontSize_ + step;
+    if (fontSize_ < 6.0f) fontSize_ = 6.0f;
+    if (fontSize_ > 72.0f) fontSize_ = 72.0f;
+    applyFont();
+}
+
 // ---------------------------------------------------------------------------
 // Input
 // ---------------------------------------------------------------------------
@@ -428,6 +450,17 @@ bool Window::onKeyDown(WPARAM vk) {
     // Ctrl(+Shift) app shortcuts.
     if (ctrl) {
         if (vk == VK_TAB) { switchTab(shift ? -1 : 1); swallowNextChar_ = true; return true; }
+        if (!shift) {
+            switch (vk) {
+            case VK_OEM_PLUS:
+            case VK_ADD: zoomFont(+1); swallowNextChar_ = true; return true;
+            case VK_OEM_MINUS:
+            case VK_SUBTRACT: zoomFont(-1); swallowNextChar_ = true; return true;
+            case '0':
+            case VK_NUMPAD0: zoomFont(0); swallowNextChar_ = true; return true;
+            default: break;
+            }
+        }
         if (shift) {
             switch (vk) {
             case 'T': newTab(activeSession() ? activeSession()->cwd() : workspace_.root()); swallowNextChar_ = true; return true;

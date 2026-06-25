@@ -60,12 +60,12 @@ SSH / agent / tmux / 打包更新 体量大、相对独立,排在后面;diff/his
 - ✅ **选择 + 复制粘贴**:鼠标拖选、`Ctrl+Shift+C/V`、bracketed paste(`?2004`)、`WM_COPY/WM_PASTE`
 - ⬜ **resize reflow**:窗口变化时长行重排(当前为截断/补齐,未重排)— 留到后续
 
-### P2 — 配置与会话基础
-- **配置文件** `%USERPROFILE%\.liney\config.json`:shell、字号、配色、工作区根
-- **可选 shell**:PowerShell / pwsh / wsl / cmd,新建标签可选
-- **字号缩放** `Ctrl+ +/-/0`,**配色主题**
-- **工作区根可配置**(替代硬编码父目录)
-- 验收:改 config 生效;能开 PowerShell 标签;Ctrl+= 放大字体
+### P2 — 配置与会话基础 ✅ 已完成(配色主题除外)
+- ✅ **配置文件** `%USERPROFILE%\.liney\config.json`(极简 JSON 库,容忍 BOM;缺失则写默认)
+- ✅ **可选 shell**(确定性验证:`shell=powershell.exe` 时子进程为 powershell)
+- ✅ **字号缩放** `Ctrl+ +/-/0`(运行时重建字体 + 重算 cell 尺寸 + 重排)
+- ✅ **工作区根可配置**(`workspaceRoot`,留空回退父目录)
+- ⬜ **配色主题**:留到后续(当前为内置配色)
 
 ### P3 — 工作区深化(liney 差异化)
 - **布局持久化**:按 工作区根 / 仓库 记忆标签+分屏树,重开恢复(liney 核心卖点)

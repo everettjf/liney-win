@@ -26,6 +26,9 @@ public:
     // Current monospace cell size, in pixels.
     virtual void cellSize(unsigned& wPx, unsigned& hPx) const = 0;
 
+    // Set the monospace font family and size (px); recomputes the cell size.
+    virtual void setFont(const std::wstring& family, float sizePx) = 0;
+
     // Frame lifecycle: clear to the background, draw, then present.
     virtual void beginFrame() = 0;
     virtual void endFrame() = 0;

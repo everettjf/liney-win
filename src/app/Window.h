@@ -49,6 +49,10 @@ private:
     void switchTab(int delta);
     void updateTitle();
 
+    // Font sizing.
+    void applyFont();        // push current family/size to the renderer + metrics
+    void zoomFont(int step); // step font size by `step` points (0 == reset)
+
     // Input.
     void onChar(wchar_t unit);
     bool onKeyDown(WPARAM vk);
@@ -79,6 +83,9 @@ private:
     bool sidebarVisible_ = true;
 
     std::wstring shell_ = L"cmd.exe";
+    std::wstring fontFamily_ = L"Cascadia Mono";
+    float fontSize_ = 16.0f;
+    float defaultFontSize_ = 16.0f;
     wchar_t pendingHighSurrogate_ = 0;
     bool swallowNextChar_ = false;  // drop the WM_CHAR following a shortcut
 

@@ -19,12 +19,14 @@ add_executable(liney_win WIN32
   src/app/Window.cpp
   src/app/Tab.cpp
   src/core/TerminalSession.cpp
+  src/core/Config.cpp
   src/render/D2DRenderer.cpp
   src/pty/ConPty.cpp
   src/vt/Terminal.cpp
   src/vt/VTEmulator.cpp
   src/workspace/Workspace.cpp
   src/util/Process.cpp
+  src/util/Json.cpp
 )
 
 target_include_directories(liney_win PRIVATE src)
