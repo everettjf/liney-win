@@ -7,9 +7,10 @@
 # "x64 Native Tools Command Prompt for VS 2022"):
 #   powershell -ExecutionPolicy Bypass -File tools\make-portable.ps1
 
+param([string]$BuildDir = "build")
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$build = Join-Path $root 'build'
+$build = if ([System.IO.Path]::IsPathRooted($BuildDir)) { $BuildDir } else { Join-Path $root $BuildDir }
 $dist = Join-Path $root 'dist'
 
 # Locate CMake (PATH, else the VS-bundled copy).

@@ -1,9 +1,9 @@
 // liney-win - entry point.
 //
-// MVP: opens a Win32 window and runs a real interactive local shell. Pipeline:
+// Opens a Win32 window and runs a real interactive local shell. Pipeline:
 // ConPTY (src/pty) -> terminal core (src/vt) -> cell Grid -> Direct2D/DirectWrite
-// renderer (src/render). The terminal core is the self-contained VTEmulator by
-// default, or libghostty-vt when built with -DLINEY_WITH_LIBGHOSTTY=ON.
+// renderer (src/render). The terminal core is Ghostty's libghostty-vt, built
+// from Ghostty via Zig (see CMakeLists.txt / tools/build.ps1).
 
 #include <windows.h>
 #include <objbase.h>  // CoInitializeEx (WIN32_LEAN_AND_MEAN excludes it)

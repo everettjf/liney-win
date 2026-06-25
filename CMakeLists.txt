@@ -73,10 +73,6 @@ FetchContent_MakeAvailable(ghostty)
 # `zig build lib-vt`); it also supplies the include directory.
 target_link_libraries(liney_win PRIVATE ghostty-vt)
 
-# Keep the legacy define for any conditional code (the core is now always
-# libghostty-vt).
-target_compile_definitions(liney_win PRIVATE LINEY_WITH_LIBGHOSTTY)
-
 # ghostty-vt is a DLL; copy it next to liney_win.exe so the app runs in-place.
 add_custom_command(TARGET liney_win POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
