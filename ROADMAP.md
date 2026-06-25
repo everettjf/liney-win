@@ -87,8 +87,11 @@ SSH / agent / tmux / 打包更新 体量大、相对独立,排在后面;diff/his
 - ⬜ 远程文件树(SFTP)、**tmux 集成**
 - ⬜ **glyph atlas + D3D11** 渲染升级(性能/连字)
 
-### P6 — 分发
-- **MSIX 打包** + 应用标识/图标;**WinGet** 清单;自动更新(Squirrel/MSIX)
+### P6 — 分发 🟡 进行中
+- ✅ **便携 zip 打包**:`tools/make-portable.ps1`(已验证产出 `dist\liney-win-portable.zip`,含两个 exe + 文档)
+- ✅ **MSIX 脚手架**:`packaging/AppxManifest.xml`(身份 `everettjf.liney-win`)+ `tools/gen-assets.ps1`(已验证生成图标)+ `tools/make-msix.ps1`(makeappx 打包 + 可选自签)
+- ✅ **WinGet 清单模板**:`packaging/winget/*.yaml`(installer / locale / version)
+- ⬜ 自动更新(对标 Sparkle):MSIX/Store 自带或 Squirrel,留待后续
 
 ---
 

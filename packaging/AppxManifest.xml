@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSIX package manifest for liney-win. Used by tools\make-msix.ps1.
+  The Publisher must match the signing certificate's subject. For local
+  sideloading, generate a self-signed cert whose subject equals Publisher and
+  trust it (see tools\make-msix.ps1).
+-->
+<Package
+    xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+    xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+    xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities">
+
+  <Identity Name="everettjf.liney-win"
+            Publisher="CN=liney-win"
+            Version="0.1.0.0"
+            ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>liney-win</DisplayName>
+    <PublisherDisplayName>everettjf</PublisherDisplayName>
+    <Description>Windows terminal workspace (repos / worktrees / splits).</Description>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0"
+                        MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+
+  <Applications>
+    <Application Id="lineywin" Executable="liney_win.exe"
+                 EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+          DisplayName="liney-win"
+          Description="Windows terminal workspace"
+          BackgroundColor="#102840"
+          Square150x150Logo="Assets\Square150x150Logo.png"
+          Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+</Package>

@@ -1,0 +1,18 @@
+# WinGet installer manifest (template). Fill in the release URL + SHA256 and
+# submit to https://github.com/microsoft/winget-pkgs. Pairs with the .locale and
+# version manifests of the same PackageIdentifier/PackageVersion.
+PackageIdentifier: everettjf.liney-win
+PackageVersion: 0.1.0
+InstallerType: zip
+NestedInstallerType: portable
+NestedInstallerFiles:
+  - RelativeFilePath: liney_win.exe
+    PortableCommandAlias: liney-win
+  - RelativeFilePath: liney.exe
+    PortableCommandAlias: liney
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/everettjf/liney-win/releases/download/v0.1.0/liney-win-portable.zip
+    InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
+ManifestType: installer
+ManifestVersion: 1.6.0

@@ -119,6 +119,24 @@ liney title  <text>            # 设置标签/窗口标题
 
 终端还会解析常见 OSC:`0/2`(标题)、`7`(cwd,用于新标签继承)、`9` 与 `777;notify`(通知)。把 `build\liney.exe` 加入 PATH 后,长任务结束时 `liney notify "done"` 即可提醒。
 
+## 分发 / 打包
+
+对标 macOS liney 的 DMG / Homebrew 分发,提供 Windows 侧打包脚手架(脚本在 `tools/`,清单在 `packaging/`):
+
+```powershell
+# 便携版:构建 Release 并打成 dist\liney-win-portable.zip(解压即用,免安装)
+powershell -ExecutionPolicy Bypass -File tools\make-portable.ps1
+
+# MSIX 安装包(需 Windows SDK 的 makeappx;本地安装需签名)
+powershell -ExecutionPolicy Bypass -File tools\gen-assets.ps1   # 生成占位图标
+powershell -ExecutionPolicy Bypass -File tools\make-msix.ps1 -SelfSign
+```
+
+- `tools/make-portable.ps1` —— 便携 zip(已验证可产出)
+- `tools/make-msix.ps1` + `packaging/AppxManifest.xml` + `tools/gen-assets.ps1` —— MSIX 包(身份 `everettjf.liney-win`)
+- `packaging/winget/*.yaml` —— WinGet 清单模板(填好 release URL + SHA256 后提交 winget-pkgs)
+- 自动更新(对标 Sparkle)留待后续(MSIX/Store 自带更新,或 Squirrel)
+
 ## 目录结构
 
 ```
