@@ -81,6 +81,10 @@ private:
     void sendToActive(const char* data, size_t len);
     void sendUtf16(const wchar_t* s, size_t len);
 
+    // IME: keep the composition/candidate window at the cursor.
+    void positionIme();
+    void cursorPixelPos(int& px, int& py) const;
+
     // Selection / clipboard.
     bool paneCellAt(const Pane* p, int px, int py, int& cx, int& cy) const;
     void applySelectionToGrid();   // push current selection onto the active grid

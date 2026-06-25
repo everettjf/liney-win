@@ -1,6 +1,7 @@
 #include "app/Window.h"
 
 #include <windowsx.h>  // GET_X_LPARAM / GET_Y_LPARAM
+#include <imm.h>       // IME composition window positioning
 
 #include <algorithm>
 #include <fstream>
@@ -172,6 +173,12 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_CHAR:
         onChar(static_cast<wchar_t>(wParam));
         return 0;
+    case WM_IME_STARTCOMPOSITION:
+    case WM_IME_COMPOSITION:
+        // Place the IME composition/candidate window at the cursor, then let the
+        // default handler run (committed text arrives via WM_CHAR).
+        positionIme();
+        return DefWindowProcW(hwnd_, msg, wParam, lParam);
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN:
         if (onKeyDown(wParam)) return 0;
@@ -696,6 +703,35 @@ void Window::sendUtf16(const wchar_t* s, size_t len) {
     WideCharToMultiByte(CP_UTF8, 0, s, static_cast<int>(len), utf8.data(), bytes,
                         nullptr, nullptr);
     sendToActive(utf8.data(), utf8.size());
+}
+
+void Window::cursorPixelPos(int& px, int& py) const {
+    Tab* t = activeTab();
+    if (t && t->active() && t->active()->session) {
+        const Grid& g = t->active()->session->grid();
+        const Rect r = t->active()->rect;
+        px = static_cast<int>(r.x + g.cursorX * metrics_.cellW);
+        py = static_cast<int>(r.y + g.cursorY * metrics_.cellH);
+    } else {
+        px = 0;
+        py = 0;
+    }
+}
+
+void Window::positionIme() {
+    int px = 0, py = 0;
+    cursorPixelPos(px, py);
+    HIMC himc = ImmGetContext(hwnd_);
+    if (!himc) return;
+    COMPOSITIONFORM cf{};
+    cf.dwStyle = CFS_POINT;
+    cf.ptCurrentPos = { px, py };
+    ImmSetCompositionWindow(himc, &cf);
+    CANDIDATEFORM caf{};
+    caf.dwStyle = CFS_CANDIDATEPOS;
+    caf.ptCurrentPos = { px, py + static_cast<int>(metrics_.cellH) };
+    ImmSetCandidateWindow(himc, &caf);
+    ImmReleaseContext(hwnd_, himc);
 }
 
 void Window::onChar(wchar_t unit) {
