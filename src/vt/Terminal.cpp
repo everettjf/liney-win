@@ -1,8 +1,8 @@
 #include "vt/Terminal.h"
 
-namespace liney {
+#include <windows.h>  // MultiByteToWideChar for title/pwd UTF-8 -> UTF-16
 
-#ifdef LINEY_WITH_LIBGHOSTTY
+namespace liney {
 
 // Append one Unicode scalar as UTF-16 (our Cell stores std::wstring on Windows).
 static void appendUtf16(uint32_t cp, std::wstring& out) {
@@ -123,77 +123,77 @@ bool Terminal::snapshotInto(Grid& grid) {
     return true;
 }
 
-// libghostty owns its own viewport/scrollback; these are no-ops for now.
-void Terminal::scrollViewport(int) {}
-void Terminal::scrollToBottom() {}
-bool Terminal::bracketedPaste() const { return false; }
-std::wstring Terminal::oscTitle() { return std::wstring(); }
-bool Terminal::takeCwd(std::wstring&) { return false; }
-void Terminal::drainNotifications(std::vector<Notification>&) {}
-void Terminal::setTheme(const Theme&) {}
-
-#else // !LINEY_WITH_LIBGHOSTTY — built-in VTEmulator (the default MVP core).
-
-Terminal::~Terminal() = default;
-
-bool Terminal::create(int cols, int rows) {
-    if (cols <= 0 || rows <= 0) return false;
-    emu_.resize(cols, rows);
-    active_ = true;
-    return true;
-}
-
-void Terminal::write(const char* data, size_t len) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (active_) emu_.write(data, len);
-}
-
-void Terminal::resize(int cols, int rows, int /*cellWidthPx*/, int /*cellHeightPx*/) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (active_ && cols > 0 && rows > 0) emu_.resize(cols, rows);
-}
-
-bool Terminal::snapshotInto(Grid& grid) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (!active_) return false;
-    emu_.snapshotInto(grid);
-    return true;
+static std::wstring utf8ToWide(const uint8_t* p, size_t len) {
+    if (!p || len == 0) return {};
+    const int n = MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<const char*>(p),
+                                      static_cast<int>(len), nullptr, 0);
+    std::wstring w(static_cast<size_t>(n), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<const char*>(p),
+                        static_cast<int>(len), w.data(), n);
+    return w;
 }
 
 void Terminal::scrollViewport(int deltaLines) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (active_) emu_.scrollViewport(deltaLines);
+    if (!terminal_) return;
+    // Our convention: +deltaLines scrolls up into history. Ghostty: up is negative.
+    GhosttyTerminalScrollViewport sv{};
+    sv.tag = GHOSTTY_SCROLL_VIEWPORT_DELTA;
+    sv.value.delta = -static_cast<intptr_t>(deltaLines);
+    ghostty_terminal_scroll_viewport(terminal_, sv);
 }
 
 void Terminal::scrollToBottom() {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (active_) emu_.scrollToBottom();
+    if (!terminal_) return;
+    GhosttyTerminalScrollViewport sv{};
+    sv.tag = GHOSTTY_SCROLL_VIEWPORT_BOTTOM;
+    ghostty_terminal_scroll_viewport(terminal_, sv);
 }
 
-bool Terminal::bracketedPaste() const {
-    return active_ && emu_.bracketedPaste();
-}
+bool Terminal::bracketedPaste() const { return false; }
 
 std::wstring Terminal::oscTitle() {
     std::lock_guard<std::mutex> lock(mutex_);
-    return active_ ? emu_.oscTitle() : std::wstring();
+    if (!terminal_) return {};
+    GhosttyString s{};
+    if (ghostty_terminal_get(terminal_, GHOSTTY_TERMINAL_DATA_TITLE, &s) !=
+            GHOSTTY_SUCCESS || s.len == 0)
+        return {};
+    return utf8ToWide(s.ptr, s.len);
 }
 
 bool Terminal::takeCwd(std::wstring& out) {
     std::lock_guard<std::mutex> lock(mutex_);
-    return active_ && emu_.takeCwd(out);
+    if (!terminal_) return false;
+    GhosttyString s{};
+    if (ghostty_terminal_get(terminal_, GHOSTTY_TERMINAL_DATA_PWD, &s) !=
+            GHOSTTY_SUCCESS || s.len == 0)
+        return false;
+    std::wstring cwd = utf8ToWide(s.ptr, s.len);
+    // OSC 7 reports file://host/C:/path — strip the scheme + host to a path.
+    if (cwd.rfind(L"file://", 0) == 0) {
+        size_t slash = cwd.find(L'/', 7);  // end of host
+        cwd = (slash == std::wstring::npos) ? L"" : cwd.substr(slash + 1);
+        if (cwd.size() >= 2 && cwd[1] == L':') {}  // keep "C:/..."
+        for (wchar_t& ch : cwd) if (ch == L'/') ch = L'\\';
+    }
+    if (cwd.empty() || cwd == lastCwd_) return false;
+    lastCwd_ = cwd;
+    out = cwd;
+    return true;
 }
 
-void Terminal::drainNotifications(std::vector<Notification>& out) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (active_) emu_.drainNotifications(out);
-}
+void Terminal::drainNotifications(std::vector<Notification>&) {}
 
 void Terminal::setTheme(const Theme& theme) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (active_) emu_.setTheme(theme);
+    if (!terminal_) return;
+    GhosttyColorRgb fg{ theme.foreground.r, theme.foreground.g, theme.foreground.b };
+    GhosttyColorRgb bg{ theme.background.r, theme.background.g, theme.background.b };
+    ghostty_terminal_set(terminal_, GHOSTTY_TERMINAL_OPT_COLOR_FOREGROUND, &fg);
+    ghostty_terminal_set(terminal_, GHOSTTY_TERMINAL_OPT_COLOR_BACKGROUND, &bg);
 }
 
-#endif
 
 } // namespace liney

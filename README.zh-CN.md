@@ -6,8 +6,9 @@
 
 **Windows 上的「终端工作区」** —— 把仓库、worktree、分屏、标签放进同一个窗口。
 
-对标 macOS 的 [liney](https://github.com/everettjf/liney)。自建终端核心 + 全自绘
-Win32 / Direct2D —— **仅需 MSVC，零运行时依赖。**
+对标 macOS 的 [liney](https://github.com/everettjf/liney)。终端核心是 Ghostty 的
+**[libghostty-vt](https://github.com/ghostty-org/ghostty)**;UI 全自绘 **Win32 /
+Direct2D**。用 **MSVC + Zig** 构建。
 
 [![release](https://img.shields.io/github/v/release/everettjf/liney-win?color=22c55e&label=release)](https://github.com/everettjf/liney-win/releases)
 [![downloads](https://img.shields.io/github/downloads/everettjf/liney-win/total?color=8b5cf6&label=downloads)](https://github.com/everettjf/liney-win/releases)
@@ -32,11 +33,12 @@ Win32 / Direct2D —— **仅需 MSVC，零运行时依赖。**
 
 ## ✨ 功能
 
-**🖥️ 终端** —— 自建 xterm 子集核心(`VTEmulator`)
+**🖥️ 终端** —— 由 **Ghostty 的 libghostty-vt** 核心驱动
 - 完整 VT 解析:光标 / 擦除 / 滚动区 / 插入删除,SGR 16/256/truecolor +
-  粗体/斜体/下划线/反显,UTF-8,宽字符
+  粗体/斜体/下划线/反显,UTF-8,宽字符,grapheme 簇
 - **scrollback 历史**(滚轮 · `Shift+PgUp`),改窗口大小时长行**重排(reflow)**
 - **备用屏 alt-screen** —— vim / less / `git log` 等全屏程序正常工作
+- OSC 驱动的**窗口标题**与 **cwd 跟踪**(文件树跟随 shell 当前目录)
 - **选择 + 复制粘贴**、**IME**(中日韩),候选窗口跟随光标
 - 字号缩放、可配置**配色主题**
 - **Unix 命令** —— 装了 Git for Windows 后,`ls` / `cat` / `grep` / `rm` / `sed` /
@@ -44,7 +46,9 @@ Win32 / Direct2D —— **仅需 MSVC，零运行时依赖。**
 
 **🗂️ 工作区** —— liney 的差异化
 - 标签 + 二叉**分屏**(拖分隔条调比例、拖标签重排),`Alt+方向键` 切焦点
-- **仓库**侧边栏,带**每项目图标**,可展开到 **worktree**;右键新建 / 删除 worktree
+- **仓库**侧边栏,带**每项目图标**,可展开到 **worktree**
+- **项目管理**:WORKSPACE 的 **+** 添加项目文件夹;右键项目可 **新建 worktree… /
+  设置图标… / 从工作区移除**(持久化到配置)
 - 右侧**文件树**跟随聚焦 pane
 - **SSH** 主机与 **agent** 会话,各有图标,一键打开
 - **布局持久化** —— 标签 + 分屏树 + 各 pane 的 cwd,下次启动恢复
@@ -72,19 +76,22 @@ Win32 / Direct2D —— **仅需 MSVC，零运行时依赖。**
 | `liney-win-setup.exe` | 安装包 —— 每用户安装,免管理员,带开始菜单 + 卸载 |
 | `liney-win-portable.zip` | 便携版 —— 解压双击 `liney_win.exe` |
 
-**从源码构建** —— Windows 10 1809+/11,Visual Studio 2022 Desktop C++,
-CMake ≥ 3.20(VS 2022 自带 CMake/Ninja):
+**从源码构建** —— Windows 10 1809+/11,需要:
+- **Visual Studio 2022** Desktop C++(自带 CMake ≥ 3.20 + Ninja)
+- PATH 上有 **[Zig 0.15.2](https://ziglang.org/download/)** —— 终端核心从 Ghostty 经 Zig 构建
 
 ```powershell
-# 在 “x64 Native Tools Command Prompt for VS 2022” 中
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build
+# 在 “x64 Native Tools Command Prompt for VS 2022” 中,且 zig 在 PATH 上
+powershell -ExecutionPolicy Bypass -File tools\build.ps1
 .\build\liney_win.exe
 ```
 
-> 可选:`-DLINEY_WITH_LIBGHOSTTY=ON` 接入
-> [libghostty-vt](https://github.com/ghostty-org/ghostty) 作为终端核心(需 Zig);
-> 默认用内置 `VTEmulator`,无需任何额外依赖。
+`tools\build.ps1` 会配置 + 构建,并把 Zig 缓存指到构建所在盘符(Zig 0.15.2 的一个怪癖:
+源码与缓存在不同盘符时构建会 panic)。首次构建会拉取 Ghostty 并编译 `libghostty-vt`,
+耗时较长;`ghostty-vt.dll` 会自动拷到 exe 旁边。
+
+> 想用原始 CMake?`cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build`
+> —— 但先把 `ZIG_GLOBAL_CACHE_DIR` 设到构建所在盘符的目录。
 
 ## ⌨️ 快捷键
 
@@ -156,7 +163,7 @@ OSC `0/2`(标题)、`7`(cwd)、`9` 与 `777;notify`(通知)。
             ↑ 合成 sidebar · 标签栏 · 分屏树 · 文件面板 · 工具栏
 TerminalSession = Terminal + ConPty + Grid
    ConPty      —— Windows 伪控制台(起 shell、读/写、resize)
-   Terminal    —— 内置 VTEmulator(或 libghostty-vt)解析 PTY 字节 → Grid
+   Terminal    —— 封装 libghostty-vt(Ghostty 的 VT 引擎):PTY 字节 → 渲染快照 → Grid
    D2DRenderer —— Direct2D/DirectWrite 把 Grid + chrome 画到窗口
 ```
 

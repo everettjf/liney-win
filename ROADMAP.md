@@ -11,7 +11,7 @@
 
 | 领域 | macOS liney | liney-win 现状 |
 |---|---|---|
-| **终端内核** | Ghostty(完整 VT、scrollback、reflow、Unicode、连字、GPU) | 🟡 内置 VTEmulator:颜色/SGR、光标、擦除、滚动区、插入删除行列、UTF-8、宽字符 |
+| **终端内核** | Ghostty(完整 VT、scrollback、reflow、Unicode、连字、GPU) | ✅ Ghostty 的 libghostty-vt(经 Zig 构建,即上游同一引擎)—— 完整 VT、scrollback、reflow、Unicode、grapheme;经 C API 拿渲染快照 + 标题/cwd。已删除早期内置 VTEmulator。待补:桌面通知(OSC 9/777)与 bracketed-paste 需在 libghostty 路径重新接线 |
 | ├ 历史回滚 scrollback | ✅ | ❌ 仅当前屏,无历史、无滚轮滚动 |
 | ├ 选择 / 复制粘贴 | ✅ | ❌ 无选区、无剪贴板 |
 | ├ 备用屏 alt-screen | ✅(vim/less/htop 正常) | ❌ 全屏 TUI 应用会错乱 |

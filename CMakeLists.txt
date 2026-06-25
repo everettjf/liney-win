@@ -16,10 +16,15 @@ if(NOT WIN32)
     "liney-win targets Windows only (Win32 + Direct2D/Direct3D 11 + ConPTY).")
 endif()
 
-# libghostty-vt provides the terminal core (parsing/buffer/scrollback/reflow).
-# OFF by default so the scaffold builds with just MSVC; ON fetches Ghostty and
-# builds ghostty-vt via Zig (the Zig toolchain must be on PATH).
-option(LINEY_WITH_LIBGHOSTTY "Integrate libghostty-vt (requires Zig)" OFF)
+# libghostty-vt is the terminal core (parsing/buffer/scrollback/reflow/Unicode).
+# It is fetched from Ghostty and built via Zig, so a Zig 0.15.2 toolchain must be
+# on PATH to build liney-win. See README for the build steps.
+find_program(ZIG_EXECUTABLE zig)
+if(NOT ZIG_EXECUTABLE)
+  message(FATAL_ERROR
+    "Zig not found. liney-win's terminal core (libghostty-vt) is built via Zig; "
+    "install Zig 0.15.2 and put it on PATH. https://ziglang.org/download/")
+endif()
 
 add_executable(liney_win WIN32
   res/resource.rc
@@ -35,8 +40,6 @@ add_executable(liney_win WIN32
   src/render/D2DRenderer.cpp
   src/pty/ConPty.cpp
   src/vt/Terminal.cpp
-  src/vt/VTEmulator.cpp
-  src/vt/VTParser.cpp
   src/workspace/Workspace.cpp
   src/util/Process.cpp
   src/util/Json.cpp
@@ -59,15 +62,24 @@ add_executable(liney_cli src/cli/main.cpp)
 set_target_properties(liney_cli PROPERTIES OUTPUT_NAME liney)
 target_compile_definitions(liney_cli PRIVATE UNICODE _UNICODE)
 
-if(LINEY_WITH_LIBGHOSTTY)
-  include(FetchContent)
-  FetchContent_Declare(ghostty
-    GIT_REPOSITORY https://github.com/ghostty-org/ghostty.git
-    GIT_TAG main)
-  FetchContent_MakeAvailable(ghostty)
+# Fetch Ghostty and build its libghostty-vt (via Zig) as the terminal core.
+include(FetchContent)
+FetchContent_Declare(ghostty
+  GIT_REPOSITORY https://github.com/ghostty-org/ghostty.git
+  GIT_TAG main)
+FetchContent_MakeAvailable(ghostty)
 
-  target_compile_definitions(liney_win PRIVATE LINEY_WITH_LIBGHOSTTY)
-  # `ghostty-vt` is the target produced by Ghostty's CMake (delegates to
-  # `zig build lib-vt`); it also supplies the include directory.
-  target_link_libraries(liney_win PRIVATE ghostty-vt)
-endif()
+# `ghostty-vt` is the target produced by Ghostty's CMake (delegates to
+# `zig build lib-vt`); it also supplies the include directory.
+target_link_libraries(liney_win PRIVATE ghostty-vt)
+
+# Keep the legacy define for any conditional code (the core is now always
+# libghostty-vt).
+target_compile_definitions(liney_win PRIVATE LINEY_WITH_LIBGHOSTTY)
+
+# ghostty-vt is a DLL; copy it next to liney_win.exe so the app runs in-place.
+add_custom_command(TARGET liney_win POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${ghostty_SOURCE_DIR}/zig-out/bin/ghostty-vt.dll"
+    "$<TARGET_FILE_DIR:liney_win>"
+  COMMENT "Copying ghostty-vt.dll next to liney_win.exe")

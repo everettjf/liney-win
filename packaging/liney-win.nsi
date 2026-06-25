@@ -51,6 +51,9 @@ Section "liney-win" SecMain
 !ifdef CLIEXE
   File "${CLIEXE}"
 !endif
+!ifdef GHOSTTYDLL
+  File "${GHOSTTYDLL}"
+!endif
 !ifdef ICONFILE
   File "${ICONFILE}"
 !endif
@@ -75,6 +78,7 @@ SectionEnd
 Section "Uninstall"
   Delete "$INSTDIR\liney_win.exe"
   Delete "$INSTDIR\liney.exe"
+  Delete "$INSTDIR\ghostty-vt.dll"
   Delete "$INSTDIR\liney.ico"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"

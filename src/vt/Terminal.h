@@ -9,25 +9,19 @@
 #include "render/Cell.h"
 #include "vt/Notification.h"
 
-#ifdef LINEY_WITH_LIBGHOSTTY
 extern "C" {
 #include <ghostty/vt.h>
 }
-#else
-#include "vt/VTEmulator.h"
-#endif
 
 namespace liney {
 
-// C++ wrapper around libghostty-vt. Owns the terminal emulation state: feed it
-// PTY bytes via write(), then pull a renderable snapshot via snapshotInto().
-// libghostty-vt maintains the screen grid, scrollback, reflow and Unicode; we
-// only translate its render-state snapshot into our Grid.
+// C++ wrapper around libghostty-vt (the terminal core). Feed it PTY bytes via
+// write(), then pull a renderable snapshot via snapshotInto(). libghostty-vt
+// maintains the screen grid, scrollback, reflow and Unicode; we translate its
+// render-state snapshot into our Grid, and pull title/pwd via the C API.
 //
-// When LINEY_WITH_LIBGHOSTTY is defined this delegates to the Zig-built
-// ghostty-vt library (wired via CMake's LINEY_WITH_LIBGHOSTTY option).
-// Otherwise (the default) it delegates to the self-contained VTEmulator, so
-// liney-win builds and runs a real interactive shell with only MSVC.
+// The library is built from Ghostty via Zig (see CMake) — Zig is required to
+// build liney-win.
 //
 // Thread-safety: write() runs on the PTY reader thread while snapshotInto()
 // runs on the UI thread; both take the same lock.
@@ -71,15 +65,11 @@ public:
 
 private:
     std::mutex mutex_;
-#ifdef LINEY_WITH_LIBGHOSTTY
     GhosttyTerminal terminal_ = nullptr;
     GhosttyRenderState state_ = nullptr;
     GhosttyRenderStateRowIterator rowIter_ = nullptr;
     GhosttyRenderStateRowCells rowCells_ = nullptr;
-#else
-    VTEmulator emu_;
-    bool active_ = false;
-#endif
+    std::wstring lastCwd_;  // dedup OSC 7 cwd reports (takeCwd returns changes)
 };
 
 } // namespace liney

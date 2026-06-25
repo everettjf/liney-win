@@ -7,9 +7,9 @@
 **A terminal workspace for Windows** — keep your repositories, worktrees, splits,
 and tabs in a single window.
 
-A Windows take on macOS [liney](https://github.com/everettjf/liney). Self-built
-terminal core, fully self-drawn Win32 / Direct2D — **needs only MSVC, zero runtime
-dependencies.**
+A Windows take on macOS [liney](https://github.com/everettjf/liney). Terminal core
+is **Ghostty's [libghostty-vt](https://github.com/ghostty-org/ghostty)**; the UI is
+fully self-drawn **Win32 / Direct2D**. Builds with **MSVC + Zig**.
 
 [![release](https://img.shields.io/github/v/release/everettjf/liney-win?color=22c55e&label=release)](https://github.com/everettjf/liney-win/releases)
 [![downloads](https://img.shields.io/github/downloads/everettjf/liney-win/total?color=8b5cf6&label=downloads)](https://github.com/everettjf/liney-win/releases)
@@ -36,11 +36,12 @@ nothing but the OS.
 
 ## ✨ Features
 
-**🖥️ Terminal** — a built-in xterm-subset core (`VTEmulator`)
+**🖥️ Terminal** — powered by **Ghostty's libghostty-vt** core
 - Full VT parsing: cursor / erase / scroll regions / insert-delete, SGR
-  16/256/truecolor + bold/italic/underline/inverse, UTF-8, wide chars
+  16/256/truecolor + bold/italic/underline/inverse, UTF-8, wide chars, grapheme clusters
 - **Scrollback** (wheel · `Shift+PgUp`) with **reflow** of long lines on resize
 - **Alternate screen** — vim / less / `git log` and other full-screen apps just work
+- OSC-driven **window title** and **cwd tracking** (the file tree follows your shell)
 - **Selection + copy/paste**, **IME** (CJK) with the candidate window at the cursor
 - Font zoom, configurable **color theme**
 - **Unix tools** — with Git for Windows installed, `ls` / `cat` / `grep` / `rm` /
@@ -49,8 +50,9 @@ nothing but the OS.
 **🗂️ Workspace** — liney's differentiator
 - Tabs + binary **splits** (drag dividers to resize, drag tabs to reorder),
   `Alt+Arrows` to move focus
-- A **repository** sidebar with **per-project icons**, expandable to **worktrees**;
-  right-click to create / remove a worktree
+- A **repository** sidebar with **per-project icons**, expandable to **worktrees**
+- **Manage projects**: the WORKSPACE **+** adds a project folder; right-click a
+  project for **New worktree… / Set icon… / Remove from workspace** (persisted)
 - A right-side **folder tree** that follows the focused pane
 - **SSH** hosts and **agent** sessions, each with its own icon, one click to open
 - **Layout persistence** — tabs + split tree + per-pane cwd restored next launch
@@ -78,19 +80,24 @@ nothing but the OS.
 | `liney-win-setup.exe` | Installer — per-user, no admin, Start Menu + uninstall |
 | `liney-win-portable.zip` | Portable — unzip and run `liney_win.exe` |
 
-**Build from source** — Windows 10 1809+/11, Visual Studio 2022 Desktop C++,
-CMake ≥ 3.20 (VS 2022 bundles CMake/Ninja):
+**Build from source** — Windows 10 1809+/11, with:
+- **Visual Studio 2022** Desktop C++ (bundles CMake ≥ 3.20 + Ninja)
+- **[Zig 0.15.2](https://ziglang.org/download/)** on PATH — the terminal core is
+  built from Ghostty via Zig
 
 ```powershell
-# in the "x64 Native Tools Command Prompt for VS 2022"
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build
+# in the "x64 Native Tools Command Prompt for VS 2022", with zig on PATH
+powershell -ExecutionPolicy Bypass -File tools\build.ps1
 .\build\liney_win.exe
 ```
 
-> Optional: `-DLINEY_WITH_LIBGHOSTTY=ON` swaps in
-> [libghostty-vt](https://github.com/ghostty-org/ghostty) as the terminal core
-> (needs Zig). The default built-in `VTEmulator` needs nothing extra.
+`tools\build.ps1` configures + builds and points Zig's cache at the build drive
+(a Zig 0.15.2 quirk panics when the source and cache are on different drives).
+The first build fetches Ghostty and compiles `libghostty-vt`, so it takes a while;
+`ghostty-vt.dll` is copied next to the exe automatically.
+
+> Prefer raw CMake? `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build`
+> — but set `ZIG_GLOBAL_CACHE_DIR` to a folder on the build drive first.
 
 ## ⌨️ Shortcuts
 
@@ -164,7 +171,7 @@ keyboard/mouse → Window (workspace orchestration) → routes to the focused pa
                  ↑ composes sidebar · tab strip · split tree · files panel · toolbar
 TerminalSession = Terminal + ConPty + Grid
    ConPty      — Windows pseudoconsole (spawn shell, read/write, resize)
-   Terminal    — built-in VTEmulator (or libghostty-vt) parses PTY bytes → Grid
+   Terminal    — wraps libghostty-vt (Ghostty's VT engine): PTY bytes → render snapshot → Grid
    D2DRenderer — Direct2D/DirectWrite draws the Grid + chrome to the window
 ```
 

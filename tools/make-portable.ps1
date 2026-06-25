@@ -20,8 +20,10 @@ if (-not $cmake) {
 if (-not (Test-Path $cmake)) { throw "cmake not found; run from a VS dev shell." }
 
 Write-Host "Configuring + building Release..."
+# Zig (libghostty-vt core) needs its cache on the build drive (see tools\build.ps1).
+$env:ZIG_GLOBAL_CACHE_DIR = Join-Path $build 'zig-global-cache'
 if (-not (Test-Path $build)) {
-    & $cmake -S $root -B $build -DCMAKE_BUILD_TYPE=Release | Out-Host
+    & $cmake -S $root -B $build -G Ninja -DCMAKE_BUILD_TYPE=Release | Out-Host
 }
 & $cmake --build $build --config Release | Out-Host
 
@@ -42,6 +44,10 @@ if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 Copy-Item $winExe $stage
 Copy-Item $cliExe $stage
+# Bundle the terminal-core DLL (copied next to the exe by the build).
+$dll = Join-Path (Split-Path $winExe) 'ghostty-vt.dll'
+if (-not (Test-Path $dll)) { throw "ghostty-vt.dll not found next to liney_win.exe" }
+Copy-Item $dll $stage
 Copy-Item (Join-Path $root 'README.md') $stage
 Copy-Item (Join-Path $root 'LICENSE') $stage
 

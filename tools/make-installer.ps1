@@ -21,6 +21,8 @@ function Find-Exe($name) {
 }
 $winExe = Find-Exe 'liney_win.exe'
 $cliExe = Find-Exe 'liney.exe'
+$dll = Join-Path (Split-Path $winExe) 'ghostty-vt.dll'
+if (-not (Test-Path $dll)) { throw "ghostty-vt.dll not found next to liney_win.exe" }
 
 # Read the version from res\resource.rc (FileVersion x,y,z,0).
 $ver = '0.1.0'
@@ -43,6 +45,7 @@ $out = Join-Path $dist 'liney-win-setup.exe'
     "/DAPPVERSION=$ver" `
     "/DWINEXE=$winExe" `
     "/DCLIEXE=$cliExe" `
+    "/DGHOSTTYDLL=$dll" `
     "/DICONFILE=$ico" `
     "/DOUTFILE=$out" `
     $nsi | Out-Host
