@@ -21,7 +21,7 @@ BEGIN
             VALUE "FileDescription", "liney-win terminal workspace"
             VALUE "FileVersion", "0.1.0.0"
             VALUE "InternalName", "liney_win"
-            VALUE "LegalCopyright", "MIT License"
+            VALUE "LegalCopyright", "Apache-2.0 License"
             VALUE "OriginalFilename", "liney_win.exe"
             VALUE "ProductName", "liney-win"
             VALUE "ProductVersion", "0.1.0.0"

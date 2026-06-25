@@ -4,7 +4,7 @@ PackageVersion: 0.1.0
 PackageLocale: en-US
 Publisher: everettjf
 PackageName: liney-win
-License: MIT
+License: Apache-2.0
 ShortDescription: Windows terminal workspace (repos / worktrees / splits / sidebar).
 PackageUrl: https://github.com/everettjf/liney-win
 Tags:
