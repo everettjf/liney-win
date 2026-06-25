@@ -49,6 +49,9 @@ public:
     // Notify the terminal of a new size (in cells and per-cell pixels).
     void resize(int cols, int rows, int cellWidthPx, int cellHeightPx);
 
+    // Apply a color theme (built-in backend only).
+    void setTheme(const Theme& theme);
+
     // Refresh the render snapshot and copy it into `grid`. Returns false when no
     // terminal is active (caller should keep its previous/demo grid).
     bool snapshotInto(Grid& grid);

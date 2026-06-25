@@ -103,6 +103,7 @@ private:
     float defaultFontSize_ = 16.0f;
     std::wstring sessionStartHook_; // command sent to each newly started shell
     std::vector<std::wstring> sshHosts_;
+    Theme theme_;
     std::wstring lastTitle_;        // avoid redundant SetWindowText calls
     NOTIFYICONDATAW nid_{};
     bool trayAdded_ = false;

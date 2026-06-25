@@ -6,35 +6,6 @@ namespace liney {
 
 namespace {
 
-constexpr Color kDefaultFg{ 204, 204, 204 };
-constexpr Color kDefaultBg{ 0, 0, 0 };
-
-// Standard xterm 16-color palette (0-7 normal, 8-15 bright).
-const Color kAnsi[16] = {
-    { 0, 0, 0 },     { 205, 0, 0 },   { 0, 205, 0 },   { 205, 205, 0 },
-    { 0, 0, 238 },   { 205, 0, 205 }, { 0, 205, 205 }, { 229, 229, 229 },
-    { 127, 127, 127 }, { 255, 0, 0 }, { 0, 255, 0 },   { 255, 255, 0 },
-    { 92, 92, 255 }, { 255, 0, 255 }, { 0, 255, 255 }, { 255, 255, 255 },
-};
-
-Color color256(int idx) {
-    if (idx < 0) idx = 0;
-    if (idx < 16) return kAnsi[idx];
-    if (idx < 232) {
-        int c = idx - 16;
-        int r = c / 36, g = (c / 6) % 6, b = c % 6;
-        auto lvl = [](int v) -> uint8_t {
-            return static_cast<uint8_t>(v == 0 ? 0 : v * 40 + 55);
-        };
-        return { lvl(r), lvl(g), lvl(b) };
-    }
-    if (idx < 256) {
-        uint8_t v = static_cast<uint8_t>(8 + 10 * (idx - 232));
-        return { v, v, v };
-    }
-    return kDefaultFg;
-}
-
 bool isCombining(uint32_t cp) {
     return (cp >= 0x0300 && cp <= 0x036F) || (cp >= 0x1AB0 && cp <= 0x1AFF) ||
            (cp >= 0x1DC0 && cp <= 0x1DFF) || (cp >= 0x20D0 && cp <= 0x20FF) ||
@@ -129,7 +100,7 @@ std::vector<std::string> splitChar(const std::string& s, char sep) {
 
 void VTEmulator::clearCell(Cell& c) const {
     c.ch.clear();
-    c.fg = kDefaultFg;
+    c.fg = theme_.foreground;
     c.bg = penBg_;  // background-color erase
     c.flags = kFlagNone;
 }
@@ -384,7 +355,7 @@ void VTEmulator::escDispatch(uint32_t finalByte) {
     case '7': savedCx_ = cx_; savedCy_ = cy_; break;  // DECSC
     case '8': moveTo(savedCx_, savedCy_); break;      // DECRC
     case 'c':                                     // RIS: full reset
-        penFg_ = kDefaultFg; penBg_ = kDefaultBg; penFlags_ = kFlagNone;
+        penFg_ = theme_.foreground; penBg_ = theme_.background; penFlags_ = kFlagNone;
         scrollTop_ = 0; scrollBot_ = rows_ - 1;
         cursorVisible_ = true;
         clearRegion(0, 0, cols_ - 1, rows_ - 1);
@@ -499,15 +470,39 @@ void VTEmulator::csiDispatch(uint32_t finalByte) {
     }
 }
 
+Color VTEmulator::color256(int idx) const {
+    if (idx < 0) idx = 0;
+    if (idx < 16) return theme_.ansi[idx];
+    if (idx < 232) {
+        int c = idx - 16;
+        int r = c / 36, g = (c / 6) % 6, b = c % 6;
+        auto lvl = [](int v) -> uint8_t {
+            return static_cast<uint8_t>(v == 0 ? 0 : v * 40 + 55);
+        };
+        return { lvl(r), lvl(g), lvl(b) };
+    }
+    if (idx < 256) {
+        uint8_t v = static_cast<uint8_t>(8 + 10 * (idx - 232));
+        return { v, v, v };
+    }
+    return theme_.foreground;
+}
+
+void VTEmulator::setTheme(const Theme& theme) {
+    theme_ = theme;
+    penFg_ = theme_.foreground;
+    penBg_ = theme_.background;
+}
+
 void VTEmulator::applySgr() {
     if (params_.empty()) {  // CSI m == CSI 0 m
-        penFg_ = kDefaultFg; penBg_ = kDefaultBg; penFlags_ = kFlagNone;
+        penFg_ = theme_.foreground; penBg_ = theme_.background; penFlags_ = kFlagNone;
         return;
     }
     for (size_t i = 0; i < params_.size(); ++i) {
         int v = params_[i] < 0 ? 0 : params_[i];
         switch (v) {
-        case 0: penFg_ = kDefaultFg; penBg_ = kDefaultBg; penFlags_ = kFlagNone; break;
+        case 0: penFg_ = theme_.foreground; penBg_ = theme_.background; penFlags_ = kFlagNone; break;
         case 1: penFlags_ |= kFlagBold; break;
         case 3: penFlags_ |= kFlagItalic; break;
         case 4: penFlags_ |= kFlagUnderline; break;
@@ -516,12 +511,12 @@ void VTEmulator::applySgr() {
         case 23: penFlags_ &= ~kFlagItalic; break;
         case 24: penFlags_ &= ~kFlagUnderline; break;
         case 27: penFlags_ &= ~kFlagInverse; break;
-        case 39: penFg_ = kDefaultFg; break;
-        case 49: penBg_ = kDefaultBg; break;
+        case 39: penFg_ = theme_.foreground; break;
+        case 49: penBg_ = theme_.background; break;
         case 38:
         case 48: {
             int kind = (i + 1 < params_.size()) ? params_[i + 1] : -1;
-            Color col = kDefaultFg;
+            Color col = theme_.foreground;
             if (kind == 5 && i + 2 < params_.size()) {
                 col = color256(params_[i + 2]);
                 i += 2;
@@ -535,10 +530,10 @@ void VTEmulator::applySgr() {
             break;
         }
         default:
-            if (v >= 30 && v <= 37) penFg_ = kAnsi[v - 30];
-            else if (v >= 40 && v <= 47) penBg_ = kAnsi[v - 40];
-            else if (v >= 90 && v <= 97) penFg_ = kAnsi[8 + (v - 90)];
-            else if (v >= 100 && v <= 107) penBg_ = kAnsi[8 + (v - 100)];
+            if (v >= 30 && v <= 37) penFg_ = theme_.ansi[v - 30];
+            else if (v >= 40 && v <= 47) penBg_ = theme_.ansi[v - 40];
+            else if (v >= 90 && v <= 97) penFg_ = theme_.ansi[8 + (v - 90)];
+            else if (v >= 100 && v <= 107) penBg_ = theme_.ansi[8 + (v - 100)];
             break;
         }
     }

@@ -37,6 +37,9 @@ public:
     void write(const char* data, size_t len);  // raw UTF-8 PTY bytes
     void snapshotInto(Grid& grid) const;        // copy viewport + cursor out
 
+    // Set the color theme (default fg/bg + ANSI palette). Resets the pen.
+    void setTheme(const Theme& theme);
+
     int cols() const { return cols_; }
     int rows() const { return rows_; }
 
@@ -82,6 +85,7 @@ private:
     void escDispatch(uint32_t finalByte);
     void oscDispatch();                // parse the collected OSC string
     void applySgr();
+    Color color256(int idx) const;     // resolve a 256-color index via the theme
     int param(size_t i, int dflt) const;
 
     int cols_ = 80;
@@ -113,7 +117,8 @@ private:
 
     bool bracketedPaste_ = false;  // DEC mode ?2004
 
-    // Current pen.
+    // Color theme + current pen.
+    Theme theme_;
     Color penFg_{ 204, 204, 204 };
     Color penBg_{ 0, 0, 0 };
     uint32_t penFlags_ = kFlagNone;

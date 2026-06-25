@@ -130,6 +130,7 @@ bool Terminal::bracketedPaste() const { return false; }
 std::wstring Terminal::oscTitle() { return std::wstring(); }
 bool Terminal::takeCwd(std::wstring&) { return false; }
 void Terminal::drainNotifications(std::vector<Notification>&) {}
+void Terminal::setTheme(const Theme&) {}
 
 #else // !LINEY_WITH_LIBGHOSTTY — built-in VTEmulator (the default MVP core).
 
@@ -186,6 +187,11 @@ bool Terminal::takeCwd(std::wstring& out) {
 void Terminal::drainNotifications(std::vector<Notification>& out) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (active_) emu_.drainNotifications(out);
+}
+
+void Terminal::setTheme(const Theme& theme) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (active_) emu_.setTheme(theme);
 }
 
 #endif

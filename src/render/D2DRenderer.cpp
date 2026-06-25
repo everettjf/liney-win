@@ -176,10 +176,15 @@ void D2DRenderer::cellSize(unsigned& wPx, unsigned& hPx) const {
     hPx = static_cast<unsigned>(cellH_ + 0.5f);
 }
 
+void D2DRenderer::setColors(const Color& workspaceBg, const Color& termBg) {
+    workspaceBg_ = workspaceBg;
+    termBg_ = termBg;
+}
+
 void D2DRenderer::beginFrame() {
     if (!d2dContext_ || !targetBitmap_ || !brush_) return;
     d2dContext_->BeginDraw();
-    d2dContext_->Clear(D2D1::ColorF(0.05f, 0.05f, 0.06f));  // workspace bg
+    d2dContext_->Clear(toColorF(workspaceBg_));  // workspace bg (gutters/margins)
 }
 
 void D2DRenderer::endFrame() {
@@ -223,8 +228,8 @@ void D2DRenderer::drawGrid(const Grid& grid, float originX, float originY) {
         originY + grid.rows * cellH_);
     d2dContext_->PushAxisAlignedClip(clip, D2D1_ANTIALIAS_MODE_ALIASED);
 
-    // Terminal default background (cells with black bg are skipped below).
-    brush_->SetColor(D2D1::ColorF(D2D1::ColorF::Black));
+    // Terminal background (cells matching it are skipped below).
+    brush_->SetColor(toColorF(termBg_));
     d2dContext_->FillRectangle(clip, brush_.Get());
 
     for (int y = 0; y < grid.rows; ++y) {

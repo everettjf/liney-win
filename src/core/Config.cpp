@@ -31,6 +31,20 @@ std::string wideToUtf8(const std::wstring& w) {
     return s;
 }
 
+Color hexToColor(const std::string& s, Color dflt) {
+    std::string h = (!s.empty() && s[0] == '#') ? s.substr(1) : s;
+    if (h.size() != 6) return dflt;
+    auto hx = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return 0;
+    };
+    return { static_cast<uint8_t>(hx(h[0]) * 16 + hx(h[1])),
+             static_cast<uint8_t>(hx(h[2]) * 16 + hx(h[3])),
+             static_cast<uint8_t>(hx(h[4]) * 16 + hx(h[5])) };
+}
+
 std::string readFile(const std::wstring& path) {
     std::ifstream f(path.c_str(), std::ios::binary);
     if (!f) return "";
@@ -103,6 +117,19 @@ Config loadConfig() {
         for (const Json& host : j["sshHosts"].items())
             if (host.type() == Json::Type::String)
                 cfg.sshHosts.push_back(utf8ToWide(host.asString()));
+    // theme: { background, foreground, palette:[16] } (hex strings)
+    const Json& t = j["theme"];
+    if (t.isObject()) {
+        cfg.theme.background =
+            hexToColor(t["background"].asString(), cfg.theme.background);
+        cfg.theme.foreground =
+            hexToColor(t["foreground"].asString(), cfg.theme.foreground);
+        const Json& pal = t["palette"];
+        if (pal.isArray())
+            for (int k = 0; k < 16 && k < static_cast<int>(pal.size()); ++k)
+                cfg.theme.ansi[k] =
+                    hexToColor(pal.items()[k].asString(), cfg.theme.ansi[k]);
+    }
 
     if (cfg.shell.empty()) cfg.shell = L"cmd.exe";
     if (cfg.fontFamily.empty()) cfg.fontFamily = L"Cascadia Mono";

@@ -101,6 +101,7 @@ cmake --build build
 - `workspaceRoot`:侧边栏扫描的根目录;留空则用启动目录的父目录
 - `hooks.sessionStart`:每个新 shell 启动后自动执行的命令(如激活虚拟环境)
 - `sshHosts`:`["user@host", ...]` —— 出现在侧边栏 SSH 区,点击在新标签起 `ssh <host>`(用 Windows 自带 OpenSSH;会话随布局持久化)
+- `theme`:`{ "background": "#102840", "foreground": "#e8e8d0", "palette": ["#..." ×16] }` —— 终端前景/背景与 16 色 ANSI 调色板(缺省即内置配色)
 
 布局(标签 + 分屏树 + 各 pane 的 cwd)在关闭时写入 `%USERPROFILE%\.liney\layout.json`,下次启动自动恢复。
 

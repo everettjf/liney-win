@@ -23,6 +23,7 @@ public:
     void resize(unsigned widthPx, unsigned heightPx) override;
     void cellSize(unsigned& wPx, unsigned& hPx) const override;
     void setFont(const std::wstring& family, float sizePx) override;
+    void setColors(const Color& workspaceBg, const Color& termBg) override;
 
     void beginFrame() override;
     void endFrame() override;
@@ -48,6 +49,8 @@ private:
     float cellW_ = 0.0f, cellH_ = 0.0f;
     std::wstring fontFamily_ = L"Cascadia Mono";
     float fontSize_ = 16.0f;
+    Color workspaceBg_{ 13, 13, 15 };
+    Color termBg_{ 0, 0, 0 };
 
     ComPtr<ID3D11Device> d3dDevice_;
     ComPtr<ID3D11DeviceContext> d3dContext_;

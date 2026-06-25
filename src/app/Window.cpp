@@ -107,6 +107,8 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     defaultFontSize_ = cfg.fontSize;
     sessionStartHook_ = cfg.sessionStartHook;
     sshHosts_ = cfg.sshHosts;
+    theme_ = cfg.theme;
+    renderer_->setColors(theme_.background, theme_.background);
     applyFont();
 
     // Workspace root: config override, else the parent of the launch directory
@@ -447,6 +449,7 @@ void Window::newTabShell(const std::wstring& shellCmd, const std::wstring& cwd) 
 
     auto session = std::make_unique<TerminalSession>();
     if (!session->start(shellCmd, cwd, cols, rows)) return;
+    session->setTheme(theme_);
     runStartHook(session.get());
     tabs_.push_back(std::make_unique<Tab>(std::move(session)));
     activeTab_ = tabs_.size() - 1;
@@ -472,6 +475,7 @@ void Window::splitActive(SplitDir dir) {
 
     auto session = std::make_unique<TerminalSession>();
     if (!session->start(shell_, cwd, cols, rows)) return;
+    session->setTheme(theme_);
     runStartHook(session.get());
     t->splitActive(dir, std::move(session));
 }
@@ -600,6 +604,7 @@ std::unique_ptr<Pane> Window::paneFromJson(const Json& j, int cols, int rows) {
     if (shell.empty()) shell = shell_;
     auto s = std::make_unique<TerminalSession>();
     if (!s->start(shell, cwd, cols, rows)) return nullptr;
+    s->setTheme(theme_);
     auto p = std::make_unique<Pane>();
     p->session = std::move(s);
     return p;

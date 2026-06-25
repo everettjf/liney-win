@@ -11,6 +11,19 @@ struct Color {
     uint8_t r = 0, g = 0, b = 0;
 };
 
+// Terminal color theme: default fg/bg plus the 16-color ANSI palette. The
+// defaults match the built-in xterm-ish palette, so an unset theme is a no-op.
+struct Theme {
+    Color background{ 0, 0, 0 };
+    Color foreground{ 204, 204, 204 };
+    Color ansi[16] = {
+        { 0, 0, 0 },       { 205, 0, 0 },   { 0, 205, 0 },   { 205, 205, 0 },
+        { 0, 0, 238 },     { 205, 0, 205 }, { 0, 205, 205 }, { 229, 229, 229 },
+        { 127, 127, 127 }, { 255, 0, 0 },   { 0, 255, 0 },   { 255, 255, 0 },
+        { 92, 92, 255 },   { 255, 0, 255 }, { 0, 255, 255 }, { 255, 255, 255 },
+    };
+};
+
 // Per-cell attribute bits.
 enum CellFlags : uint32_t {
     kFlagNone      = 0,

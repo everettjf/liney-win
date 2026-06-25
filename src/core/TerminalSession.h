@@ -30,6 +30,7 @@ public:
 
     void sendBytes(const char* data, size_t len);
     void resize(int cols, int rows, int cellWidthPx, int cellHeightPx);
+    void setTheme(const Theme& theme) { terminal_.setTheme(theme); }
 
     // Refresh the renderable snapshot into the session's grid.
     void snapshot();

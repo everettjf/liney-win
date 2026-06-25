@@ -65,7 +65,7 @@ SSH / agent / tmux / 打包更新 体量大、相对独立,排在后面;diff/his
 - ✅ **可选 shell**(确定性验证:`shell=powershell.exe` 时子进程为 powershell)
 - ✅ **字号缩放** `Ctrl+ +/-/0`(运行时重建字体 + 重算 cell 尺寸 + 重排)
 - ✅ **工作区根可配置**(`workspaceRoot`,留空回退父目录)
-- ⬜ **配色主题**:留到后续(当前为内置配色)
+- ✅ **配色主题**:config `theme`(background / foreground / 16 色 palette,hex)→ 终端前景/背景/调色板;默认与内置一致(确定性验证:设 `#102840` 后终端像素恰为 16,40,64)
 
 ### P3 — 工作区深化(liney 差异化)🟡 进行中
 - ✅ **布局持久化**:标签 + 分屏树 + 每个 pane 的 cwd → `%USERPROFILE%\.liney\layout.json`,重开恢复(liney 核心卖点;确定性验证:已知布局恢复出 3 个 shell,优雅关闭后回写结构正确)
