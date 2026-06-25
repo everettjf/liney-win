@@ -213,24 +213,16 @@ void Window::drawTabBar(const Rect& r) {
     renderer_->drawText(L"+", x + metrics_.cellW, r.y + 5.0f, plusW,
                         metrics_.cellH, kDim, true);
 
-    // ---- top-right quick-access toolbar (liney.dev style) ------------------
-    toolButtons_.clear();
-    const float bw = r.h;                       // square buttons, tab-bar tall
-    const float isz = bw * 0.5f;                // icon size within a button
-    const ToolAction order[] = { ToolAction::KeepAwake, ToolAction::Settings,
-                                 ToolAction::Update };
-    float bx = r.x + r.w - bw * 3.0f;
-    for (ToolAction a : order) {
-        const bool on = (a == ToolAction::KeepAwake && keepAwake_);
-        if (on) renderer_->fillRect(bx, r.y, bw, r.h, kTabActiveBg);
-        IconKind icon = a == ToolAction::KeepAwake ? IconKind::Power
-                      : a == ToolAction::Settings  ? IconKind::Settings
-                                                   : IconKind::Download;
-        renderer_->drawIcon(icon, bx + (bw - isz) * 0.5f, r.y + (r.h - isz) * 0.5f,
-                            isz, on ? kAccent : kDim);
-        toolButtons_.push_back({ { bx, r.y, bw, r.h }, a });
-        bx += bw;
-    }
+    // ---- top-right "☰" menu button (opens a native popup) ------------------
+    const float bw = r.h;                 // square, tab-bar tall
+    const float isz = bw * 0.46f;
+    const float bx = r.x + r.w - bw;
+    menuButtonRect_ = { bx, r.y, bw, r.h };
+    // Highlight if keep-awake is on (a persistent state worth surfacing).
+    if (keepAwake_) renderer_->fillRect(bx, r.y, bw, r.h, kTabActiveBg);
+    renderer_->drawIcon(IconKind::Menu, bx + (bw - isz) * 0.5f,
+                        r.y + (r.h - isz) * 0.5f, isz,
+                        keepAwake_ ? kAccent : kText);
 }
 
 void Window::drawPanes(const Rect& r) {

@@ -393,5 +393,40 @@ void Window::openConfigFile() {
                   nullptr, SW_SHOWNORMAL);
 }
 
+void Window::openMainMenu() {
+    POINT pt{ static_cast<int>(menuButtonRect_.right()),
+              static_cast<int>(menuButtonRect_.bottom()) };
+    ClientToScreen(hwnd_, &pt);
+    HMENU m = CreatePopupMenu();
+    auto item = [&](UINT id, const wchar_t* text, bool checked = false) {
+        AppendMenuW(m, MF_STRING | (checked ? MF_CHECKED : 0), id, text);
+    };
+    item(1, L"Keep awake\tCtrl+Shift+K", keepAwake_);
+    item(2, L"Show sidebar\tCtrl+Shift+B", sidebarVisible_);
+    item(3, L"Show files panel\tCtrl+Shift+F", filesPanelVisible_);
+    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    item(4, L"New tab\tCtrl+Shift+T");
+    item(5, L"Split side by side\tAlt+D");
+    item(6, L"Split stacked\tShift+Alt+D");
+    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    item(7, L"Settings (config.json)…");
+    item(8, L"Check for updates\tCtrl+Shift+U");
+
+    const int cmd = TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTALIGN, pt.x, pt.y,
+                                   0, hwnd_, nullptr);
+    DestroyMenu(m);
+    switch (cmd) {
+    case 1: toggleKeepAwake(); break;
+    case 2: sidebarVisible_ = !sidebarVisible_; break;
+    case 3: filesPanelVisible_ = !filesPanelVisible_; break;
+    case 4: newTab(activeSession() ? activeSession()->cwd() : workspace_.root()); break;
+    case 5: splitActive(SplitDir::Cols); break;
+    case 6: splitActive(SplitDir::Rows); break;
+    case 7: openConfigFile(); break;
+    case 8: checkForUpdates(); break;
+    default: break;
+    }
+}
+
 
 } // namespace liney

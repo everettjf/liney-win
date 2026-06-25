@@ -68,9 +68,10 @@ private:
     void applyFont();        // push current family/size to the renderer + metrics
     void zoomFont(int step); // step font size by `step` points (0 == reset)
 
-    // Top-right toolbar + quick actions.
+    // Top-right menu + quick actions.
     void toggleKeepAwake();  // prevent/allow system+display sleep (caffeine)
     void openConfigFile();   // open %USERPROFILE%\.liney\config.json in the editor
+    void openMainMenu();     // native popup menu for the top-right "☰" button
 
     // Layout persistence (%USERPROFILE%\.liney\layout.json).
     void saveLayout() const;
@@ -167,10 +168,8 @@ private:
     Rect plusRect_{};
     int tabDragIndex_ = -1;  // tab being dragged in the strip (-1 = none)
 
-    // Top-right toolbar buttons (rebuilt each frame in drawTabBar).
-    enum class ToolAction { KeepAwake, Settings, Update };
-    struct ToolButton { Rect rect; ToolAction action; };
-    std::vector<ToolButton> toolButtons_;
+    // Top-right "☰" menu button (rebuilt each frame in drawTabBar).
+    Rect menuButtonRect_{};
 
     // FILES panel: a navigable listing that follows the focused pane's cwd.
     void refreshFileList();   // re-list browsePath_ when it changes

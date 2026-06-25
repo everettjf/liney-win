@@ -344,6 +344,12 @@ void D2DRenderer::drawIcon(IconKind kind, float x, float y, float size,
         line(cx - s * 0.22f, by + s * 0.42f, cx, by + s * 0.18f); // chevron up
         line(cx + s * 0.22f, by + s * 0.42f, cx, by + s * 0.18f);
         break;
+    case IconKind::Menu:  // hamburger: 3 evenly-spaced horizontal bars
+        for (int i = 0; i < 3; ++i) {
+            float ly = by + s * (0.22f + 0.28f * i);
+            fillR(bx, ly - t * 0.5f, bx + s, ly + t * 0.5f);
+        }
+        break;
     }
 }
 
