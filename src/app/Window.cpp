@@ -43,6 +43,34 @@ std::wstring parentDir(const std::wstring& path) {
 }
 bool keyDown(int vk) { return (GetKeyState(vk) & 0x8000) != 0; }
 
+// Append Git for Windows' Unix tools (usr\bin, mingw64\bin) to this process's
+// PATH so shells spawned afterward see ls / cat / grep / rm / sed / awk / …
+// Appended (not prepended) so it doesn't shadow Windows' own tools.
+void addGitUnixToolsToPath() {
+    wchar_t gitExe[MAX_PATH]{};
+    if (SearchPathW(nullptr, L"git.exe", nullptr, MAX_PATH, gitExe, nullptr) == 0)
+        return;
+    std::wstring p = gitExe;  // ...\Git\cmd\git.exe  (or ...\Git\bin\git.exe)
+    size_t s = p.find_last_of(L"\\/");
+    if (s == std::wstring::npos) return;
+    p = p.substr(0, s);  // ...\Git\cmd
+    s = p.find_last_of(L"\\/");
+    if (s == std::wstring::npos) return;
+    const std::wstring root = p.substr(0, s);  // ...\Git
+    const std::wstring usrBin = root + L"\\usr\\bin";
+    if (GetFileAttributesW(usrBin.c_str()) == INVALID_FILE_ATTRIBUTES) return;
+    const std::wstring mingw = root + L"\\mingw64\\bin";
+
+    DWORD n = GetEnvironmentVariableW(L"PATH", nullptr, 0);
+    std::wstring path(n ? n - 1 : 0, L'\0');
+    if (n) GetEnvironmentVariableW(L"PATH", path.data(), n);
+    if (path.find(usrBin) != std::wstring::npos) return;  // already added
+    std::wstring next = path;
+    if (!next.empty() && next.back() != L';') next += L';';
+    next += usrBin + L";" + mingw;
+    SetEnvironmentVariableW(L"PATH", next.c_str());
+}
+
 std::string wideToUtf8(const std::wstring& w) {
     if (w.empty()) return "";
     int n = WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()),
@@ -144,6 +172,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     sessionStartHook_ = cfg.sessionStartHook;
     sessionExitHook_ = cfg.sessionExitHook;
     appExitHook_ = cfg.appExitHook;
+    if (cfg.unixTools) addGitUnixToolsToPath();  // ls/cat/grep/… in spawned shells
     sshHosts_ = cfg.sshHosts;
     agents_ = cfg.agents;
     theme_ = cfg.theme;

@@ -28,6 +28,7 @@ struct Config {
     std::vector<std::wstring> sshHosts;     // e.g. "user@host"; sidebar SSH list
     std::vector<AgentDef> agents;           // sidebar AGENTS list
     Theme theme;                            // colors (defaults = built-in palette)
+    bool unixTools = true;                  // append Git's usr/bin to PATH (ls/cat/…)
 };
 
 // %USERPROFILE%\.liney (created if missing). Empty if USERPROFILE is unset.

@@ -4,6 +4,13 @@ project(liney_win LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Source files are UTF-8; tell MSVC so wide literals (em-dash, ellipsis, …) are
+# decoded correctly instead of as the system codepage (which caused mojibake in
+# the window/tab titles).
+if(MSVC)
+  add_compile_options(/utf-8)
+endif()
+
 if(NOT WIN32)
   message(FATAL_ERROR
     "liney-win targets Windows only (Win32 + Direct2D/Direct3D 11 + ConPTY).")

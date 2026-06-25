@@ -145,6 +145,8 @@ Config loadConfig() {
                     hexToColor(pal.items()[k].asString(), cfg.theme.ansi[k]);
     }
 
+    if (j.contains("unixTools")) cfg.unixTools = j["unixTools"].asBool(true);
+
     if (cfg.shell.empty()) cfg.shell = L"cmd.exe";
     if (cfg.fontFamily.empty()) cfg.fontFamily = L"Cascadia Mono";
     if (cfg.fontSize < 6.0f || cfg.fontSize > 96.0f) cfg.fontSize = 16.0f;
