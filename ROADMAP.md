@@ -59,6 +59,7 @@ SSH / agent / tmux / 打包更新 体量大、相对独立,排在后面;diff/his
 - ✅ **scrollback 历史 + 滚轮/Shift+PgUp·PgDn·Home·End 滚动**(确定性验证:滚动后可见早期行)
 - ✅ **选择 + 复制粘贴**:鼠标拖选、`Ctrl+Shift+C/V`、bracketed paste(`?2004`)、`WM_COPY/WM_PASTE`
 - ⬜ **resize reflow**:窗口变化时长行重排(当前为截断/补齐,未重排)— 留到后续
+- ⬜ **鼠标上报 / IME**:鼠标上报受 ConPTY 影响——经验证,子程序输出里的 `?1000h` 会被 ConPTY 吸收(host 输出流里收不到),需走 ConPTY 的鼠标透传机制(类似 Windows Terminal 的处理),非简单解析即可,留到后续专门处理
 
 ### P2 — 配置与会话基础 ✅ 已完成(配色主题除外)
 - ✅ **配置文件** `%USERPROFILE%\.liney\config.json`(极简 JSON 库,容忍 BOM;缺失则写默认)
