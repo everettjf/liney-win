@@ -608,39 +608,109 @@ void Window::pollNotifications() {
 
 void Window::checkForUpdates() {
     showBalloon(L"liney-win", L"Checking for updates…");
-    // Query GitHub off the UI thread; renderFrame shows the result balloon.
+    // Query GitHub off the UI thread; renderFrame shows the result + prompt.
     std::thread([this]() {
         const std::string body = httpsGet(
             L"api.github.com", L"/repos/everettjf/liney-win/releases/latest");
-        std::wstring msg;
+        std::wstring msg, url;
+        bool pending = false;
         bool ok = false;
         Json j = body.empty() ? Json() : Json::parse(body, &ok);
         const std::string tag = ok ? j["tag_name"].asString() : std::string();
         std::string local;
         for (const wchar_t* p = kAppVersion; *p; ++p) local.push_back((char)*p);
+
         if (tag.empty()) {
             msg = L"Update check failed (no network / rate limited)";
         } else if (versionNewer(tag, local)) {
+            // Find the installer asset (prefer *Setup.exe, else any .exe).
+            std::string assetUrl;
+            const Json& assets = j["assets"];
+            if (assets.isArray())
+                for (const Json& a : assets.items()) {
+                    const std::string name = a["name"].asString();
+                    if (name.size() >= 4 &&
+                        name.compare(name.size() - 4, 4, ".exe") == 0) {
+                        assetUrl = a["browser_download_url"].asString();
+                        if (name.find("Setup") != std::string::npos) break;
+                    }
+                }
             msg = L"Update available: " + utf8ToWide(tag);
+            if (!assetUrl.empty()) { url = utf8ToWide(assetUrl); pending = true; }
+            else msg += L" (no installer asset)";
         } else {
             msg = std::wstring(L"You're up to date (") + kAppVersion + L")";
         }
         {
             std::lock_guard<std::mutex> lk(updateMutex_);
             updateMsg_ = msg;
+            downloadUrl_ = url;
+            pendingUpdate_ = pending;
         }
         updateReady_ = true;
     }).detach();
 }
 
+void Window::startDownloadAndInstall(const std::wstring& url) {
+    // Split "https://host/path...".
+    std::wstring rest = url;
+    const std::wstring scheme = L"https://";
+    if (rest.rfind(scheme, 0) == 0) rest = rest.substr(scheme.size());
+    size_t slash = rest.find(L'/');
+    if (slash == std::wstring::npos) { showBalloon(L"liney-win", L"Bad update URL"); return; }
+    const std::wstring host = rest.substr(0, slash);
+    const std::wstring path = rest.substr(slash);
+
+    wchar_t tmp[MAX_PATH]{};
+    GetTempPathW(MAX_PATH, tmp);
+    const std::wstring out = std::wstring(tmp) + L"liney-win-Setup.exe";
+
+    showBalloon(L"liney-win", L"Downloading update…");
+    std::thread([this, host, path, out]() {
+        const bool dl = httpsDownload(host, path, out);
+        {
+            std::lock_guard<std::mutex> lk(updateMutex_);
+            if (dl) installerPath_ = out;
+            else { updateMsg_ = L"Update download failed"; }
+        }
+        if (dl) installerReady_ = true;
+        else updateReady_ = true;
+    }).detach();
+}
+
 void Window::pollUpdateResult() {
+    // Installer downloaded: launch it and quit so it can replace files.
+    if (installerReady_.exchange(false)) {
+        std::wstring path;
+        {
+            std::lock_guard<std::mutex> lk(updateMutex_);
+            path = installerPath_;
+        }
+        if (!path.empty()) {
+            ShellExecuteW(hwnd_, L"open", path.c_str(), nullptr, nullptr,
+                          SW_SHOWNORMAL);
+            PostQuitMessage(0);
+        }
+        return;
+    }
     if (!updateReady_.exchange(false)) return;
-    std::wstring msg;
+    std::wstring msg, url;
+    bool pending;
     {
         std::lock_guard<std::mutex> lk(updateMutex_);
         msg = updateMsg_;
+        url = downloadUrl_;
+        pending = pendingUpdate_;
     }
     showBalloon(L"liney-win", msg);
+    if (pending && !url.empty()) {
+        const std::wstring prompt =
+            msg + L"\n\nDownload and install now? liney-win will close.";
+        if (MessageBoxW(hwnd_, prompt.c_str(), L"liney-win update",
+                        MB_YESNO | MB_ICONQUESTION) == IDYES) {
+            startDownloadAndInstall(url);
+        }
+    }
 }
 
 void Window::applyFont() {

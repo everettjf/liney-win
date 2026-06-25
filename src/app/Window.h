@@ -70,9 +70,11 @@ private:
     void removeTray();
     void pollNotifications();  // drain OSC notifications from all sessions
 
-    // Update check (Sparkle analog): query GitHub releases off-thread.
+    // Update check + auto-update (Sparkle analog): query GitHub releases
+    // off-thread; on confirmation download the installer asset and run it.
     void checkForUpdates();
     void pollUpdateResult();
+    void startDownloadAndInstall(const std::wstring& url);
 
     // Input.
     void onChar(wchar_t unit);
@@ -122,8 +124,12 @@ private:
     NOTIFYICONDATAW nid_{};
     bool trayAdded_ = false;
     std::atomic<bool> updateReady_{ false };
+    std::atomic<bool> installerReady_{ false };
     std::mutex updateMutex_;
     std::wstring updateMsg_;
+    std::wstring downloadUrl_;     // installer asset URL when an update is found
+    std::wstring installerPath_;   // downloaded installer path
+    bool pendingUpdate_ = false;   // an update is available to install
     wchar_t pendingHighSurrogate_ = 0;
     bool swallowNextChar_ = false;  // drop the WM_CHAR following a shortcut
 
