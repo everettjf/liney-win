@@ -58,8 +58,12 @@ void Window::drawLeftSidebar(const Rect& r) {
         std::wstring iconPath = resolveRepoIcon(repo);
         if (iconPath.empty() ||
             !renderer_->drawImage(iconPath, iconX, iconY, iconSz, iconSz)) {
-            // Placeholder slot when no icon resolves.
-            renderer_->fillRect(iconX, iconY, iconSz, iconSz, Color{ 60, 64, 78 });
+            // Default: a folder glyph (tinted by repo) instead of a blank box.
+            static const Color kRepoTints[] = {
+                { 120, 200, 160 }, { 130, 170, 230 }, { 220, 170, 110 },
+                { 200, 140, 200 }, { 210, 130, 130 }, { 150, 190, 120 } };
+            renderer_->drawIcon(IconKind::Folder, iconX, iconY, iconSz,
+                                kRepoTints[i % 6]);
         }
         const float nameX = iconX + iconSz + 6.0f;
         renderer_->drawText(repo.name, nameX, y, r.x + r.w - nameX - pad, rowH,
@@ -234,10 +238,16 @@ void Window::drawPanes(const Rect& r) {
 
     for (Pane* leaf : t->leaves()) {
         if (!leaf->session) continue;
-        renderer_->drawGrid(leaf->session->grid(), leaf->rect.x, leaf->rect.y);
+        const Rect& pr = leaf->rect;
+        // Fill the pane background, then clip the grid to the pane so a grid that
+        // is momentarily wider than the pane (resize lag / wide output) can never
+        // bleed into the sidebar or the right files panel.
+        renderer_->fillRect(pr.x, pr.y, pr.w, pr.h, theme_.background);
+        renderer_->pushClip(pr.x, pr.y, pr.w, pr.h);
+        renderer_->drawGrid(leaf->session->grid(), pr.x, pr.y);
+        renderer_->popClip();
         const bool focused = (leaf == t->active());
-        renderer_->strokeRect(leaf->rect.x, leaf->rect.y, leaf->rect.w,
-                              leaf->rect.h, focused ? kAccent : kBorder,
+        renderer_->strokeRect(pr.x, pr.y, pr.w, pr.h, focused ? kAccent : kBorder,
                               focused ? 1.5f : 1.0f);
     }
 }

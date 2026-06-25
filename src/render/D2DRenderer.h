@@ -30,6 +30,8 @@ public:
 
     void beginFrame() override;
     void endFrame() override;
+    void pushClip(float x, float y, float w, float h) override;
+    void popClip() override;
     void fillRect(float x, float y, float w, float h, const Color& c) override;
     void strokeRect(float x, float y, float w, float h, const Color& c,
                     float thickness) override;

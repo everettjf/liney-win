@@ -17,3 +17,4 @@ CMakeSettings.json
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
+build-ghostty/

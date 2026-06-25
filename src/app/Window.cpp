@@ -226,9 +226,21 @@ void Window::renderFrame() {
 
     renderer_->beginFrame();
     sidebarRows_.clear();
-    if (sidebarVisible_) drawLeftSidebar(leftBar);
-    if (filesPanelVisible_) drawFilesPanel(rightPanel);
+    // Each region is clipped to its own bounds so nothing (long names, a wide
+    // grid, the tab strip) can bleed across panel boundaries.
+    if (sidebarVisible_) {
+        renderer_->pushClip(leftBar.x, leftBar.y, leftBar.w, leftBar.h);
+        drawLeftSidebar(leftBar);
+        renderer_->popClip();
+    }
+    if (filesPanelVisible_) {
+        renderer_->pushClip(rightPanel.x, rightPanel.y, rightPanel.w, rightPanel.h);
+        drawFilesPanel(rightPanel);
+        renderer_->popClip();
+    }
+    renderer_->pushClip(tabBar.x, tabBar.y, tabBar.w, tabBar.h);
     drawTabBar(tabBar);
+    renderer_->popClip();
     drawPanes(panes);
     renderer_->endFrame();
 }

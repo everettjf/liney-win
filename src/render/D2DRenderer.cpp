@@ -197,6 +197,16 @@ void D2DRenderer::endFrame() {
     swapChain_->Present(1, 0);
 }
 
+void D2DRenderer::pushClip(float x, float y, float w, float h) {
+    if (!d2dContext_) return;
+    d2dContext_->PushAxisAlignedClip(D2D1::RectF(x, y, x + w, y + h),
+                                     D2D1_ANTIALIAS_MODE_ALIASED);
+}
+
+void D2DRenderer::popClip() {
+    if (d2dContext_) d2dContext_->PopAxisAlignedClip();
+}
+
 void D2DRenderer::fillRect(float x, float y, float w, float h, const Color& c) {
     if (!d2dContext_ || !brush_) return;
     brush_->SetColor(toColorF(c));

@@ -42,6 +42,10 @@ public:
     virtual void beginFrame() = 0;
     virtual void endFrame() = 0;
 
+    // Restrict subsequent drawing to a rectangle (must be paired with popClip).
+    virtual void pushClip(float x, float y, float w, float h) = 0;
+    virtual void popClip() = 0;
+
     // Chrome primitives (pixel coordinates).
     virtual void fillRect(float x, float y, float w, float h, const Color& c) = 0;
     virtual void strokeRect(float x, float y, float w, float h, const Color& c,
