@@ -28,6 +28,13 @@ public:
     // Discover repos directly under `root` (dirs containing a .git entry).
     void scan(const std::wstring& root);
 
+    // Add an explicit project folder (need not be under the root). Deduped by
+    // path; keeps the list sorted by name.
+    void addProject(const std::wstring& path);
+
+    // Remove the repo with this path. Returns true if one was removed.
+    bool removeRepoByPath(const std::wstring& path);
+
     const std::wstring& root() const { return root_; }
     std::vector<Repo>& repos() { return repos_; }
 

@@ -1,8 +1,10 @@
 #include "app/Window.h"
 #include "app/WindowInternal.h"
+#include "util/Dialogs.h"
 #include "util/Http.h"
 #include "util/Json.h"
 #include "util/Process.h"
+#include "workspace/Workspace.h"
 
 #include <fstream>
 #include <sstream>
@@ -293,8 +295,78 @@ bool Window::restoreLayout() {
 }
 
 // ---------------------------------------------------------------------------
-// Input
+// Workspace management
 // ---------------------------------------------------------------------------
 
+void Window::rescanWorkspace() {
+    workspace_.scan(workspaceRoot_.empty() ? launchParent_ : workspaceRoot_);
+    for (const std::wstring& p : projects_) workspace_.addProject(p);
+}
+
+void Window::addWorkspaceFolder() {
+    std::wstring dir = pickFolder(hwnd_, L"Add a project folder to the workspace");
+    if (dir.empty()) return;
+    for (const std::wstring& p : projects_)
+        if (p == dir) return;  // already added
+    projects_.push_back(dir);
+    persistWorkspaceConfig();
+    rescanWorkspace();
+}
+
+void Window::removeProject(const Repo& repo) {
+    const std::wstring path = repo.path;
+    for (auto it = projects_.begin(); it != projects_.end();)
+        it = (*it == path) ? projects_.erase(it) : it + 1;
+    workspace_.removeRepoByPath(path);
+    persistWorkspaceConfig();
+}
+
+void Window::setProjectIcon(const Repo& repo) {
+    static const wchar_t filt[] =
+        L"Images (*.png;*.ico)\0*.png;*.ico\0All files (*.*)\0*.*\0";
+    const std::wstring filter(filt, sizeof(filt) / sizeof(wchar_t));
+    std::wstring icon =
+        pickFile(hwnd_, L"Choose a project icon (PNG or ICO)", filter);
+    if (icon.empty()) return;
+    const std::wstring name = repo.name;
+    bool found = false;
+    for (auto& pi : projectIcons_)
+        if (pi.first == name) { pi.second = icon; found = true; break; }
+    if (!found) projectIcons_.push_back({ name, icon });
+    persistWorkspaceConfig();
+}
+
+void Window::persistWorkspaceConfig() {
+    const std::wstring dir = configDir();
+    if (dir.empty()) return;
+    const std::wstring path = dir + L"\\config.json";
+
+    // Load the existing config so other fields (theme/hooks/…) are preserved.
+    Json root = Json::object();
+    {
+        std::ifstream f(path.c_str(), std::ios::binary);
+        if (f) {
+            std::ostringstream ss;
+            ss << f.rdbuf();
+            bool ok = false;
+            Json parsed = Json::parse(ss.str(), &ok);
+            if (ok && parsed.isObject()) root = std::move(parsed);
+        }
+    }
+    Json projs = Json::array();
+    for (const std::wstring& p : projects_) projs.push(Json::str(wideToUtf8(p)));
+    root.set("projects", std::move(projs));
+
+    Json icons = Json::object();
+    for (const auto& pi : projectIcons_)
+        icons.set(wideToUtf8(pi.first), Json::str(wideToUtf8(pi.second)));
+    root.set("projectIcons", std::move(icons));
+
+    std::ofstream o(path.c_str(), std::ios::binary);
+    if (o) {
+        const std::string s = root.dump(2);
+        o.write(s.data(), static_cast<std::streamsize>(s.size()));
+    }
+}
 
 } // namespace liney

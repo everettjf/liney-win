@@ -15,6 +15,10 @@ void Window::onMouseDown(int xi, int yi) {
 
     if ((sidebarVisible_ && leftBar.contains(x, y)) ||
         (filesPanelVisible_ && rightPanel.contains(x, y))) {
+        if (sidebarVisible_ && workspaceAddRect_.contains(x, y)) {
+            addWorkspaceFolder();
+            return;
+        }
         for (const SidebarRow& row : sidebarRows_) {
             if (!row.rect.contains(x, y)) continue;
             switch (row.kind) {
@@ -133,14 +137,30 @@ void Window::onMouseDownRight(int xi, int yi) {
         Repo& repo = repos[row.repo];
 
         if (row.worktree < 0) {
-            // Repo header: create a new worktree (prompt for a branch name).
-            std::wstring name = inputBox(hwnd_, L"New worktree",
-                                         L"New branch / worktree name:", L"");
-            if (name.empty()) return;
-            std::wstring path = workspace_.addWorktree(repo, name);
-            if (!path.empty()) newTab(path);  // open a terminal in it
-            else MessageBoxW(hwnd_, L"git worktree add failed.", L"liney-win",
-                             MB_OK | MB_ICONERROR);
+            // Repo header: a context menu (new worktree / set icon / remove).
+            POINT pt{ xi, yi };
+            ClientToScreen(hwnd_, &pt);
+            HMENU menu = CreatePopupMenu();
+            AppendMenuW(menu, MF_STRING, 1, L"New worktree…");
+            AppendMenuW(menu, MF_STRING, 2, L"Set icon…");
+            AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+            AppendMenuW(menu, MF_STRING, 3, L"Remove from workspace");
+            const int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
+                                           pt.x, pt.y, 0, hwnd_, nullptr);
+            DestroyMenu(menu);
+            if (cmd == 1) {
+                std::wstring name = inputBox(hwnd_, L"New worktree",
+                                             L"New branch / worktree name:", L"");
+                if (name.empty()) return;
+                std::wstring path = workspace_.addWorktree(repo, name);
+                if (!path.empty()) newTab(path);
+                else MessageBoxW(hwnd_, L"git worktree add failed.", L"liney-win",
+                                 MB_OK | MB_ICONERROR);
+            } else if (cmd == 2) {
+                setProjectIcon(repo);
+            } else if (cmd == 3) {
+                removeProject(repo);  // erases `repo`; nothing used after
+            }
         } else if (row.worktree < static_cast<int>(repo.worktrees.size())) {
             // Worktree row: confirm and remove.
             const Worktree& wt = repo.worktrees[row.worktree];

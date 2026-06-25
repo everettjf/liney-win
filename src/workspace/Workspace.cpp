@@ -52,6 +52,22 @@ void Workspace::scan(const std::wstring& root) {
               [](const Repo& a, const Repo& b) { return a.name < b.name; });
 }
 
+void Workspace::addProject(const std::wstring& path) {
+    if (path.empty()) return;
+    for (const Repo& r : repos_)
+        if (r.path == path) return;  // already present
+    repos_.push_back(Repo{ basename(path), path, {}, false, false });
+    std::sort(repos_.begin(), repos_.end(),
+              [](const Repo& a, const Repo& b) { return a.name < b.name; });
+}
+
+bool Workspace::removeRepoByPath(const std::wstring& path) {
+    for (auto it = repos_.begin(); it != repos_.end(); ++it) {
+        if (it->path == path) { repos_.erase(it); return true; }
+    }
+    return false;
+}
+
 void Workspace::loadWorktrees(Repo& repo) {
     if (repo.loaded) return;
     repo.loaded = true;

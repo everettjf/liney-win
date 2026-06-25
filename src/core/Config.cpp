@@ -152,6 +152,11 @@ Config loadConfig() {
         for (const auto& kv : pi.members())
             cfg.projectIcons.push_back(
                 { utf8ToWide(kv.first), utf8ToWide(kv.second.asString()) });
+    // projects: ["C:/path/to/folder", ...] (explicit sidebar projects)
+    if (j["projects"].isArray())
+        for (const Json& p : j["projects"].items())
+            if (p.type() == Json::Type::String && !p.asString().empty())
+                cfg.projects.push_back(utf8ToWide(p.asString()));
 
     if (cfg.shell.empty()) cfg.shell = L"cmd.exe";
     if (cfg.fontFamily.empty()) cfg.fontFamily = L"Cascadia Mono";

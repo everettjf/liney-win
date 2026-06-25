@@ -41,6 +41,13 @@ private:
     void drawLeftSidebar(const Rect& r);   // WORKSPACE / SSH / AGENTS
     void drawFilesPanel(const Rect& r);    // FILES (folder tree, right side)
     std::wstring resolveRepoIcon(const Repo& repo) const;  // config or repo-local
+
+    // Workspace management (sidebar).
+    void rescanWorkspace();          // scan root + re-add explicit projects_
+    void addWorkspaceFolder();       // pick a folder, add as a project, persist
+    void removeProject(const Repo& repo);   // drop a project, persist
+    void setProjectIcon(const Repo& repo);  // pick an icon for a project, persist
+    void persistWorkspaceConfig();   // write projects_ + projectIcons_ to config
     void drawTabBar(const Rect& r);
     void drawPanes(const Rect& r);
     void reapExitedPanes();
@@ -128,6 +135,9 @@ private:
     std::vector<std::wstring> sshHosts_;
     std::vector<AgentDef> agents_;
     std::vector<std::pair<std::wstring, std::wstring>> projectIcons_;
+    std::vector<std::wstring> projects_;   // explicit sidebar project folders
+    std::wstring workspaceRoot_;           // scanned root (empty = launch parent)
+    std::wstring launchParent_;            // parent of the launch dir (default root)
     Theme theme_;
     std::wstring lastTitle_;        // avoid redundant SetWindowText calls
     NOTIFYICONDATAW nid_{};
@@ -153,6 +163,7 @@ private:
     };
     std::vector<SidebarRow> sidebarRows_;
     std::vector<Rect> tabRects_;
+    Rect workspaceAddRect_{};  // the WORKSPACE "+" (add project) button
     Rect plusRect_{};
     int tabDragIndex_ = -1;  // tab being dragged in the strip (-1 = none)
 

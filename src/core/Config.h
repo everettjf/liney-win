@@ -32,6 +32,8 @@ struct Config {
     bool unixTools = true;                  // append Git's usr/bin to PATH (ls/cat/…)
     // Per-project sidebar icons: repo name -> icon file path (png/ico).
     std::vector<std::pair<std::wstring, std::wstring>> projectIcons;
+    // Explicit project folders added to the sidebar (besides scanned ones).
+    std::vector<std::wstring> projects;
 };
 
 // %USERPROFILE%\.liney (created if missing). Empty if USERPROFILE is unset.

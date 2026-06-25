@@ -38,6 +38,13 @@ void Window::drawLeftSidebar(const Rect& r) {
 
     renderer_->drawText(L"WORKSPACE", r.x + pad, y, r.w - pad, rowH, kSidebarHdr,
                         true);
+    // "+" add-project button at the right of the header row.
+    {
+        const float bw = rowH;
+        const float bx = r.x + r.w - bw - 2.0f;
+        workspaceAddRect_ = { bx, y - 2.0f, bw, rowH };
+        renderer_->drawText(L"+", bx + bw * 0.28f, y, bw, rowH, kAccent, true);
+    }
     y += rowH + 2.0f;
 
     auto& repos = workspace_.repos();

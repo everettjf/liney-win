@@ -83,6 +83,8 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     sshHosts_ = cfg.sshHosts;
     agents_ = cfg.agents;
     projectIcons_ = cfg.projectIcons;
+    projects_ = cfg.projects;
+    workspaceRoot_ = cfg.workspaceRoot;
     theme_ = cfg.theme;
     renderer_->setColors(theme_.background, theme_.background);
     applyFont();
@@ -92,8 +94,8 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     wchar_t cwd[MAX_PATH]{};
     GetCurrentDirectoryW(MAX_PATH, cwd);
     std::wstring startCwd = cwd;
-    workspace_.scan(cfg.workspaceRoot.empty() ? parentDir(startCwd)
-                                              : cfg.workspaceRoot);
+    launchParent_ = parentDir(startCwd);
+    rescanWorkspace();
 
     // Restore the saved tab/pane layout if any; otherwise open one tab.
     if (!restoreLayout()) newTab(startCwd);
