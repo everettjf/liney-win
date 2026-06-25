@@ -72,6 +72,8 @@ private:
     void toggleKeepAwake();  // prevent/allow system+display sleep (caffeine)
     void openConfigFile();   // open %USERPROFILE%\.liney\config.json in the editor
     void openMainMenu();     // native popup menu for the top-right "☰" button
+    void openTabMenu(int x, int y);  // right-click a tab: close / open in explorer…
+    void closeTab(size_t idx);       // close an entire tab (all its panes)
 
     // Layout persistence (%USERPROFILE%\.liney\layout.json).
     void saveLayout() const;

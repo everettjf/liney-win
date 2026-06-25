@@ -439,5 +439,53 @@ void Window::openMainMenu() {
     }
 }
 
+void Window::openTabMenu(int xi, int yi) {
+    POINT pt{ xi, yi };
+    ClientToScreen(hwnd_, &pt);
+    HMENU m = CreatePopupMenu();
+    AppendMenuW(m, MF_STRING, 1, L"New tab\tCtrl+Shift+T");
+    AppendMenuW(m, MF_STRING, 2, L"Open in Explorer");
+    AppendMenuW(m, MF_STRING, 3, L"Copy path");
+    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m, MF_STRING, 4, L"Close tab\tCtrl+Shift+W");
+    const int cmd = TrackPopupMenu(m, TPM_RETURNCMD, pt.x, pt.y, 0, hwnd_, nullptr);
+    DestroyMenu(m);
+
+    TerminalSession* s = activeSession();
+    const std::wstring cwd = s ? s->cwd() : L"";
+    switch (cmd) {
+    case 1: newTab(cwd.empty() ? workspace_.root() : cwd); break;
+    case 2:
+        if (!cwd.empty())
+            ShellExecuteW(hwnd_, L"open", cwd.c_str(), nullptr, nullptr,
+                          SW_SHOWNORMAL);
+        break;
+    case 3:
+        if (!cwd.empty() && OpenClipboard(hwnd_)) {
+            EmptyClipboard();
+            const size_t bytes = (cwd.size() + 1) * sizeof(wchar_t);
+            if (HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, bytes)) {
+                memcpy(GlobalLock(h), cwd.c_str(), bytes);
+                GlobalUnlock(h);
+                SetClipboardData(CF_UNICODETEXT, h);
+            }
+            CloseClipboard();
+        }
+        break;
+    case 4: closeTab(activeTab_); break;
+    default: break;
+    }
+}
+
+void Window::closeTab(size_t idx) {
+    if (idx >= tabs_.size()) return;
+    clearSelection();
+    runDetached(sessionExitHook_, L"");  // hooks.sessionExit
+    tabs_.erase(tabs_.begin() + idx);
+    if (tabs_.empty()) { PostQuitMessage(0); return; }
+    if (activeTab_ >= tabs_.size()) activeTab_ = tabs_.size() - 1;
+    updateTitle();
+}
+
 
 } // namespace liney

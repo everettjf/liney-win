@@ -70,6 +70,14 @@ bool ConPty::start(const std::wstring& command, short cols, short rows,
     return true;
 }
 
+bool ConPty::hasExited() const {
+    if (exited_.load()) return true;
+    // ConPTY may hold the output pipe open after the child exits, so the reader
+    // never sees EOF — poll the child process itself.
+    return procInfo_.hProcess &&
+           WaitForSingleObject(procInfo_.hProcess, 0) == WAIT_OBJECT_0;
+}
+
 void ConPty::write(const char* data, size_t len) {
     if (!inputWrite_) return;
     DWORD written = 0;

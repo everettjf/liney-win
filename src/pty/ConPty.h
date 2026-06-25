@@ -33,8 +33,10 @@ public:
     void resize(short cols, short rows);
     void stop();
 
-    // True once the child shell has exited (reader thread reached EOF).
-    bool hasExited() const { return exited_.load(); }
+    // True once the child shell has exited. Checks the child process handle as
+    // well as reader EOF — ConPTY often keeps the output pipe open after the
+    // child exits (e.g. after `exit`), so EOF alone is not enough.
+    bool hasExited() const;
 
 private:
     HPCON hpc_ = nullptr;

@@ -120,6 +120,20 @@ void Window::onMouseDownRight(int xi, int yi) {
     const float x = static_cast<float>(xi), y = static_cast<float>(yi);
     Rect leftBar, rightPanel, tabBar, panes;
     regions(leftBar, rightPanel, tabBar, panes);
+
+    // Right-click a tab → context menu (acts on that tab).
+    if (tabBar.contains(x, y)) {
+        for (size_t i = 0; i < tabRects_.size(); ++i) {
+            if (!tabRects_[i].contains(x, y)) continue;
+            activeTab_ = i;
+            clearSelection();
+            updateTitle();
+            openTabMenu(xi, yi);
+            return;
+        }
+        return;
+    }
+
     if (!sidebarVisible_ || !leftBar.contains(x, y)) return;
 
     for (const SidebarRow& row : sidebarRows_) {
