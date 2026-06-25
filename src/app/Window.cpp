@@ -2,6 +2,7 @@
 
 #include <windowsx.h>  // GET_X_LPARAM / GET_Y_LPARAM
 
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -253,15 +254,14 @@ void Window::drawSidebar(const Rect& r) {
     if (repos.empty()) {
         renderer_->drawText(L"(no git repos found)", r.x + pad, y, r.w - pad,
                             rowH, kDim, false);
-        return;
     }
-
     for (int i = 0; i < static_cast<int>(repos.size()); ++i) {
+        if (y > r.bottom()) break;
         Repo& repo = repos[i];
         const std::wstring marker = repo.expanded ? L"v " : L"> ";
         renderer_->drawText(marker + repo.name, r.x + pad, y, r.w - pad, rowH,
                             kText, true);
-        sidebarRows_.push_back({ { r.x, y, r.w, rowH }, i, -1 });
+        sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::RepoHeader, i, -1, L"" });
         y += rowH;
 
         if (repo.expanded) {
@@ -269,12 +269,72 @@ void Window::drawSidebar(const Rect& r) {
                 renderer_->drawText(L"- " + repo.worktrees[w].label,
                                     r.x + pad + metrics_.cellW * 2.0f, y,
                                     r.w - pad, rowH, kDim, false);
-                sidebarRows_.push_back({ { r.x, y, r.w, rowH }, i, w });
+                sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::Worktree, i, w, L"" });
                 y += rowH;
             }
         }
-        if (y > r.bottom()) break;
     }
+
+    // ---- FILES: directory of the focused pane, navigable -------------------
+    refreshFileList();
+    y += rowH * 0.5f;
+    std::wstring header = L"FILES";
+    if (!browsePath_.empty()) {
+        size_t s = browsePath_.find_last_of(L"\\/");
+        header += L"  " + (s == std::wstring::npos ? browsePath_
+                                                   : browsePath_.substr(s + 1));
+    }
+    renderer_->drawText(header, r.x + pad, y, r.w - pad, rowH, kSidebarHdr, true);
+    y += rowH + 2.0f;
+
+    if (!browsePath_.empty()) {
+        renderer_->drawText(L".. ", r.x + pad, y, r.w - pad, rowH, kDim, false);
+        sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::FileUp, -1, -1, L"" });
+        y += rowH;
+    }
+    for (const FileEntry& e : fileEntries_) {
+        if (y > r.bottom()) break;
+        const std::wstring text =
+            (e.isDir ? L"> " : L"  ") + e.name + (e.isDir ? L"/" : L"");
+        renderer_->drawText(text, r.x + pad, y, r.w - pad, rowH,
+                            e.isDir ? kText : kDim, false);
+        sidebarRows_.push_back(
+            { { r.x, y, r.w, rowH },
+              e.isDir ? RowKind::FileDir : RowKind::FileEntry, -1, -1, e.path });
+        y += rowH;
+    }
+}
+
+void Window::refreshFileList() {
+    // Follow the focused pane's cwd unless the user navigated manually.
+    if (TerminalSession* s = activeSession()) {
+        if (s->cwd() != lastActiveCwd_) {
+            lastActiveCwd_ = s->cwd();
+            browsePath_ = s->cwd();
+        }
+    }
+    if (browsePath_ == listedDir_) return;  // already listed
+    listedDir_ = browsePath_;
+    fileEntries_.clear();
+    if (browsePath_.empty()) return;
+
+    WIN32_FIND_DATAW fd{};
+    HANDLE h = FindFirstFileW((browsePath_ + L"\\*").c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        const std::wstring name = fd.cFileName;
+        if (name == L"." || name == L"..") continue;
+        const bool dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        fileEntries_.push_back({ name, browsePath_ + L"\\" + name, dir });
+        if (fileEntries_.size() >= 500) break;
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+
+    std::sort(fileEntries_.begin(), fileEntries_.end(),
+              [](const FileEntry& a, const FileEntry& b) {
+                  if (a.isDir != b.isDir) return a.isDir;  // dirs first
+                  return _wcsicmp(a.name.c_str(), b.name.c_str()) < 0;
+              });
 }
 
 void Window::drawTabBar(const Rect& r) {
@@ -707,14 +767,42 @@ void Window::onMouseDown(int xi, int yi) {
     if (sidebarVisible_ && sidebar.contains(x, y)) {
         for (const SidebarRow& row : sidebarRows_) {
             if (!row.rect.contains(x, y)) continue;
-            auto& repos = workspace_.repos();
-            if (row.repo < 0 || row.repo >= static_cast<int>(repos.size())) return;
-            Repo& repo = repos[row.repo];
-            if (row.worktree < 0) {  // repo header: toggle, load lazily
+            switch (row.kind) {
+            case RowKind::RepoHeader: {
+                auto& repos = workspace_.repos();
+                if (row.repo < 0 || row.repo >= static_cast<int>(repos.size())) return;
+                Repo& repo = repos[row.repo];
                 repo.expanded = !repo.expanded;
                 if (repo.expanded) workspace_.loadWorktrees(repo);
-            } else if (row.worktree < static_cast<int>(repo.worktrees.size())) {
-                newTab(repo.worktrees[row.worktree].path);  // open terminal there
+                break;
+            }
+            case RowKind::Worktree: {
+                auto& repos = workspace_.repos();
+                if (row.repo < 0 || row.repo >= static_cast<int>(repos.size())) return;
+                Repo& repo = repos[row.repo];
+                if (row.worktree < static_cast<int>(repo.worktrees.size()))
+                    newTab(repo.worktrees[row.worktree].path);
+                break;
+            }
+            case RowKind::FileUp: {
+                size_t s = browsePath_.find_last_of(L"\\/");
+                if (s != std::wstring::npos) browsePath_ = browsePath_.substr(0, s);
+                break;
+            }
+            case RowKind::FileDir:
+                browsePath_ = row.path;  // navigate the panel into the directory
+                break;
+            case RowKind::FileEntry: {
+                // Insert the filename into the focused pane (quote if needed).
+                std::wstring name = row.path;
+                size_t s = name.find_last_of(L"\\/");
+                if (s != std::wstring::npos) name = name.substr(s + 1);
+                std::wstring ins = name.find(L' ') != std::wstring::npos
+                                       ? L"\"" + name + L"\" "
+                                       : name + L" ";
+                sendUtf16(ins.c_str(), ins.size());
+                break;
+            }
             }
             return;
         }

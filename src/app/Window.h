@@ -108,10 +108,25 @@ private:
     bool swallowNextChar_ = false;  // drop the WM_CHAR following a shortcut
 
     // Hit-test rects rebuilt each frame.
-    struct SidebarRow { Rect rect; int repo; int worktree; };  // worktree<0 => header
+    enum class RowKind { RepoHeader, Worktree, FileUp, FileDir, FileEntry };
+    struct SidebarRow {
+        Rect rect;
+        RowKind kind = RowKind::RepoHeader;
+        int repo = -1;
+        int worktree = -1;
+        std::wstring path;  // for file rows
+    };
     std::vector<SidebarRow> sidebarRows_;
     std::vector<Rect> tabRects_;
     Rect plusRect_{};
+
+    // FILES panel: a navigable listing that follows the focused pane's cwd.
+    void refreshFileList();   // re-list browsePath_ when it changes
+    std::wstring browsePath_;
+    std::wstring lastActiveCwd_;
+    std::wstring listedDir_;
+    struct FileEntry { std::wstring name; std::wstring path; bool isDir; };
+    std::vector<FileEntry> fileEntries_;
 
     // Selection (over the focused pane's viewport, in that pane's cell coords).
     bool selecting_ = false;       // a text-selection drag is in progress

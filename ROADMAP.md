@@ -71,8 +71,8 @@ SSH / agent / tmux / 打包更新 体量大、相对独立,排在后面;diff/his
 - ✅ **布局持久化**:标签 + 分屏树 + 每个 pane 的 cwd → `%USERPROFILE%\.liney\layout.json`,重开恢复(liney 核心卖点;确定性验证:已知布局恢复出 3 个 shell,优雅关闭后回写结构正确)
 - ✅ **拖拽分隔条**调 pane 比例(命中分隔线即拖动改 ratio)
 - ✅ **worktree 操作**:右键仓库新建 worktree(InputBox 输入分支名,`git worktree add`)、右键 worktree 删除(确认,`git worktree remove`)——git 命令形态与 porcelain 解析已验证
+- ✅ **文件树**:侧边栏 FILES 面板跟随聚焦 pane 的 cwd,目录在前、文件在后;点目录导航、点文件把文件名插入到 pane(PrintWindow 截图确认:点击插入 LICENSE/RENDERING.md/TECH_PLAN.md)
 - ⬜ **标签拖拽**重排
-- ⬜ **文件树**:跟随聚焦 pane cwd 的本地文件树面板
 
 ### P4 — 集成与通知 🟡 进行中
 - ✅ **`liney notify` CLI**(独立 `liney.exe`:`notify` / `title`)+ **OSC 0/2/7/9/777 解析** → 托盘气泡通知 + 实时标题(确定性验证:CLI 输出 OSC 字节正确;窗口标题随 OSC 实时变化;`sessionStart` hook 写出标记文件)

@@ -14,10 +14,12 @@ Windows 版终端工作区(对标 macOS 的 [liney](https://github.com/everettjf
 │  > repoA     ├───────────────┬───────────────┤
 │  v repoB     │   pane (cmd)  │   pane (cmd)   │  ← 分屏的 pane 树
 │    - main    │               ├───────────────┤
-│    - feature │               │   pane (cmd)   │
-│  > repoC     │               │                │
+│  FILES repoB │               │   pane (cmd)   │
+│   ..         │               │                │
+│  > src/      │               │                │
+│   README.md  │               │                │
 └──────────────┴───────────────┴───────────────┘
-  侧边栏(仓库/worktree)        每个 pane 一个 shell 会话
+  侧边栏(仓库/worktree + 跟随 pane 的文件树)  每个 pane 一个 shell 会话
 ```
 
 单 pane 链路:**键盘 → ConPTY → 终端核心(VT 解析/屏幕缓冲)→ Grid → Direct2D/DirectWrite 渲染**。
@@ -26,6 +28,7 @@ Windows 版终端工作区(对标 macOS 的 [liney](https://github.com/everettjf
 - `Tab` + `Pane`:每个标签是一棵二叉分屏树,叶子托管一个 `TerminalSession`
 - `TerminalSession`:`Terminal` + `ConPty` + `Grid` + cwd/title,一个 pane 一个
 - `Workspace`:侧边栏数据模型——扫描根目录下一层的 git 仓库,展开时惰性 `git worktree list`
+- 侧边栏 **FILES** 面板:跟随聚焦 pane 的 cwd 列目录;点目录导航、点文件把文件名插入到 pane
 - `ConPty`:Windows 伪控制台封装(在指定 cwd 起 shell、读输出、回写输入、resize、退出检测)
 - `Terminal`:终端核心封装,两种后端二选一:
   - **默认:内置 `VTEmulator`**——自带的 xterm 子集解析器 + 屏幕缓冲(光标、UTF-8、CSI 光标移动、擦除、SGR 颜色/粗体/下划线/反显、滚动区、插入/删除行列)。**仅需 MSVC,无外部依赖。**
