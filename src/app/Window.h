@@ -1,6 +1,7 @@
 #pragma once
 
 #include <windows.h>
+#include <shellapi.h>
 
 #include <memory>
 #include <string>
@@ -45,6 +46,7 @@ private:
     void cellsForRect(const Rect& r, int& cols, int& rows) const;
     void newTab(const std::wstring& cwd);
     void splitActive(SplitDir dir);
+    void runStartHook(TerminalSession* s);  // send sessionStart hook to a shell
     void closeActivePane();
     void switchTab(int delta);
     void updateTitle();
@@ -57,6 +59,12 @@ private:
     void saveLayout() const;
     bool restoreLayout();    // returns true if at least one tab was restored
     std::unique_ptr<Pane> paneFromJson(const class Json& j, int cols, int rows);
+
+    // Tray icon + balloon notifications (driven by OSC 9/777).
+    void initTray();
+    void showBalloon(const std::wstring& title, const std::wstring& body);
+    void removeTray();
+    void pollNotifications();  // drain OSC notifications from all sessions
 
     // Input.
     void onChar(wchar_t unit);
@@ -92,6 +100,10 @@ private:
     std::wstring fontFamily_ = L"Cascadia Mono";
     float fontSize_ = 16.0f;
     float defaultFontSize_ = 16.0f;
+    std::wstring sessionStartHook_; // command sent to each newly started shell
+    std::wstring lastTitle_;        // avoid redundant SetWindowText calls
+    NOTIFYICONDATAW nid_{};
+    bool trayAdded_ = false;
     wchar_t pendingHighSurrogate_ = 0;
     bool swallowNextChar_ = false;  // drop the WM_CHAR following a shortcut
 

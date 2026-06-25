@@ -52,6 +52,9 @@ std::string defaultJson(const Config& c) {
     j.set("fontFamily", Json::str(wideToUtf8(c.fontFamily)));
     j.set("fontSize", Json::number(c.fontSize));
     j.set("workspaceRoot", Json::str(wideToUtf8(c.workspaceRoot)));
+    Json hooks = Json::object();
+    hooks.set("sessionStart", Json::str(wideToUtf8(c.sessionStartHook)));
+    j.set("hooks", std::move(hooks));
     return j.dump(2);
 }
 
@@ -89,6 +92,9 @@ Config loadConfig() {
         cfg.fontSize = static_cast<float>(j["fontSize"].asNumber(cfg.fontSize));
     if (j.contains("workspaceRoot"))
         cfg.workspaceRoot = utf8ToWide(j["workspaceRoot"].asString());
+    // hooks.sessionStart: command sent to each new shell.
+    cfg.sessionStartHook =
+        utf8ToWide(j["hooks"]["sessionStart"].asString());
 
     if (cfg.shell.empty()) cfg.shell = L"cmd.exe";
     if (cfg.fontFamily.empty()) cfg.fontFamily = L"Cascadia Mono";

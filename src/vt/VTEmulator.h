@@ -3,9 +3,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <string>
 #include <vector>
 
 #include "render/Cell.h"
+#include "vt/Notification.h"
 
 namespace liney {
 
@@ -47,6 +49,11 @@ public:
     // Whether the app enabled bracketed paste (DEC mode ?2004).
     bool bracketedPaste() const { return bracketedPaste_; }
 
+    // OSC-driven metadata. The caller serializes access via Terminal's mutex.
+    const std::wstring& oscTitle() const { return oscTitle_; }
+    bool takeCwd(std::wstring& out);                 // true if cwd changed
+    void drainNotifications(std::vector<Notification>& out);
+
 private:
     // --- screen buffer -----------------------------------------------------
     Cell& cell(int x, int y) { return cells_[static_cast<size_t>(y) * cols_ + x]; }
@@ -73,6 +80,7 @@ private:
     void execControl(uint32_t cp);     // C0 controls in Ground
     void csiDispatch(uint32_t finalByte);
     void escDispatch(uint32_t finalByte);
+    void oscDispatch();                // parse the collected OSC string
     void applySgr();
     int param(size_t i, int dflt) const;
 
@@ -119,6 +127,13 @@ private:
     bool csiPrivate_ = false;      // leading '?' (or other) marker
     std::vector<int> params_;
     int curParam_ = -1;            // -1 == no digits yet
+
+    // OSC accumulation + results.
+    std::string oscBuf_;                       // UTF-8 OSC payload
+    std::wstring oscTitle_;                     // OSC 0/2 window title
+    std::wstring oscCwd_;                       // OSC 7 working directory
+    bool cwdDirty_ = false;
+    std::vector<Notification> notifications_;   // OSC 9 / 777
 };
 
 } // namespace liney

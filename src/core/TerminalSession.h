@@ -1,9 +1,11 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "pty/ConPty.h"
 #include "render/Cell.h"
+#include "vt/Notification.h"
 #include "vt/Terminal.h"
 
 namespace liney {
@@ -42,6 +44,16 @@ public:
     bool exited() const { return pty_.hasExited(); }
     const std::wstring& cwd() const { return cwd_; }
     const std::wstring& title() const { return title_; }
+
+    // Pull OSC-driven updates: refresh title/cwd and append any notifications.
+    // Called every frame for every session (so background panes notify too).
+    void poll(std::vector<Notification>& notes) {
+        std::wstring t = terminal_.oscTitle();
+        if (!t.empty()) title_ = t;
+        std::wstring c;
+        if (terminal_.takeCwd(c) && !c.empty()) cwd_ = c;
+        terminal_.drainNotifications(notes);
+    }
 
 private:
     Terminal terminal_;

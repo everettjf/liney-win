@@ -3,8 +3,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <string>
+#include <vector>
 
 #include "render/Cell.h"
+#include "vt/Notification.h"
 
 #ifdef LINEY_WITH_LIBGHOSTTY
 extern "C" {
@@ -57,6 +60,11 @@ public:
 
     // Whether the app enabled bracketed paste (DEC mode ?2004).
     bool bracketedPaste() const;
+
+    // OSC-driven metadata (built-in backend only; libghostty returns empty).
+    std::wstring oscTitle();
+    bool takeCwd(std::wstring& out);                  // true if cwd changed
+    void drainNotifications(std::vector<Notification>& out);
 
 private:
     std::mutex mutex_;

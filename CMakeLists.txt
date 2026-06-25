@@ -38,6 +38,12 @@ target_compile_definitions(liney_win PRIVATE
 target_link_libraries(liney_win PRIVATE
   d2d1 dwrite d3d11 dxgi)
 
+# Companion CLI: liney.exe (console). `liney notify ...` emits OSC sequences a
+# liney-win pane turns into notifications.
+add_executable(liney_cli src/cli/main.cpp)
+set_target_properties(liney_cli PROPERTIES OUTPUT_NAME liney)
+target_compile_definitions(liney_cli PRIVATE UNICODE _UNICODE)
+
 if(LINEY_WITH_LIBGHOSTTY)
   include(FetchContent)
   FetchContent_Declare(ghostty

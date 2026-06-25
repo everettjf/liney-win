@@ -11,6 +11,7 @@ struct Config {
     std::wstring fontFamily = L"Cascadia Mono";
     float fontSize = 16.0f;
     std::wstring workspaceRoot;             // empty => parent of launch directory
+    std::wstring sessionStartHook;          // command run in each new shell
 };
 
 // %USERPROFILE%\.liney (created if missing). Empty if USERPROFILE is unset.

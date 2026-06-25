@@ -102,6 +102,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     fontFamily_ = cfg.fontFamily;
     fontSize_ = cfg.fontSize;
     defaultFontSize_ = cfg.fontSize;
+    sessionStartHook_ = cfg.sessionStartHook;
     applyFont();
 
     // Workspace root: config override, else the parent of the launch directory
@@ -115,6 +116,8 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     // Restore the saved tab/pane layout if any; otherwise open one tab.
     if (!restoreLayout()) newTab(startCwd);
     if (tabs_.empty()) return false;  // shell failed to launch
+
+    initTray();  // for OSC 9/777 balloon notifications
     return true;
 }
 
@@ -189,6 +192,7 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
         onWheel(GET_WHEEL_DELTA_WPARAM(wParam));
         return 0;
     case WM_DESTROY:
+        removeTray();
         PostQuitMessage(0);
         return 0;
     default:
@@ -215,6 +219,9 @@ void Window::regions(Rect& sidebar, Rect& tabBar, Rect& panes) const {
 void Window::renderFrame() {
     reapExitedPanes();
     if (tabs_.empty()) return;
+
+    pollNotifications();  // OSC 9/777 across all sessions -> balloons
+    updateTitle();        // reflect OSC 0/2 title changes live
 
     Tab* t = activeTab();
     if (t) for (Pane* leaf : t->leaves())
@@ -360,9 +367,17 @@ void Window::newTab(const std::wstring& cwd) {
 
     auto session = std::make_unique<TerminalSession>();
     if (!session->start(shell_, cwd, cols, rows)) return;
+    runStartHook(session.get());
     tabs_.push_back(std::make_unique<Tab>(std::move(session)));
     activeTab_ = tabs_.size() - 1;
     updateTitle();
+}
+
+void Window::runStartHook(TerminalSession* s) {
+    if (!s || sessionStartHook_.empty()) return;
+    const std::wstring line = sessionStartHook_ + L"\r";
+    const std::string utf8 = wideToUtf8(line);
+    s->sendBytes(utf8.data(), utf8.size());
 }
 
 void Window::splitActive(SplitDir dir) {
@@ -377,6 +392,7 @@ void Window::splitActive(SplitDir dir) {
 
     auto session = std::make_unique<TerminalSession>();
     if (!session->start(shell_, cwd, cols, rows)) return;
+    runStartHook(session.get());
     t->splitActive(dir, std::move(session));
 }
 
@@ -404,7 +420,45 @@ void Window::updateTitle() {
     Tab* t = activeTab();
     std::wstring title = L"liney-win";
     if (t) title += L" — " + t->title();
+    if (title == lastTitle_) return;
+    lastTitle_ = title;
     SetWindowTextW(hwnd_, title.c_str());
+}
+
+void Window::initTray() {
+    nid_ = {};
+    nid_.cbSize = sizeof(nid_);
+    nid_.hWnd = hwnd_;
+    nid_.uID = 1;
+    nid_.uFlags = NIF_ICON | NIF_TIP;
+    nid_.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    wcsncpy_s(nid_.szTip, L"liney-win", _TRUNCATE);
+    trayAdded_ = Shell_NotifyIconW(NIM_ADD, &nid_) != FALSE;
+}
+
+void Window::showBalloon(const std::wstring& title, const std::wstring& body) {
+    if (!trayAdded_) return;
+    nid_.uFlags = NIF_INFO;
+    nid_.dwInfoFlags = NIIF_INFO;
+    wcsncpy_s(nid_.szInfoTitle, title.empty() ? L"liney-win" : title.c_str(),
+              _TRUNCATE);
+    wcsncpy_s(nid_.szInfo, body.c_str(), _TRUNCATE);
+    Shell_NotifyIconW(NIM_MODIFY, &nid_);
+}
+
+void Window::removeTray() {
+    if (trayAdded_) {
+        Shell_NotifyIconW(NIM_DELETE, &nid_);
+        trayAdded_ = false;
+    }
+}
+
+void Window::pollNotifications() {
+    std::vector<Notification> notes;
+    for (auto& tab : tabs_)
+        for (Pane* leaf : tab->leaves())
+            if (leaf->session) leaf->session->poll(notes);
+    for (const Notification& n : notes) showBalloon(n.title, n.body);
 }
 
 void Window::applyFont() {

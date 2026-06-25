@@ -127,6 +127,9 @@ bool Terminal::snapshotInto(Grid& grid) {
 void Terminal::scrollViewport(int) {}
 void Terminal::scrollToBottom() {}
 bool Terminal::bracketedPaste() const { return false; }
+std::wstring Terminal::oscTitle() { return std::wstring(); }
+bool Terminal::takeCwd(std::wstring&) { return false; }
+void Terminal::drainNotifications(std::vector<Notification>&) {}
 
 #else // !LINEY_WITH_LIBGHOSTTY — built-in VTEmulator (the default MVP core).
 
@@ -168,6 +171,21 @@ void Terminal::scrollToBottom() {
 
 bool Terminal::bracketedPaste() const {
     return active_ && emu_.bracketedPaste();
+}
+
+std::wstring Terminal::oscTitle() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return active_ ? emu_.oscTitle() : std::wstring();
+}
+
+bool Terminal::takeCwd(std::wstring& out) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return active_ && emu_.takeCwd(out);
+}
+
+void Terminal::drainNotifications(std::vector<Notification>& out) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (active_) emu_.drainNotifications(out);
 }
 
 #endif

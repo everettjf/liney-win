@@ -70,6 +70,57 @@ void appendUtf16(uint32_t cp, std::wstring& out) {
     }
 }
 
+void appendUtf8String(uint32_t cp, std::string& out) {
+    if (cp <= 0x7F) {
+        out.push_back(static_cast<char>(cp));
+    } else if (cp <= 0x7FF) {
+        out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    } else if (cp <= 0xFFFF) {
+        out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    } else {
+        out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+    }
+}
+
+// Decode a UTF-8 string to UTF-16 (wstring), tolerant of malformed bytes.
+std::wstring utf8ToWide(const std::string& s) {
+    std::wstring out;
+    size_t i = 0;
+    while (i < s.size()) {
+        uint8_t b = static_cast<uint8_t>(s[i]);
+        uint32_t cp = 0;
+        int extra = 0;
+        if (b < 0x80) { cp = b; }
+        else if ((b & 0xE0) == 0xC0) { cp = b & 0x1F; extra = 1; }
+        else if ((b & 0xF0) == 0xE0) { cp = b & 0x0F; extra = 2; }
+        else if ((b & 0xF8) == 0xF0) { cp = b & 0x07; extra = 3; }
+        else { ++i; continue; }
+        ++i;
+        for (int k = 0; k < extra && i < s.size(); ++k, ++i)
+            cp = (cp << 6) | (static_cast<uint8_t>(s[i]) & 0x3F);
+        appendUtf16(cp, out);
+    }
+    return out;
+}
+
+std::vector<std::string> splitChar(const std::string& s, char sep) {
+    std::vector<std::string> parts;
+    size_t i = 0;
+    for (;;) {
+        size_t p = s.find(sep, i);
+        parts.push_back(s.substr(i, p == std::string::npos ? p : p - i));
+        if (p == std::string::npos) break;
+        i = p + 1;
+    }
+    return parts;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -262,7 +313,7 @@ void VTEmulator::onCodepoint(uint32_t cp) {
             csiPrivate_ = false;
             return;
         }
-        if (cp == ']') { state_ = State::Osc; return; }
+        if (cp == ']') { state_ = State::Osc; oscBuf_.clear(); return; }
         escDispatch(cp);
         state_ = State::Ground;
         return;
@@ -284,9 +335,10 @@ void VTEmulator::onCodepoint(uint32_t cp) {
         return;
 
     case State::Osc:
-        if (cp == 0x07) { state_ = State::Ground; return; }  // BEL ends OSC
-        if (cp == 0x1B) { state_ = State::Esc; return; }      // ESC \ (ST)
-        return;                                                // swallow content
+        if (cp == 0x07) { oscDispatch(); state_ = State::Ground; return; }  // BEL
+        if (cp == 0x1B) { oscDispatch(); state_ = State::Esc; return; }     // ST
+        appendUtf8String(cp, oscBuf_);
+        return;
     }
 }
 
@@ -557,5 +609,54 @@ void VTEmulator::scrollViewport(int deltaLines) {
 }
 
 void VTEmulator::scrollToBottom() { viewOffset_ = 0; }
+
+void VTEmulator::oscDispatch() {
+    const std::string& s = oscBuf_;
+    size_t semi = s.find(';');
+    const std::string num = (semi == std::string::npos) ? s : s.substr(0, semi);
+    const std::string rest =
+        (semi == std::string::npos) ? std::string() : s.substr(semi + 1);
+
+    if (num == "0" || num == "2") {            // set window/icon title
+        oscTitle_ = utf8ToWide(rest);
+    } else if (num == "7") {                   // report cwd: file://host/path
+        std::string path = rest;
+        const std::string fp = "file://";
+        if (path.rfind(fp, 0) == 0) {
+            size_t slash = path.find('/', fp.size());
+            path = (slash == std::string::npos) ? "" : path.substr(slash);
+        }
+        if (path.size() >= 3 && path[0] == '/' && path[2] == ':')
+            path = path.substr(1);             // /D:/x -> D:/x
+        for (char& c : path) if (c == '/') c = '\\';
+        if (!path.empty()) { oscCwd_ = utf8ToWide(path); cwdDirty_ = true; }
+    } else if (num == "9") {                    // OSC 9 ; message  (notification)
+        if (!rest.empty())
+            notifications_.push_back({ L"liney-win", utf8ToWide(rest) });
+    } else if (num == "777") {                  // OSC 777 ; notify ; title ; body
+        std::vector<std::string> parts = splitChar(rest, ';');
+        if (!parts.empty() && parts[0] == "notify") {
+            std::wstring title = parts.size() > 1 ? utf8ToWide(parts[1]) : L"liney-win";
+            std::wstring body = parts.size() > 2 ? utf8ToWide(parts[2]) : L"";
+            notifications_.push_back({ title, body });
+        }
+    }
+    if (notifications_.size() > 32)
+        notifications_.erase(notifications_.begin(),
+                             notifications_.end() - 32);
+    oscBuf_.clear();
+}
+
+bool VTEmulator::takeCwd(std::wstring& out) {
+    if (!cwdDirty_) return false;
+    out = oscCwd_;
+    cwdDirty_ = false;
+    return true;
+}
+
+void VTEmulator::drainNotifications(std::vector<Notification>& out) {
+    for (auto& n : notifications_) out.push_back(std::move(n));
+    notifications_.clear();
+}
 
 } // namespace liney

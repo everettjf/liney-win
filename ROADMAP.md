@@ -74,11 +74,10 @@ SSH / agent / tmux / 打包更新 体量大、相对独立,排在后面;diff/his
 - ⬜ **标签拖拽**重排
 - ⬜ **文件树**:跟随聚焦 pane cwd 的本地文件树面板
 
-### P4 — 集成与通知
-- **`liney notify` CLI**(独立 `liney.exe`)+ **OSC 9/777 解析** → **Windows 토스트通知**
-- **生命周期 hooks**:app/session start/exit 执行命令(读 config)
-- **Git diff / history** 简易视图
-- 验收:`liney notify "done"` 弹 Windows 通知;长任务完成提醒
+### P4 — 集成与通知 🟡 进行中
+- ✅ **`liney notify` CLI**(独立 `liney.exe`:`notify` / `title`)+ **OSC 0/2/7/9/777 解析** → 托盘气泡通知 + 实时标题(确定性验证:CLI 输出 OSC 字节正确;窗口标题随 OSC 实时变化;`sessionStart` hook 写出标记文件)
+- ✅ **生命周期 hooks**:`hooks.sessionStart`(config)→ 新 shell 执行命令
+- ⬜ app/session exit hooks、**Git diff / history** 视图:留到后续
 
 ### P5 — 远程与高级会话(体量大,独立推进)
 - **SSH 会话**(起 `ssh` ConPTY 即可基本可用)+ 远程文件树(SFTP)

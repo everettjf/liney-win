@@ -96,14 +96,28 @@ cmake --build build
 - `shell`:新标签使用的 shell(如 `powershell.exe` / `pwsh.exe` / `wsl.exe` / `cmd.exe`)
 - `fontFamily` / `fontSize`:等宽字体与字号(也可运行时 `Ctrl++/-/0` 调整)
 - `workspaceRoot`:侧边栏扫描的根目录;留空则用启动目录的父目录
+- `hooks.sessionStart`:每个新 shell 启动后自动执行的命令(如激活虚拟环境)
 
 布局(标签 + 分屏树 + 各 pane 的 cwd)在关闭时写入 `%USERPROFILE%\.liney\layout.json`,下次启动自动恢复。
+
+## 通知 / `liney` CLI
+
+随主程序一起构建一个伴随 CLI `liney.exe`,在 pane 内运行即可通过 OSC 序列驱动终端(对标 macOS liney 的 `liney notify`):
+
+```
+liney notify <body>             # 弹出 Windows 托盘通知
+liney notify <title> <body>
+liney title  <text>            # 设置标签/窗口标题
+```
+
+终端还会解析常见 OSC:`0/2`(标题)、`7`(cwd,用于新标签继承)、`9` 与 `777;notify`(通知)。把 `build\liney.exe` 加入 PATH 后,长任务结束时 `liney notify "done"` 即可提醒。
 
 ## 目录结构
 
 ```
 src/
   main.cpp                入口(wWinMain)
+  cli/main.cpp            liney.exe 伴随 CLI(notify / title → OSC)
   app/
     Window.*              Win32 窗口、工作区编排、输入路由、绘制
     Layout.h              Rect + 由字号派生的 UI 度量
@@ -123,7 +137,8 @@ src/
   pty/ConPty.*            ConPTY 封装(在 cwd 起 shell + 读输出 + 回写 + 退出检测)
   vt/
     Terminal.*            终端核心封装(内置 VTEmulator 或 libghostty-vt → Grid)
-    VTEmulator.*          内置 xterm 子集解析器 + 屏幕缓冲(MVP 默认核心)
+    VTEmulator.*          内置 xterm 子集解析器 + 屏幕缓冲 + scrollback + alt 屏 + OSC
+    Notification.h        OSC 9/777 通知数据
 ```
 
 ## 里程碑(自建本地终端 MVP)
