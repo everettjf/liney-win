@@ -4,6 +4,7 @@
 #include <imm.h>       // IME composition window positioning
 
 #include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -623,16 +624,19 @@ void Window::checkForUpdates() {
         if (tag.empty()) {
             msg = L"Update check failed (no network / rate limited)";
         } else if (versionNewer(tag, local)) {
-            // Find the installer asset (prefer *Setup.exe, else any .exe).
+            // Find the installer asset (prefer *setup.exe, else any .exe;
+            // case-insensitive).
             std::string assetUrl;
             const Json& assets = j["assets"];
             if (assets.isArray())
                 for (const Json& a : assets.items()) {
-                    const std::string name = a["name"].asString();
+                    std::string name = a["name"].asString();
+                    for (char& ch : name) ch = static_cast<char>(std::tolower(
+                        static_cast<unsigned char>(ch)));
                     if (name.size() >= 4 &&
                         name.compare(name.size() - 4, 4, ".exe") == 0) {
                         assetUrl = a["browser_download_url"].asString();
-                        if (name.find("Setup") != std::string::npos) break;
+                        if (name.find("setup") != std::string::npos) break;
                     }
                 }
             msg = L"Update available: " + utf8ToWide(tag);
@@ -663,7 +667,7 @@ void Window::startDownloadAndInstall(const std::wstring& url) {
 
     wchar_t tmp[MAX_PATH]{};
     GetTempPathW(MAX_PATH, tmp);
-    const std::wstring out = std::wstring(tmp) + L"liney-win-Setup.exe";
+    const std::wstring out = std::wstring(tmp) + L"liney-win-setup.exe";
 
     showBalloon(L"liney-win", L"Downloading update…");
     std::thread([this, host, path, out]() {

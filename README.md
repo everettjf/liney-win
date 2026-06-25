@@ -37,7 +37,7 @@ Win32 / Direct2D,**仅需 MSVC,无外部运行时依赖**。
 ## 📦 安装
 
 **下载**(推荐):到 [Releases](https://github.com/everettjf/liney-win/releases) 下载
-- `liney-win-Setup.exe` —— 安装包(每用户安装,免管理员,带开始菜单 + 卸载)
+- `liney-win-setup.exe` —— 安装包(每用户安装,免管理员,带开始菜单 + 卸载)
 - `liney-win-portable.zip` —— 便携版,解压双击 `liney_win.exe` 即用
 
 **从源码构建**(Windows 10 1809+/11,Visual Studio 2022 Desktop C++,CMake ≥ 3.20;VS 2022 自带 CMake/Ninja):

@@ -37,7 +37,7 @@ if (-not $makensis) {
 if (-not $makensis) { throw "makensis not found. Install NSIS: winget install NSIS.NSIS" }
 
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
-$out = Join-Path $dist 'liney-win-Setup.exe'
+$out = Join-Path $dist 'liney-win-setup.exe'
 
 & $makensis `
     "/DAPPVERSION=$ver" `
