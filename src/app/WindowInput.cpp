@@ -110,6 +110,14 @@ bool Window::onKeyDown(WPARAM vk) {
         if (vk == VK_TAB) { switchTab(shift ? -1 : 1); swallowNextChar_ = true; return true; }
         if (!shift) {
             switch (vk) {
+            case 'C':  // copy if text is selected; otherwise fall through to ^C (interrupt)
+                if (hasSelection_) {
+                    copySelection();
+                    clearSelection();
+                    swallowNextChar_ = true;
+                    return true;
+                }
+                break;  // no selection: let WM_CHAR deliver ^C to the shell
             case VK_OEM_PLUS:
             case VK_ADD: zoomFont(+1); swallowNextChar_ = true; return true;
             case VK_OEM_MINUS:

@@ -120,6 +120,28 @@ bool Terminal::snapshotInto(Grid& grid) {
         }
         ++y;
     }
+
+    // Cursor position/visibility (viewport-relative). Draw it only when ghostty
+    // reports the cursor enabled by terminal modes AND present in the visible
+    // viewport (when scrolled into scrollback it may be out of view).
+    grid.cursorVisible = false;
+    bool visible = false, inViewport = false;
+    ghostty_render_state_get(state_, GHOSTTY_RENDER_STATE_DATA_CURSOR_VISIBLE,
+                             &visible);
+    ghostty_render_state_get(
+        state_, GHOSTTY_RENDER_STATE_DATA_CURSOR_VIEWPORT_HAS_VALUE, &inViewport);
+    if (visible && inViewport) {
+        uint16_t cx = 0, cy = 0;
+        ghostty_render_state_get(
+            state_, GHOSTTY_RENDER_STATE_DATA_CURSOR_VIEWPORT_X, &cx);
+        ghostty_render_state_get(
+            state_, GHOSTTY_RENDER_STATE_DATA_CURSOR_VIEWPORT_Y, &cy);
+        if (cx < grid.cols && cy < grid.rows) {
+            grid.cursorVisible = true;
+            grid.cursorX = cx;
+            grid.cursorY = cy;
+        }
+    }
     return true;
 }
 

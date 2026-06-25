@@ -65,6 +65,9 @@ Section "liney-win" SecMain
   CreateDirectory "$SMPROGRAMS\liney-win"
   CreateShortCut "$SMPROGRAMS\liney-win\liney-win.lnk" "$INSTDIR\liney_win.exe" "" "$INSTDIR\liney.ico"
 
+  ; Desktop shortcut (created by default).
+  CreateShortCut "$DESKTOP\liney-win.lnk" "$INSTDIR\liney_win.exe" "" "$INSTDIR\liney.ico"
+
   ; Add/Remove Programs entry.
   WriteRegStr HKCU "${UNINST_KEY}" "DisplayName" "liney-win"
   WriteRegStr HKCU "${UNINST_KEY}" "DisplayVersion" "${APPVERSION}"
@@ -84,6 +87,7 @@ Section "Uninstall"
   RMDir "$INSTDIR"
   Delete "$SMPROGRAMS\liney-win\liney-win.lnk"
   RMDir "$SMPROGRAMS\liney-win"
+  Delete "$DESKTOP\liney-win.lnk"
   DeleteRegKey HKCU "${UNINST_KEY}"
   DeleteRegKey HKCU "Software\liney-win"
 SectionEnd
