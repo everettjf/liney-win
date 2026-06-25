@@ -50,6 +50,14 @@ public:
     // terminal is active (caller should keep its previous/demo grid).
     bool snapshotInto(Grid& grid);
 
+    // Scroll the viewport over scrollback history (+ up into history, - down).
+    // No-op for the libghostty backend (it owns its own viewport).
+    void scrollViewport(int deltaLines);
+    void scrollToBottom();
+
+    // Whether the app enabled bracketed paste (DEC mode ?2004).
+    bool bracketedPaste() const;
+
 private:
     std::mutex mutex_;
 #ifdef LINEY_WITH_LIBGHOSTTY

@@ -3,6 +3,7 @@
 #include <windowsx.h>  // GET_X_LPARAM / GET_Y_LPARAM
 
 #include <string>
+#include <utility>
 
 #include "render/D2DRenderer.h"
 
@@ -120,6 +121,21 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
         SetFocus(hwnd_);
         onMouseDown(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
         return 0;
+    case WM_MOUSEMOVE:
+        onMouseMove(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+        return 0;
+    case WM_LBUTTONUP:
+        onMouseUp(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+        return 0;
+    case WM_COPY:
+        copySelection();
+        return 0;
+    case WM_PASTE:
+        paste();
+        return 0;
+    case WM_MOUSEWHEEL:
+        onWheel(GET_WHEEL_DELTA_WPARAM(wParam));
+        return 0;
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
@@ -233,6 +249,12 @@ void Window::drawPanes(const Rect& r) {
     Tab* t = activeTab();
     if (!t) return;
     t->layout(r, metrics_);
+
+    // Refresh selection highlight on the owning pane; clear it elsewhere.
+    for (Pane* leaf : t->leaves())
+        if (leaf->session) leaf->session->grid().hasSelection = false;
+    applySelectionToGrid();
+
     for (Pane* leaf : t->leaves()) {
         if (!leaf->session) continue;
         renderer_->drawGrid(leaf->session->grid(), leaf->rect.x, leaf->rect.y);
@@ -278,6 +300,7 @@ void Window::cellsForRect(const Rect& r, int& cols, int& rows) const {
 }
 
 void Window::newTab(const std::wstring& cwd) {
+    clearSelection();
     Rect sidebar, tabBar, panes;
     regions(sidebar, tabBar, panes);
     int cols = 80, rows = 24;
@@ -291,6 +314,7 @@ void Window::newTab(const std::wstring& cwd) {
 }
 
 void Window::splitActive(SplitDir dir) {
+    clearSelection();
     Tab* t = activeTab();
     if (!t || !t->active() || !t->active()->session) return;
 
@@ -305,6 +329,7 @@ void Window::splitActive(SplitDir dir) {
 }
 
 void Window::closeActivePane() {
+    clearSelection();
     Tab* t = activeTab();
     if (!t) return;
     if (!t->closeActive()) {
@@ -316,6 +341,7 @@ void Window::closeActivePane() {
 }
 
 void Window::switchTab(int delta) {
+    clearSelection();
     if (tabs_.empty()) return;
     const int n = static_cast<int>(tabs_.size());
     activeTab_ = static_cast<size_t>(((static_cast<int>(activeTab_) + delta) % n + n) % n);
@@ -334,7 +360,26 @@ void Window::updateTitle() {
 // ---------------------------------------------------------------------------
 
 void Window::sendToActive(const char* data, size_t len) {
-    if (auto* s = activeSession()) s->sendBytes(data, len);
+    if (auto* s = activeSession()) {
+        s->scrollToBottom();  // typing snaps the viewport back to live output
+        s->sendBytes(data, len);
+    }
+}
+
+void Window::scrollActive(int lines) {
+    if (auto* s = activeSession()) s->scrollViewport(lines);
+}
+
+int Window::activePaneRows() const {
+    Tab* t = activeTab();
+    if (!t || !t->active()) return 24;
+    int r = static_cast<int>(t->active()->rect.h / metrics_.cellH);
+    return r < 1 ? 1 : r;
+}
+
+void Window::onWheel(int delta) {
+    // One notch (WHEEL_DELTA) scrolls 3 lines into history (+) or toward live.
+    scrollActive((delta / WHEEL_DELTA) * 3);
 }
 
 void Window::sendUtf16(const wchar_t* s, size_t len) {
@@ -390,8 +435,22 @@ bool Window::onKeyDown(WPARAM vk) {
             case 'E': splitActive(SplitDir::Cols); swallowNextChar_ = true; return true;  // side by side
             case 'O': splitActive(SplitDir::Rows); swallowNextChar_ = true; return true;  // stacked
             case 'B': sidebarVisible_ = !sidebarVisible_; swallowNextChar_ = true; return true;
+            case 'C': copySelection(); swallowNextChar_ = true; return true;
+            case 'V': paste(); swallowNextChar_ = true; return true;
             default: break;
             }
+        }
+    }
+
+    // Shift + navigation keys scroll the viewport over scrollback history.
+    if (shift && !ctrl && !alt) {
+        const int page = activePaneRows() - 1;
+        switch (vk) {
+        case VK_PRIOR: scrollActive(page > 0 ? page : 1); return true;   // PgUp
+        case VK_NEXT:  scrollActive(-(page > 0 ? page : 1)); return true; // PgDn
+        case VK_HOME:  scrollActive(1000000); return true;               // to oldest
+        case VK_END:   if (auto* s = activeSession()) s->scrollToBottom(); return true;
+        default: break;
         }
     }
 
@@ -454,16 +513,162 @@ void Window::onMouseDown(int xi, int yi) {
             return;
         }
         for (size_t i = 0; i < tabRects_.size(); ++i) {
-            if (tabRects_[i].contains(x, y)) { activeTab_ = i; updateTitle(); return; }
+            if (tabRects_[i].contains(x, y)) {
+                clearSelection();
+                activeTab_ = i;
+                updateTitle();
+                return;
+            }
         }
         return;
     }
 
     if (panes.contains(x, y)) {
         Tab* t = activeTab();
-        if (t) {
-            if (Pane* leaf = t->hitTest(x, y)) t->setActive(leaf);
+        if (!t) return;
+        Pane* leaf = t->hitTest(x, y);
+        if (!leaf) return;
+        t->setActive(leaf);
+        // Begin a selection drag from this cell (a plain click selects nothing
+        // until the mouse moves).
+        int cx = 0, cy = 0;
+        if (paneCellAt(leaf, xi, yi, cx, cy)) {
+            selecting_ = true;
+            selPane_ = leaf;
+            selAX_ = selBX_ = cx;
+            selAY_ = selBY_ = cy;
+            hasSelection_ = false;
+            SetCapture(hwnd_);
         }
+    }
+}
+
+void Window::onMouseMove(int xi, int yi) {
+    if (!selecting_ || !selPane_) return;
+    int cx = 0, cy = 0;
+    if (!paneCellAt(selPane_, xi, yi, cx, cy)) return;
+    selBX_ = cx;
+    selBY_ = cy;
+    if (selBX_ != selAX_ || selBY_ != selAY_) hasSelection_ = true;
+}
+
+void Window::onMouseUp(int /*xi*/, int /*yi*/) {
+    if (selecting_) {
+        selecting_ = false;
+        ReleaseCapture();
+    }
+}
+
+bool Window::paneCellAt(const Pane* p, int px, int py, int& cx, int& cy) const {
+    if (!p || !p->session) return false;
+    const Grid& g = p->session->grid();
+    if (g.cols < 1 || g.rows < 1) return false;
+    int x = static_cast<int>((px - p->rect.x) / metrics_.cellW);
+    int y = static_cast<int>((py - p->rect.y) / metrics_.cellH);
+    cx = x < 0 ? 0 : (x >= g.cols ? g.cols - 1 : x);
+    cy = y < 0 ? 0 : (y >= g.rows ? g.rows - 1 : y);
+    return true;
+}
+
+void Window::clearSelection() {
+    selecting_ = false;
+    hasSelection_ = false;
+    selPane_ = nullptr;
+}
+
+void Window::applySelectionToGrid() {
+    if (!hasSelection_ || !selPane_ || !selPane_->session) return;
+    int sx = selAX_, sy = selAY_, ex = selBX_, ey = selBY_;
+    if (sy > ey || (sy == ey && sx > ex)) { std::swap(sx, ex); std::swap(sy, ey); }
+    Grid& g = selPane_->session->grid();
+    g.hasSelection = true;
+    g.selStartX = sx; g.selStartY = sy;
+    g.selEndX = ex; g.selEndY = ey;
+}
+
+std::wstring Window::selectionText() const {
+    if (!hasSelection_ || !selPane_ || !selPane_->session) return L"";
+    const Grid& g = selPane_->session->grid();
+    int sx = selAX_, sy = selAY_, ex = selBX_, ey = selBY_;
+    if (sy > ey || (sy == ey && sx > ex)) { std::swap(sx, ex); std::swap(sy, ey); }
+
+    std::wstring out;
+    for (int y = sy; y <= ey && y < g.rows; ++y) {
+        const int x0 = (y == sy) ? sx : 0;
+        const int x1 = (y == ey) ? ex : g.cols - 1;
+        std::wstring line;
+        for (int x = x0; x <= x1 && x < g.cols; ++x) {
+            const Cell& c = g.at(x, y);
+            line += c.ch.empty() ? L" " : c.ch;
+        }
+        size_t last = line.find_last_not_of(L' ');
+        if (last == std::wstring::npos) line.clear();
+        else line.erase(last + 1);
+        out += line;
+        if (y < ey) out += L"\r\n";
+    }
+    return out;
+}
+
+void Window::copySelection() {
+    const std::wstring text = selectionText();
+    if (text.empty() || !OpenClipboard(hwnd_)) return;
+    EmptyClipboard();
+    const size_t bytes = (text.size() + 1) * sizeof(wchar_t);
+    if (HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, bytes)) {
+        if (void* p = GlobalLock(h)) {
+            memcpy(p, text.c_str(), bytes);
+            GlobalUnlock(h);
+            SetClipboardData(CF_UNICODETEXT, h);
+        } else {
+            GlobalFree(h);
+        }
+    }
+    CloseClipboard();
+}
+
+void Window::paste() {
+    auto* s = activeSession();
+    if (!s || !OpenClipboard(hwnd_)) return;
+    std::wstring text;
+    if (HANDLE h = GetClipboardData(CF_UNICODETEXT)) {
+        if (const wchar_t* p = static_cast<const wchar_t*>(GlobalLock(h))) {
+            text = p;
+            GlobalUnlock(h);
+        }
+    }
+    CloseClipboard();
+    if (text.empty()) return;
+
+    // Normalize CRLF / LF to CR (what shells expect from "Enter").
+    std::wstring norm;
+    norm.reserve(text.size());
+    for (size_t i = 0; i < text.size(); ++i) {
+        wchar_t c = text[i];
+        if (c == L'\r') {
+            norm.push_back(L'\r');
+            if (i + 1 < text.size() && text[i + 1] == L'\n') ++i;
+        } else if (c == L'\n') {
+            norm.push_back(L'\r');
+        } else {
+            norm.push_back(c);
+        }
+    }
+
+    int bytes = WideCharToMultiByte(CP_UTF8, 0, norm.data(),
+                                    static_cast<int>(norm.size()), nullptr, 0,
+                                    nullptr, nullptr);
+    if (bytes <= 0) return;
+    std::string utf8(static_cast<size_t>(bytes), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, norm.data(), static_cast<int>(norm.size()),
+                        utf8.data(), bytes, nullptr, nullptr);
+
+    s->scrollToBottom();
+    if (s->bracketedPaste()) {
+        const std::string out = "\x1b[200~" + utf8 + "\x1b[201~";
+        s->sendBytes(out.data(), out.size());
+    } else {
+        s->sendBytes(utf8.data(), utf8.size());
     }
 }
 

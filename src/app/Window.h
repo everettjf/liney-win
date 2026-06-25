@@ -53,8 +53,21 @@ private:
     void onChar(wchar_t unit);
     bool onKeyDown(WPARAM vk);
     void onMouseDown(int x, int y);
+    void onMouseMove(int x, int y);
+    void onMouseUp(int x, int y);
+    void onWheel(int delta);
+    void scrollActive(int lines);
+    int activePaneRows() const;
     void sendToActive(const char* data, size_t len);
     void sendUtf16(const wchar_t* s, size_t len);
+
+    // Selection / clipboard.
+    bool paneCellAt(const Pane* p, int px, int py, int& cx, int& cy) const;
+    void applySelectionToGrid();   // push current selection onto the active grid
+    void clearSelection();         // drop selection (e.g. before freeing panes)
+    std::wstring selectionText() const;
+    void copySelection();
+    void paste();
 
     HWND hwnd_ = nullptr;
     std::unique_ptr<IRenderer> renderer_;
@@ -74,6 +87,13 @@ private:
     std::vector<SidebarRow> sidebarRows_;
     std::vector<Rect> tabRects_;
     Rect plusRect_{};
+
+    // Selection (over the focused pane's viewport, in that pane's cell coords).
+    bool selecting_ = false;       // a drag is in progress
+    bool hasSelection_ = false;
+    Pane* selPane_ = nullptr;      // pane the selection belongs to
+    int selAX_ = 0, selAY_ = 0;    // anchor
+    int selBX_ = 0, selBY_ = 0;    // head
 };
 
 } // namespace liney

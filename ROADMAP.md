@@ -54,12 +54,11 @@ SSH / agent / tmux / 打包更新 体量大、相对独立,排在后面;diff/his
 
 ## 3. 分阶段计划
 
-### P1 — 终端完整度(让单 pane 真正好用)🔥 最高优先
-- **备用屏 alt-screen**(`?1049h/l`、`?47`):vim/less/git log/htop 不再错乱
-- **scrollback 历史 + 滚轮/Shift+PgUp 滚动**:回看输出
-- **选择 + 复制粘贴**:鼠标拖选、`Ctrl+Shift+C/V`、bracketed paste(`?2004`)
-- **resize reflow**:窗口变化时长行重排(至少不截断)
-- 验收:vim 打开/退出正常;能滚回历史并复制;Ctrl+Shift+V 粘贴
+### P1 — 终端完整度(让单 pane 真正好用)✅ 已完成(reflow 除外)
+- ✅ **备用屏 alt-screen**(`?1049/?47/?1047`):vim/less/git log/htop 不再错乱
+- ✅ **scrollback 历史 + 滚轮/Shift+PgUp·PgDn·Home·End 滚动**(确定性验证:滚动后可见早期行)
+- ✅ **选择 + 复制粘贴**:鼠标拖选、`Ctrl+Shift+C/V`、bracketed paste(`?2004`)、`WM_COPY/WM_PASTE`
+- ⬜ **resize reflow**:窗口变化时长行重排(当前为截断/补齐,未重排)— 留到后续
 
 ### P2 — 配置与会话基础
 - **配置文件** `%USERPROFILE%\.liney\config.json`:shell、字号、配色、工作区根

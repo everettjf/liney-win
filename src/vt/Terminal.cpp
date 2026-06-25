@@ -123,6 +123,11 @@ bool Terminal::snapshotInto(Grid& grid) {
     return true;
 }
 
+// libghostty owns its own viewport/scrollback; these are no-ops for now.
+void Terminal::scrollViewport(int) {}
+void Terminal::scrollToBottom() {}
+bool Terminal::bracketedPaste() const { return false; }
+
 #else // !LINEY_WITH_LIBGHOSTTY — built-in VTEmulator (the default MVP core).
 
 Terminal::~Terminal() = default;
@@ -149,6 +154,20 @@ bool Terminal::snapshotInto(Grid& grid) {
     if (!active_) return false;
     emu_.snapshotInto(grid);
     return true;
+}
+
+void Terminal::scrollViewport(int deltaLines) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (active_) emu_.scrollViewport(deltaLines);
+}
+
+void Terminal::scrollToBottom() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (active_) emu_.scrollToBottom();
+}
+
+bool Terminal::bracketedPaste() const {
+    return active_ && emu_.bracketedPaste();
 }
 
 #endif

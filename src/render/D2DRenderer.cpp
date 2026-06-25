@@ -225,6 +225,18 @@ void D2DRenderer::drawGrid(const Grid& grid, float originX, float originY) {
             Color fg = cell.fg, bg = cell.bg;
             if (cell.flags & kFlagInverse) std::swap(fg, bg);
 
+            // Selection highlight (row-major inclusive range).
+            bool selected = false;
+            if (grid.hasSelection) {
+                const bool afterStart =
+                    y > grid.selStartY ||
+                    (y == grid.selStartY && x >= grid.selStartX);
+                const bool beforeEnd =
+                    y < grid.selEndY || (y == grid.selEndY && x <= grid.selEndX);
+                selected = afterStart && beforeEnd;
+            }
+            if (selected) bg = Color{ 50, 78, 124 };
+
             if (bg.r || bg.g || bg.b) {
                 brush_->SetColor(toColorF(bg));
                 d2dContext_->FillRectangle(rect, brush_.Get());

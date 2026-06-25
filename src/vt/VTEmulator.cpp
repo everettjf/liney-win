@@ -88,19 +88,32 @@ void VTEmulator::clearRegion(int x0, int y0, int x1, int y1) {
         for (int x = x0; x <= x1 && x < cols_; ++x) clearCell(cell(x, y));
 }
 
+void VTEmulator::resizeBuffer(std::vector<Cell>& buf, int oldCols, int oldRows,
+                              int newCols, int newRows) const {
+    std::vector<Cell> next(static_cast<size_t>(newCols) * newRows);
+    const int cc = std::min(newCols, oldCols);
+    const int rr = buf.empty() ? 0 : std::min(newRows, oldRows);
+    for (int y = 0; y < rr; ++y)
+        for (int x = 0; x < cc; ++x)
+            next[static_cast<size_t>(y) * newCols + x] =
+                buf[static_cast<size_t>(y) * oldCols + x];
+    buf = std::move(next);
+}
+
 void VTEmulator::resize(int cols, int rows) {
     if (cols < 1) cols = 1;
     if (rows < 1) rows = 1;
     if (cols == cols_ && rows == rows_ && !cells_.empty()) return;
 
-    std::vector<Cell> next(static_cast<size_t>(cols) * rows);
-    const int cc = std::min(cols, cols_);
-    const int rr = cells_.empty() ? 0 : std::min(rows, rows_);
-    for (int y = 0; y < rr; ++y)
-        for (int x = 0; x < cc; ++x)
-            next[static_cast<size_t>(y) * cols + x] = cells_[static_cast<size_t>(y) * cols_ + x];
+    const int oldCols = cols_, oldRows = rows_;
+    resizeBuffer(cells_, oldCols, oldRows, cols, rows);
+    if (!savedPrimary_.empty())
+        resizeBuffer(savedPrimary_, oldCols, oldRows, cols, rows);
 
-    cells_ = std::move(next);
+    // Adjust scrollback rows to the new width (truncate / pad; no reflow).
+    if (cols != oldCols)
+        for (auto& row : scrollback_) row.resize(static_cast<size_t>(cols), Cell{});
+
     cols_ = cols;
     rows_ = rows;
     scrollTop_ = 0;
@@ -108,6 +121,7 @@ void VTEmulator::resize(int cols, int rows) {
     cx_ = clampi(cx_, 0, cols_ - 1);
     cy_ = clampi(cy_, 0, rows_ - 1);
     wrapPending_ = false;
+    viewOffset_ = clampi(viewOffset_, 0, static_cast<int>(scrollback_.size()));
 }
 
 void VTEmulator::moveTo(int x, int y) {
@@ -137,6 +151,20 @@ static void scrollRegion(std::vector<Cell>& cells, int cols, int top, int bot,
 }
 
 void VTEmulator::scrollUp(int n) {
+    if (n <= 0) return;
+    // Lines scrolling off the top of the full primary screen enter scrollback.
+    if (!altScreen_ && scrollTop_ == 0) {
+        const int span = scrollBot_ - scrollTop_ + 1;
+        const int cap = std::min(n, span);
+        for (int i = 0; i < cap; ++i) {
+            auto begin = cells_.begin() + static_cast<size_t>(i) * cols_;
+            scrollback_.emplace_back(begin, begin + cols_);
+        }
+        while (scrollback_.size() > maxScrollback_) scrollback_.pop_front();
+        // If the user is viewing history, keep the same content in view.
+        if (viewOffset_ > 0) viewOffset_ += cap;
+        viewOffset_ = clampi(viewOffset_, 0, static_cast<int>(scrollback_.size()));
+    }
     Cell blank; clearCell(blank);
     scrollRegion(cells_, cols_, scrollTop_, scrollBot_, n, true, blank);
 }
@@ -400,9 +428,19 @@ void VTEmulator::csiDispatch(uint32_t finalByte) {
     case 'u': moveTo(savedCx_, savedCy_); break;
 
     case 'h':
-    case 'l':
-        if (csiPrivate_ && param(0, 0) == 25) cursorVisible_ = (finalByte == 'h');
-        break;  // other modes (alt screen, mouse, bracketed paste) swallowed
+    case 'l': {
+        if (!csiPrivate_) break;
+        const bool set = (finalByte == 'h');
+        switch (param(0, 0)) {
+        case 25: cursorVisible_ = set; break;                       // DECTCEM
+        case 47:
+        case 1047: set ? enterAlt(false) : leaveAlt(false); break;  // alt screen
+        case 1049: set ? enterAlt(true) : leaveAlt(true); break;    // alt + cursor
+        case 2004: bracketedPaste_ = set; break;                    // bracketed paste
+        default: break;  // other modes (e.g. mouse reporting) swallowed
+        }
+        break;
+    }
 
     case 'm': applySgr(); break;
     default: break;
@@ -460,10 +498,64 @@ void VTEmulator::applySgr() {
 
 void VTEmulator::snapshotInto(Grid& grid) const {
     grid.resize(cols_, rows_);
-    std::copy(cells_.begin(), cells_.end(), grid.cells.begin());
+    const int sb = static_cast<int>(scrollback_.size());
+    const int start = sb - viewOffset_;  // global index of the first visible row
+
+    for (int r = 0; r < rows_; ++r) {
+        const int gi = start + r;
+        Cell* dst = &grid.cells[static_cast<size_t>(r) * cols_];
+        if (gi < 0) {
+            for (int x = 0; x < cols_; ++x) dst[x] = Cell{};
+        } else if (gi < sb) {
+            const std::vector<Cell>& row = scrollback_[gi];
+            for (int x = 0; x < cols_; ++x)
+                dst[x] = (x < static_cast<int>(row.size())) ? row[x] : Cell{};
+        } else {
+            const Cell* src = &cells_[static_cast<size_t>(gi - sb) * cols_];
+            for (int x = 0; x < cols_; ++x) dst[x] = src[x];
+        }
+    }
+
+    // Cursor is shown only at the live bottom (not while viewing history).
+    grid.cursorVisible = cursorVisible_ && viewOffset_ == 0;
     grid.cursorX = clampi(cx_, 0, cols_ - 1);
     grid.cursorY = clampi(cy_, 0, rows_ - 1);
-    grid.cursorVisible = cursorVisible_;
 }
+
+void VTEmulator::enterAlt(bool saveCursor) {
+    if (altScreen_) return;
+    if (saveCursor) { altSavedCx_ = cx_; altSavedCy_ = cy_; }
+    savedPrimary_ = std::move(cells_);
+    Cell blank; clearCell(blank);
+    cells_.assign(static_cast<size_t>(cols_) * rows_, blank);
+    altScreen_ = true;
+    viewOffset_ = 0;
+    scrollTop_ = 0;
+    scrollBot_ = rows_ - 1;
+}
+
+void VTEmulator::leaveAlt(bool restoreCursor) {
+    if (!altScreen_) return;
+    cells_ = std::move(savedPrimary_);
+    savedPrimary_.clear();
+    if (static_cast<int>(cells_.size()) != cols_ * rows_)
+        cells_.assign(static_cast<size_t>(cols_) * rows_, Cell{});
+    altScreen_ = false;
+    if (restoreCursor) {
+        cx_ = clampi(altSavedCx_, 0, cols_ - 1);
+        cy_ = clampi(altSavedCy_, 0, rows_ - 1);
+    }
+    scrollTop_ = 0;
+    scrollBot_ = rows_ - 1;
+    wrapPending_ = false;
+}
+
+void VTEmulator::scrollViewport(int deltaLines) {
+    if (altScreen_) return;  // no scrollback on the alternate screen
+    viewOffset_ = clampi(viewOffset_ + deltaLines, 0,
+                         static_cast<int>(scrollback_.size()));
+}
+
+void VTEmulator::scrollToBottom() { viewOffset_ = 0; }
 
 } // namespace liney

@@ -32,6 +32,12 @@ public:
     // Refresh the renderable snapshot into the session's grid.
     void snapshot();
     const Grid& grid() const { return grid_; }
+    Grid& grid() { return grid_; }  // UI stamps selection onto it before drawing
+
+    // Scroll the viewport over scrollback history.
+    void scrollViewport(int deltaLines) { terminal_.scrollViewport(deltaLines); }
+    void scrollToBottom() { terminal_.scrollToBottom(); }
+    bool bracketedPaste() const { return terminal_.bracketedPaste(); }
 
     bool exited() const { return pty_.hasExited(); }
     const std::wstring& cwd() const { return cwd_; }

@@ -45,7 +45,10 @@ Windows 版终端工作区(对标 macOS 的 [liney](https://github.com/everettjf
 | `Ctrl+Shift+B` | 折叠/展开侧边栏 |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | 下一个 / 上一个标签 |
 | `Alt+方向键` | 在分屏 pane 间移动焦点 |
-| 鼠标 | 点标签切换、点 `+` 新标签、点 pane 聚焦、点仓库展开、点 worktree 在其目录开新标签 |
+| `Ctrl+Shift+C` / `Ctrl+Shift+V` | 复制选区 / 粘贴(支持 bracketed paste) |
+| 滚轮 / `Shift+PgUp·PgDn·Home·End` | 在 scrollback 历史中滚动(输入时自动回到底部) |
+| 鼠标拖选 | 在 pane 内选择文本 |
+| 鼠标点击 | 点标签切换、点 `+` 新标签、点 pane 聚焦、点仓库展开、点 worktree 在其目录开新标签 |
 
 ## 技术选型(见调研文档)
 
@@ -104,7 +107,8 @@ src/
 - **S1** ConPTY 输出 → 网格 → 渲染(只读)✓
 - **S2** 键盘输入回写 ConPTY ✓
 - **S3** 内置 VT 核心:光标、SGR 颜色/属性、擦除、滚动区、插入/删除行列 ✓
-  - 待办:scrollback 历史回滚、选择/复制粘贴、resize reflow、备用屏幕(vim/less 全屏应用)、鼠标滚轮、IME
+- **P1** 终端完整度:备用屏 alt-screen(vim/less)、scrollback 历史 + 滚动、选择 + 复制粘贴 ✓
+  - 待办:resize reflow(长行重排)、鼠标上报、IME、glyph atlas 渲染
 - **S4** 配置/字体/配色,单窗口可用(部分:字号派生度量已就位)
 - **S5** UI 外壳(多标签 / 分屏)+ 仓库/worktree 侧边栏(liney 价值闭环)✓
   - 待办:拖拽分隔条调整 pane 比例、标签拖动重排、worktree 增删操作、布局持久化

@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <vector>
 
 #include "render/Cell.h"
@@ -20,9 +21,10 @@ namespace liney {
 //   - SGR attributes: bold/italic/underline/inverse, 16 / 256 / truecolor
 //   - scroll region (DECSTBM), index / reverse-index, scrolling with a buffer
 //   - cursor save/restore, cursor visibility (DECTCEM)
-// Not handled (acceptable for the first MVP): alternate screen buffer, mouse
-// reporting, full scrollback history, character sets. Unknown sequences are
-// swallowed rather than printed.
+//   - alternate screen buffer (?1049/?47/?1047) for full-screen TUIs
+//   - scrollback history for the primary screen, with a scrollable viewport
+// Not handled (acceptable for now): mouse reporting, character sets, resize
+// reflow (long lines are not rewrapped). Unknown sequences are swallowed.
 //
 // Not thread-safe by itself; Terminal serializes access with a mutex.
 class VTEmulator {
@@ -31,10 +33,19 @@ public:
 
     void resize(int cols, int rows);
     void write(const char* data, size_t len);  // raw UTF-8 PTY bytes
-    void snapshotInto(Grid& grid) const;        // copy cells + cursor out
+    void snapshotInto(Grid& grid) const;        // copy viewport + cursor out
 
     int cols() const { return cols_; }
     int rows() const { return rows_; }
+
+    // Viewport scrolling over scrollback history (primary screen only).
+    void scrollViewport(int deltaLines);  // +up into history, -down toward live
+    void scrollToBottom();
+    int scrollbackLines() const { return static_cast<int>(scrollback_.size()); }
+    bool atBottom() const { return viewOffset_ == 0; }
+
+    // Whether the app enabled bracketed paste (DEC mode ?2004).
+    bool bracketedPaste() const { return bracketedPaste_; }
 
 private:
     // --- screen buffer -----------------------------------------------------
@@ -46,6 +57,12 @@ private:
     void newline();      // LF: move down, scroll if at region bottom
     void putGlyph(const std::wstring& g, int width);
     void moveTo(int x, int y);
+
+    // --- alternate screen / scrollback ------------------------------------
+    void enterAlt(bool saveCursor);
+    void leaveAlt(bool restoreCursor);
+    void resizeBuffer(std::vector<Cell>& buf, int oldCols, int oldRows,
+                      int newCols, int newRows) const;
 
     // --- byte / UTF-8 layer ------------------------------------------------
     void consume(uint8_t byte);
@@ -72,6 +89,21 @@ private:
 
     // Saved cursor (DECSC / CSI s).
     int savedCx_ = 0, savedCy_ = 0;
+
+    // Alternate screen: while active, cells_ is the alt buffer and the primary
+    // screen (with its scrollback) is stashed in savedPrimary_.
+    bool altScreen_ = false;
+    std::vector<Cell> savedPrimary_;
+    int altSavedCx_ = 0, altSavedCy_ = 0;
+
+    // Scrollback history for the primary screen (each entry is one cols_-wide
+    // row that scrolled off the top), and the viewport offset from the live
+    // bottom (0 == live). Alternate screen has no scrollback.
+    std::deque<std::vector<Cell>> scrollback_;
+    size_t maxScrollback_ = 5000;
+    int viewOffset_ = 0;
+
+    bool bracketedPaste_ = false;  // DEC mode ?2004
 
     // Current pen.
     Color penFg_{ 204, 204, 204 };

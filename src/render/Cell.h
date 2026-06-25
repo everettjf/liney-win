@@ -42,6 +42,12 @@ struct Grid {
     int cursorY = 0;
     bool cursorVisible = false;
 
+    // Selection highlight, in cell coordinates, normalized and inclusive
+    // (row-major from start to end). Set by the UI on the focused pane's grid.
+    bool hasSelection = false;
+    int selStartX = 0, selStartY = 0;
+    int selEndX = 0, selEndY = 0;
+
     void resize(int c, int r) {
         cols = c < 0 ? 0 : c;
         rows = r < 0 ? 0 : r;
