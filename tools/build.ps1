@@ -6,10 +6,10 @@
 #   * MSVC (run this from the "x64 Native Tools Command Prompt for VS 2022",
 #     or any shell where cl.exe is on PATH)
 #
-# Usage:  powershell -ExecutionPolicy Bypass -File tools\build.ps1 [-BuildDir build] [-Config Release]
+# Usage:  powershell -ExecutionPolicy Bypass -File tools\build.ps1 [-BuildDir build-ghostty] [-Config Release]
 
 param(
-    [string]$BuildDir = "build",
+    [string]$BuildDir = "build-ghostty",
     [string]$Config = "Release"
 )
 $ErrorActionPreference = 'Stop'

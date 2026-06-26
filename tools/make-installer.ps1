@@ -3,7 +3,7 @@
 # Requires NSIS (makensis.exe). Install: winget install NSIS.NSIS
 # Usage (VS dev shell): powershell -ExecutionPolicy Bypass -File tools\make-installer.ps1
 
-param([string]$BuildDir = "build")
+param([string]$BuildDir = "build-ghostty")
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $build = if ([System.IO.Path]::IsPathRooted($BuildDir)) { $BuildDir } else { Join-Path $root $BuildDir }

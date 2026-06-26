@@ -9,15 +9,15 @@
 #   # optional self-signed local install:
 #   powershell -ExecutionPolicy Bypass -File tools\make-msix.ps1 -SelfSign
 
-param([switch]$SelfSign)
+param([switch]$SelfSign, [string]$BuildDir = "build-ghostty")
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$build = Join-Path $root 'build'
-$pkgSrc = Join-Path $root 'build\msix-src'
+$build = if ([System.IO.Path]::IsPathRooted($BuildDir)) { $BuildDir } else { Join-Path $root $BuildDir }
+$pkgSrc = Join-Path $build 'msix-src'
 $out = Join-Path $root 'dist\liney-win.msix'
 
 # 1) Build Release + assets.
-& (Join-Path $PSScriptRoot 'make-portable.ps1') | Out-Null  # ensures a build
+& (Join-Path $PSScriptRoot 'make-portable.ps1') -BuildDir $BuildDir | Out-Null  # ensures a build
 & (Join-Path $PSScriptRoot 'gen-assets.ps1')
 
 # 2) Locate the built exes.

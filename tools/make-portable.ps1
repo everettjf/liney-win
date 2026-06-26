@@ -7,7 +7,7 @@
 # "x64 Native Tools Command Prompt for VS 2022"):
 #   powershell -ExecutionPolicy Bypass -File tools\make-portable.ps1
 
-param([string]$BuildDir = "build")
+param([string]$BuildDir = "build-ghostty")
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $build = if ([System.IO.Path]::IsPathRooted($BuildDir)) { $BuildDir } else { Join-Path $root $BuildDir }
