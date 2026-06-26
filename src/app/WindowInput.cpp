@@ -72,6 +72,7 @@ void Window::positionIme() {
 
 void Window::onChar(wchar_t unit) {
     if (swallowNextChar_) { swallowNextChar_ = false; return; }
+    if (findActive_) { onFindChar(unit); return; }  // typing edits the find query
     if (unit >= 0xD800 && unit <= 0xDBFF) { pendingHighSurrogate_ = unit; return; }
     if (unit >= 0xDC00 && unit <= 0xDFFF) {
         if (pendingHighSurrogate_) {
@@ -89,6 +90,25 @@ bool Window::onKeyDown(WPARAM vk) {
     const bool ctrl = keyDown(VK_CONTROL);
     const bool shift = keyDown(VK_SHIFT);
     const bool alt = keyDown(VK_MENU);
+
+    // While the find bar is open it owns Esc / Enter / F3 / Backspace; printable
+    // keys reach it via WM_CHAR. Other shortcuts (below) still work. Esc / Enter /
+    // Backspace also generate a WM_CHAR, so swallow it to avoid double handling.
+    if (findActive_) {
+        switch (vk) {
+        case VK_ESCAPE: closeFind(); swallowNextChar_ = true; return true;
+        case VK_RETURN: findNext(shift); swallowNextChar_ = true; return true;
+        case VK_BACK:   findBackspace(); swallowNextChar_ = true; return true;
+        case VK_F3:     findNext(shift); return true;  // F3 emits no WM_CHAR
+        default: break;
+        }
+    }
+
+    // Shift+Insert pastes; Ctrl+Insert copies (universal terminal conventions).
+    if (vk == VK_INSERT && !alt) {
+        if (shift && !ctrl) { paste(); return true; }
+        if (ctrl && !shift) { copySelection(); return true; }
+    }
 
     // Alt + arrows: move pane focus.  Alt+D / Shift+Alt+D: split panes.
     if (alt && !ctrl) {
@@ -118,6 +138,7 @@ bool Window::onKeyDown(WPARAM vk) {
                     return true;
                 }
                 break;  // no selection: let WM_CHAR deliver ^C to the shell
+            case 'F': openFind(); swallowNextChar_ = true; return true;
             case VK_OEM_PLUS:
             case VK_ADD: zoomFont(+1); swallowNextChar_ = true; return true;
             case VK_OEM_MINUS:
@@ -135,6 +156,7 @@ bool Window::onKeyDown(WPARAM vk) {
             case 'F': filesPanelVisible_ = !filesPanelVisible_; swallowNextChar_ = true; return true;
             case 'K': toggleKeepAwake(); swallowNextChar_ = true; return true;
             case 'U': checkForUpdates(); swallowNextChar_ = true; return true;
+            case 'A': selectAllActive(); swallowNextChar_ = true; return true;
             case 'C': copySelection(); swallowNextChar_ = true; return true;
             case 'V': paste(); swallowNextChar_ = true; return true;
             case 'L':  // git history for the active pane's repo (pager view)

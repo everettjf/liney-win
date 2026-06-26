@@ -61,6 +61,13 @@ struct Grid {
     int selStartX = 0, selStartY = 0;
     int selEndX = 0, selEndY = 0;
 
+    // Find-on-screen highlights (viewport cell coordinates). Each span covers
+    // [x, x+len) on row y. `findCurrent` indexes the span drawn as the active
+    // match (brighter); -1 means none. Set by the UI on the focused pane's grid.
+    struct FindSpan { int x = 0, y = 0, len = 0; };
+    std::vector<FindSpan> findMatches;
+    int findCurrent = -1;
+
     void resize(int c, int r) {
         cols = c < 0 ? 0 : c;
         rows = r < 0 ? 0 : r;

@@ -30,6 +30,7 @@ struct Config {
     std::vector<AgentDef> agents;           // sidebar AGENTS list
     Theme theme;                            // colors (defaults = built-in palette)
     bool unixTools = true;                  // append Git's usr/bin to PATH (ls/cat/…)
+    bool copyOnSelect = false;              // copy to clipboard as soon as a drag ends
     // Per-project sidebar icons: repo name -> icon file path (png/ico).
     std::vector<std::pair<std::wstring, std::wstring>> projectIcons;
     // Explicit project folders added to the sidebar (besides scanned ones).
@@ -41,5 +42,10 @@ std::wstring configDir();
 
 // Load config (creating the directory + a default config.json if absent).
 Config loadConfig();
+
+// Persist just the fontSize back to config.json, preserving every other key
+// (parse → set → dump). Best-effort: silently no-ops if the file can't be
+// read/written. Used to remember the zoom level across launches.
+void saveFontSize(float size);
 
 } // namespace liney

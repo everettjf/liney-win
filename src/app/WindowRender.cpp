@@ -230,10 +230,23 @@ void Window::drawPanes(const Rect& r) {
     if (!t) return;
     t->layout(r, metrics_);
 
-    // Refresh selection highlight on the owning pane; clear it elsewhere.
+    // Refresh selection + find highlights on the owning pane; clear elsewhere.
     for (Pane* leaf : t->leaves())
-        if (leaf->session) leaf->session->grid().hasSelection = false;
+        if (leaf->session) {
+            Grid& g = leaf->session->grid();
+            g.hasSelection = false;
+            g.findMatches.clear();
+            g.findCurrent = -1;
+        }
     applySelectionToGrid();
+    if (findActive_) {
+        stampFindMatches();
+        if (t->active() && t->active()->session) {
+            Grid& g = t->active()->session->grid();
+            g.findMatches = findMatches_;
+            g.findCurrent = findIndex_;
+        }
+    }
 
     for (Pane* leaf : t->leaves()) {
         if (!leaf->session) continue;
@@ -249,6 +262,9 @@ void Window::drawPanes(const Rect& r) {
         renderer_->strokeRect(pr.x, pr.y, pr.w, pr.h, focused ? kAccent : kBorder,
                               focused ? 1.5f : 1.0f);
     }
+
+    // The find bar floats over the focused pane's top-right corner.
+    if (findActive_ && t->active()) drawFindBar(t->active()->rect);
 }
 
 

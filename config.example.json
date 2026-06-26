@@ -4,6 +4,7 @@
   "fontSize": 16,
   "workspaceRoot": "",
   "unixTools": true,
+  "copyOnSelect": false,
 
   "hooks": {
     "sessionStart": "",

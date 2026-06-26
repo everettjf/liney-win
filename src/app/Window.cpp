@@ -51,7 +51,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
                     int height) {
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
-    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;  // CS_DBLCLKS: word/line select
     wc.lpfnWndProc = &Window::wndProcThunk;
     wc.hInstance = hInstance;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
@@ -79,6 +79,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     sessionStartHook_ = cfg.sessionStartHook;
     sessionExitHook_ = cfg.sessionExitHook;
     appExitHook_ = cfg.appExitHook;
+    copyOnSelect_ = cfg.copyOnSelect;
     if (cfg.unixTools) addGitUnixToolsToPath();  // ls/cat/grep/… in spawned shells
     // cmd shell integration: prepend an OSC 7 cwd report to PROMPT so the files
     // panel can follow `cd` (cmd.exe doesn't emit OSC 7 on its own). $e=ESC,
@@ -179,6 +180,10 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
         SetFocus(hwnd_);
         onMouseDown(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
         return 0;
+    case WM_LBUTTONDBLCLK:
+        SetFocus(hwnd_);
+        onMouseDoubleClick(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+        return 0;
     case WM_MOUSEMOVE:
         onMouseMove(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
         return 0;
@@ -188,6 +193,11 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_RBUTTONDOWN:
         onMouseDownRight(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
         return 0;
+    case WM_SETCURSOR:
+        // Show an I-beam over terminal text and resize arrows over split
+        // dividers; fall back to the default arrow over chrome.
+        if (LOWORD(lParam) == HTCLIENT && updateCursor()) return TRUE;
+        return DefWindowProcW(hwnd_, msg, wParam, lParam);
     case WM_COPY:
         copySelection();
         return 0;
@@ -195,7 +205,11 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
         paste();
         return 0;
     case WM_MOUSEWHEEL:
-        onWheel(GET_WHEEL_DELTA_WPARAM(wParam));
+        // Ctrl+Wheel zooms the font; a plain wheel scrolls scrollback.
+        if (GET_KEYSTATE_WPARAM(wParam) & MK_CONTROL)
+            zoomFont(GET_WHEEL_DELTA_WPARAM(wParam) > 0 ? +1 : -1);
+        else
+            onWheel(GET_WHEEL_DELTA_WPARAM(wParam));
         return 0;
     case WM_DESTROY:
         removeTray();
@@ -384,6 +398,7 @@ void Window::zoomFont(int step) {
     if (fontSize_ < 6.0f) fontSize_ = 6.0f;
     if (fontSize_ > 72.0f) fontSize_ = 72.0f;
     applyFont();
+    saveFontSize(fontSize_);  // remember the zoom level across launches
 }
 
 void Window::toggleKeepAwake() {
@@ -419,6 +434,7 @@ void Window::openMainMenu() {
     item(4, L"New tab\tCtrl+Shift+T");
     item(5, L"Split side by side\tAlt+D");
     item(6, L"Split stacked\tShift+Alt+D");
+    item(9, L"Find on screen…\tCtrl+F");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     item(7, L"Settings (config.json)…");
     item(8, L"Check for updates\tCtrl+Shift+U");
@@ -435,6 +451,7 @@ void Window::openMainMenu() {
     case 6: splitActive(SplitDir::Rows); break;
     case 7: openConfigFile(); break;
     case 8: checkForUpdates(); break;
+    case 9: openFind(); break;
     default: break;
     }
 }

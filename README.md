@@ -42,8 +42,13 @@ nothing but the OS.
 - **Scrollback** (wheel · `Shift+PgUp`) with **reflow** of long lines on resize
 - **Alternate screen** — vim / less / `git log` and other full-screen apps just work
 - OSC-driven **window title** and **cwd tracking** (the file tree follows your shell)
-- **Selection + copy/paste**, **IME** (CJK) with the candidate window at the cursor
-- Font zoom, configurable **color theme**
+- **Selection + copy/paste** — drag-select, **double-click word / triple-click line**,
+  **copy-on-select** (opt-in), right-click menu, `Shift+Insert` paste; **IME** (CJK)
+  with the candidate window at the cursor
+- **Find on screen** (`Ctrl+F`) — highlights every match in view, `Enter`/`F3` to
+  step through them and page back through scrollback
+- **Font zoom** — `Ctrl +/-/0` or **`Ctrl+Wheel`**, remembered across launches;
+  configurable **color theme**
 - **Unix tools** — with Git for Windows installed, `ls` / `cat` / `grep` / `rm` /
   `sed` / `awk` / … work in any shell
 
@@ -109,12 +114,15 @@ The first build fetches Ghostty and compiles `libghostty-vt`, so it takes a whil
 | `Alt+Arrows` | Move focus between split panes |
 | `Ctrl+Shift+B` / `Ctrl+Shift+F` | Toggle the left sidebar / right files panel |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | Copy selection / paste |
-| `Ctrl++` / `Ctrl+-` / `Ctrl+0` | Zoom font in / out / reset |
+| `Shift+Insert` / `Ctrl+Insert` | Paste / copy selection |
+| `Ctrl+Shift+A` | Select all (visible buffer) |
+| `Ctrl+F` · `Enter`/`Shift+Enter` · `F3`/`Shift+F3` · `Esc` | Find on screen · next/prev match · close |
+| `Ctrl++` / `Ctrl+-` / `Ctrl+0` · `Ctrl+Wheel` | Zoom font in / out / reset · zoom |
 | `Ctrl+Shift+L` / `Ctrl+Shift+G` | `git log` / `git diff` for the current repo |
 | `Ctrl+Shift+K` | Keep awake (block sleep) on / off |
 | `Ctrl+Shift+U` | Check for & install updates |
 | Wheel · `Shift+PgUp/PgDn/Home/End` | Scroll through scrollback |
-| Mouse | Switch tab · focus pane · expand repo · open worktree/SSH/agent · drag to select / resize / reorder · right-click a worktree to manage |
+| Mouse | Switch tab · focus pane · expand repo · open worktree/SSH/agent · drag to select (auto-scrolls past the edge) · double/triple-click word/line · right-click a pane for copy/paste/find · drag to resize / reorder · right-click a worktree to manage |
 
 ## ⚙️ Configuration
 
@@ -128,6 +136,7 @@ The first run writes `%USERPROFILE%\.liney\config.json` (mirroring macOS liney's
   "fontSize": 16,
   "workspaceRoot": "",
   "unixTools": true,
+  "copyOnSelect": false,
   "hooks": { "sessionStart": "", "sessionExit": "", "appExit": "" },
   "sshHosts": ["user@host"],
   "agents": [{ "name": "agent", "command": "claude", "cwd": "" }],
@@ -141,6 +150,8 @@ The first run writes `%USERPROFILE%\.liney\config.json` (mirroring macOS liney's
 | `shell` | Shell for new tabs (`powershell.exe` / `pwsh.exe` / `wsl.exe`; `wsl tmux` for tmux) |
 | `workspaceRoot` | Directory scanned for repos; empty = the launch directory's parent |
 | `unixTools` | Append Git's `usr\bin` to PATH so `ls`/`cat`/`grep`/… work |
+| `copyOnSelect` | Copy to the clipboard as soon as a selection ends (PuTTY-style) |
+| `fontSize` | Terminal font size; `Ctrl +/-/0` and `Ctrl+Wheel` update and persist it |
 | `sshHosts` / `agents` | Entries in the sidebar SSH / AGENTS sections |
 | `projectIcons` | Per-repo sidebar icons (else a repo-local `icon.png`/`logo.png`) |
 | `theme` | Terminal fg/bg + the 16-color ANSI palette |
