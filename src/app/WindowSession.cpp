@@ -223,6 +223,21 @@ void Window::saveLayout() const {
     root.set("tabs", std::move(tabs));
     root.set("activeTab", Json::number(static_cast<double>(activeTab_)));
 
+    // Window geometry: store the *normal* (restored) rect + maximized flag so
+    // size / position / maximized state come back next launch.
+    WINDOWPLACEMENT wp{};
+    wp.length = sizeof(wp);
+    if (GetWindowPlacement(hwnd_, &wp)) {
+        const RECT& n = wp.rcNormalPosition;
+        Json w = Json::object();
+        w.set("x", Json::number(n.left));
+        w.set("y", Json::number(n.top));
+        w.set("w", Json::number(n.right - n.left));
+        w.set("h", Json::number(n.bottom - n.top));
+        w.set("maximized", Json::boolean(wp.showCmd == SW_SHOWMAXIMIZED));
+        root.set("window", std::move(w));
+    }
+
     std::ofstream f((dir + L"\\layout.json").c_str(), std::ios::binary);
     if (f) {
         const std::string s = root.dump(2);
@@ -252,7 +267,7 @@ std::unique_ptr<Pane> Window::paneFromJson(const Json& j, int cols, int rows) {
     std::wstring shell = utf8ToWide(j["shell"].asString());
     if (shell.empty()) shell = shell_;
     auto s = std::make_unique<TerminalSession>();
-    if (!s->start(shell, cwd, cols, rows)) return nullptr;
+    if (!s->start(shell, cwd, cols, rows, scrollback_)) return nullptr;
     s->setTheme(theme_);
     auto p = std::make_unique<Pane>();
     p->session = std::move(s);
@@ -272,6 +287,19 @@ bool Window::restoreLayout() {
     bool ok = false;
     Json root = Json::parse(text, &ok);
     if (!ok || !root.isObject()) return false;
+
+    // Restore window geometry first so the panes are sized for the final client
+    // rect (MoveWindow fires WM_SIZE synchronously). Done before show().
+    const Json& w = root["window"];
+    if (w.isObject()) {
+        const int x = static_cast<int>(w["x"].asNumber(0));
+        const int y = static_cast<int>(w["y"].asNumber(0));
+        const int ww = static_cast<int>(w["w"].asNumber(0));
+        const int hh = static_cast<int>(w["h"].asNumber(0));
+        if (ww >= 200 && hh >= 150) MoveWindow(hwnd_, x, y, ww, hh, FALSE);
+        pendingMaximize_ = w["maximized"].asBool(false);
+    }
+
     const Json& tabsJ = root["tabs"];
     if (!tabsJ.isArray() || tabsJ.size() == 0) return false;
 

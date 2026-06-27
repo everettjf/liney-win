@@ -147,11 +147,14 @@ private:
     bool sidebarVisible_ = true;      // left WORKSPACE/SSH/AGENTS panel
     bool filesPanelVisible_ = false;  // right FILES (folder tree) panel (Ctrl+Shift+F)
     bool keepAwake_ = false;          // SetThreadExecutionState keep-awake state
+    bool pendingMaximize_ = false;    // restore a maximized window on first show
 
     std::wstring shell_ = L"cmd.exe";
     std::wstring fontFamily_ = L"Cascadia Mono";
-    float fontSize_ = 16.0f;
+    float fontSize_ = 16.0f;          // logical (DPI-independent) point size
     float defaultFontSize_ = 16.0f;
+    float dpiScale_ = 1.0f;           // device px per logical px (monitor DPI / 96)
+    int scrollback_ = 10000;          // history lines retained per session
     std::wstring sessionStartHook_; // command sent to each newly started shell
     std::wstring sessionExitHook_;  // command run when a pane closes
     std::wstring appExitHook_;      // command run on app quit

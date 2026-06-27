@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -7,6 +8,7 @@
 #include <vector>
 
 #include "render/Cell.h"
+#include "vt/ModeScanner.h"
 #include "vt/Notification.h"
 
 extern "C" {
@@ -34,8 +36,9 @@ public:
     Terminal& operator=(const Terminal&) = delete;
 
     // Create the terminal + render-state objects. Returns false if libghostty-vt
-    // is not compiled in or initialization fails.
-    bool create(int cols, int rows);
+    // is not compiled in or initialization fails. `scrollback` is the max number
+    // of history lines to retain.
+    bool create(int cols, int rows, int scrollback);
 
     // Feed raw bytes coming from the PTY.
     void write(const char* data, size_t len);
@@ -70,6 +73,11 @@ private:
     GhosttyRenderStateRowIterator rowIter_ = nullptr;
     GhosttyRenderStateRowCells rowCells_ = nullptr;
     std::wstring lastCwd_;  // dedup OSC 7 cwd reports (takeCwd returns changes)
+    // Recovers the bracketed-paste (?2004) bit from the output stream; read on
+    // the UI thread (paste) while write() runs on the reader thread, so the
+    // published flag is atomic. The scanner itself is touched only under mutex_.
+    BracketedPasteScanner bracketScan_;
+    std::atomic<bool> bracketedPaste_{ false };
 };
 
 } // namespace liney

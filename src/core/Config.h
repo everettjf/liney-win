@@ -22,6 +22,7 @@ struct Config {
     std::wstring shell = L"cmd.exe";        // default shell for new tabs
     std::wstring fontFamily = L"Cascadia Mono";
     float fontSize = 16.0f;
+    int scrollback = 10000;                 // history lines retained per session
     std::wstring workspaceRoot;             // empty => parent of launch directory
     std::wstring sessionStartHook;          // command run in each new shell
     std::wstring sessionExitHook;           // command run when a pane closes

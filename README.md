@@ -111,6 +111,7 @@ The first build fetches Ghostty and compiles `libghostty-vt`, so it takes a whil
 | `Ctrl+Shift+T` / `Ctrl+Shift+W` | New tab / close current pane |
 | `Alt+D` / `Shift+Alt+D` | Split side by side (left∣right) / stacked (top/bottom) |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous tab |
+| `Ctrl+1`…`Ctrl+8` / `Ctrl+9` | Jump to tab N / last tab |
 | `Alt+Arrows` | Move focus between split panes |
 | `Ctrl+Shift+B` / `Ctrl+Shift+F` | Toggle the left sidebar / right files panel |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | Copy selection / paste |
@@ -152,6 +153,7 @@ The first run writes `%USERPROFILE%\.liney\config.json` (mirroring macOS liney's
 | `unixTools` | Append Git's `usr\bin` to PATH so `ls`/`cat`/`grep`/… work |
 | `copyOnSelect` | Copy to the clipboard as soon as a selection ends (PuTTY-style) |
 | `fontSize` | Terminal font size; `Ctrl +/-/0` and `Ctrl+Wheel` update and persist it |
+| `scrollback` | History lines retained per session (default 10000) |
 | `sshHosts` / `agents` | Entries in the sidebar SSH / AGENTS sections |
 | `projectIcons` | Per-repo sidebar icons (else a repo-local `icon.png`/`logo.png`) |
 | `theme` | Terminal fg/bg + the 16-color ANSI palette |

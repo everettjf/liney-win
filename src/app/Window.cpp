@@ -7,12 +7,36 @@
 
 #include "app/WindowInternal.h"
 #include "core/Config.h"
+#include "core/RenderSignal.h"
 #include "render/D2DRenderer.h"
 #include "util/Process.h"  // runDetached (lifecycle hooks)
 
 namespace liney {
 
 static const wchar_t* kClassName = L"LineyWinMainWindow";
+
+// Idle repaint cadence. With nothing happening the loop sleeps in
+// MsgWaitForMultipleObjectsEx and only repaints this often (so async pollers —
+// notifications / title / update / pane reaping — still run), instead of the old
+// unconditional 60fps. Real input / PTY output repaints immediately.
+static constexpr UINT kIdleRenderMs = 100;
+
+// Monitor DPI as a 96-relative scale. GetDpiForWindow is Win10 1607+, so load it
+// dynamically and fall back to the device caps.
+static float queryDpiScale(HWND hwnd) {
+    using GetDpiFn = UINT(WINAPI*)(HWND);
+    static GetDpiFn fn = []() -> GetDpiFn {
+        if (HMODULE u = GetModuleHandleW(L"user32.dll"))
+            return reinterpret_cast<GetDpiFn>(GetProcAddress(u, "GetDpiForWindow"));
+        return nullptr;
+    }();
+    UINT dpi = 0;
+    if (fn) dpi = fn(hwnd);
+    if (dpi == 0) {
+        if (HDC dc = GetDC(hwnd)) { dpi = GetDeviceCaps(dc, LOGPIXELSX); ReleaseDC(hwnd, dc); }
+    }
+    return (dpi ? static_cast<float>(dpi) : 96.0f) / 96.0f;
+}
 
 namespace {
 // Append Git for Windows' Unix tools (usr\bin, mingw64\bin) to this process's
@@ -65,6 +89,9 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
                             nullptr, hInstance, this);
     if (!hwnd_) return false;
 
+    g_wakeHwnd.store(hwnd_, std::memory_order_relaxed);  // PTY thread wakes us here
+    dpiScale_ = queryDpiScale(hwnd_);                    // scale the font to the monitor
+
     if (!renderer_->initialize(hwnd_)) return false;
     RECT rc{};
     GetClientRect(hwnd_, &rc);
@@ -80,6 +107,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     sessionExitHook_ = cfg.sessionExitHook;
     appExitHook_ = cfg.appExitHook;
     copyOnSelect_ = cfg.copyOnSelect;
+    scrollback_ = cfg.scrollback;
     if (cfg.unixTools) addGitUnixToolsToPath();  // ls/cat/grep/… in spawned shells
     // cmd shell integration: prepend an OSC 7 cwd report to PROMPT so the files
     // panel can follow `cd` (cmd.exe doesn't emit OSC 7 on its own). $e=ESC,
@@ -111,20 +139,36 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
 
     // Restore the saved tab/pane layout if any; otherwise open one tab.
     if (!restoreLayout()) newTab(startCwd);
-    if (tabs_.empty()) return false;  // shell failed to launch
+    if (tabs_.empty()) {
+        // No session could start — almost always the terminal core DLL is
+        // missing/incompatible, or the configured shell doesn't exist. Tell the
+        // user instead of vanishing silently.
+        MessageBoxW(
+            hwnd_,
+            L"liney-win couldn't start a terminal session.\n\n"
+            L"Likely causes:\n"
+            L"  • ghostty-vt.dll is missing or incompatible (must sit next to the exe)\n"
+            L"  • the configured \"shell\" in config.json doesn't exist\n\n"
+            L"See %USERPROFILE%\\.liney\\config.json.",
+            L"liney-win", MB_OK | MB_ICONERROR);
+        return false;
+    }
 
     initTray();  // for OSC 9/777 balloon notifications
     return true;
 }
 
 void Window::show(int nCmdShow) {
-    ShowWindow(hwnd_, nCmdShow);
+    // Honor a restored maximized state from the saved layout.
+    ShowWindow(hwnd_, pendingMaximize_ ? SW_SHOWMAXIMIZED : nCmdShow);
     UpdateWindow(hwnd_);
 }
 
 int Window::runMessageLoop() {
     MSG msg{};
+    ULONGLONG lastRender = GetTickCount64();
     for (;;) {
+        bool didMsg = false;
         while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_QUIT) {
                 saveLayout();  // persist tabs/panes for next launch
@@ -133,8 +177,22 @@ int Window::runMessageLoop() {
             }
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
+            didMsg = true;
         }
-        renderFrame();  // vsync-throttled Present, so this does not spin
+        // Repaint on input, on terminal output (g_renderDirty, set by the PTY
+        // reader thread), or on the slow fallback tick. Otherwise we skip the
+        // frame entirely so an idle terminal stops burning a core at 60fps.
+        const bool ptyDirty = g_renderDirty.exchange(false, std::memory_order_relaxed);
+        const ULONGLONG now = GetTickCount64();
+        if (didMsg || ptyDirty || now - lastRender >= kIdleRenderMs) {
+            renderFrame();
+            lastRender = now;
+        }
+        // Sleep until a message arrives (real input or our wake post) or the
+        // fallback interval elapses. MWMO_INPUTAVAILABLE avoids a lost-wakeup race
+        // for input that landed just after the PeekMessage drain above.
+        MsgWaitForMultipleObjectsEx(0, nullptr, kIdleRenderMs, QS_ALLINPUT,
+                                    MWMO_INPUTAVAILABLE);
     }
 }
 
@@ -159,6 +217,17 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
         if (LOWORD(lParam) && HIWORD(lParam))
             renderer_->resize(LOWORD(lParam), HIWORD(lParam));
         return 0;
+    case WM_DPICHANGED: {
+        // Moved to a monitor with different scaling: rebuild the font + cell
+        // metrics at the new DPI and take the OS-suggested window rectangle.
+        dpiScale_ = static_cast<float>(HIWORD(wParam)) / 96.0f;
+        applyFont();
+        if (const RECT* r = reinterpret_cast<const RECT*>(lParam))
+            SetWindowPos(hwnd_, nullptr, r->left, r->top, r->right - r->left,
+                         r->bottom - r->top, SWP_NOZORDER | SWP_NOACTIVATE);
+        markRenderDirty();
+        return 0;
+    }
     case WM_CHAR:
         onChar(static_cast<wchar_t>(wParam));
         return 0;
@@ -210,6 +279,10 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
             zoomFont(GET_WHEEL_DELTA_WPARAM(wParam) > 0 ? +1 : -1);
         else
             onWheel(GET_WHEEL_DELTA_WPARAM(wParam));
+        return 0;
+    case WM_LINEY_WAKE:
+        // Posted by off-thread producers to pop the message wait; the repaint
+        // decision happens back in runMessageLoop. Nothing to do here.
         return 0;
     case WM_DESTROY:
         removeTray();
@@ -321,7 +394,7 @@ void Window::newTabShell(const std::wstring& shellCmd, const std::wstring& cwd) 
     cellsForRect(panes, cols, rows);
 
     auto session = std::make_unique<TerminalSession>();
-    if (!session->start(shellCmd, cwd, cols, rows)) return;
+    if (!session->start(shellCmd, cwd, cols, rows, scrollback_)) return;
     session->setTheme(theme_);
     runStartHook(session.get());
     tabs_.push_back(std::make_unique<Tab>(std::move(session)));
@@ -347,7 +420,7 @@ void Window::splitActive(SplitDir dir) {
     const std::wstring cwd = a->session->cwd();
 
     auto session = std::make_unique<TerminalSession>();
-    if (!session->start(shell_, cwd, cols, rows)) return;
+    if (!session->start(shell_, cwd, cols, rows, scrollback_)) return;
     session->setTheme(theme_);
     runStartHook(session.get());
     t->splitActive(dir, std::move(session));
@@ -385,7 +458,9 @@ void Window::updateTitle() {
 
 
 void Window::applyFont() {
-    renderer_->setFont(fontFamily_, fontSize_);
+    // fontSize_ is logical; render at device pixels so glyphs use the monitor's
+    // full resolution (sharp on HiDPI) instead of being bitmap-stretched.
+    renderer_->setFont(fontFamily_, fontSize_ * dpiScale_);
     unsigned cw = 0, ch = 0;
     renderer_->cellSize(cw, ch);
     metrics_.cellW = cw ? static_cast<float>(cw) : 8.0f;

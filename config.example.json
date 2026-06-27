@@ -2,6 +2,7 @@
   "shell": "cmd.exe",
   "fontFamily": "Cascadia Mono",
   "fontSize": 16,
+  "scrollback": 10000,
   "workspaceRoot": "",
   "unixTools": true,
   "copyOnSelect": false,

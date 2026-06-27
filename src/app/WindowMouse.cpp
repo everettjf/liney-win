@@ -136,7 +136,18 @@ void Window::onMouseDoubleClick(int xi, int yi) {
     const float x = static_cast<float>(xi), y = static_cast<float>(yi);
     Rect leftBar, rightPanel, tabBar, panes;
     regions(leftBar, rightPanel, tabBar, panes);
-    if (!panes.contains(x, y)) { onMouseDown(xi, yi); return; }  // chrome: plain click
+    if (tabBar.contains(x, y)) {
+        // Double-click empty tab-strip space opens a new tab (common convention);
+        // on a tab / + / ☰ it's just a click.
+        bool onTab = false;
+        for (const Rect& tr : tabRects_) if (tr.contains(x, y)) { onTab = true; break; }
+        if (!onTab && !plusRect_.contains(x, y) && !menuButtonRect_.contains(x, y))
+            newTab(activeSession() ? activeSession()->cwd() : workspace_.root());
+        else
+            onMouseDown(xi, yi);
+        return;
+    }
+    if (!panes.contains(x, y)) { onMouseDown(xi, yi); return; }  // other chrome: plain click
     Tab* t = activeTab();
     if (!t) return;
     Pane* leaf = t->hitTest(x, y);

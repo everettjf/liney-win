@@ -107,6 +107,8 @@ Config loadConfig() {
         cfg.fontFamily = utf8ToWide(j["fontFamily"].asString());
     if (j.contains("fontSize"))
         cfg.fontSize = static_cast<float>(j["fontSize"].asNumber(cfg.fontSize));
+    if (j.contains("scrollback"))
+        cfg.scrollback = static_cast<int>(j["scrollback"].asNumber(cfg.scrollback));
     if (j.contains("workspaceRoot"))
         cfg.workspaceRoot = utf8ToWide(j["workspaceRoot"].asString());
     // hooks.{sessionStart,sessionExit,appExit}
@@ -163,6 +165,8 @@ Config loadConfig() {
     if (cfg.shell.empty()) cfg.shell = L"cmd.exe";
     if (cfg.fontFamily.empty()) cfg.fontFamily = L"Cascadia Mono";
     if (cfg.fontSize < 6.0f || cfg.fontSize > 96.0f) cfg.fontSize = 16.0f;
+    if (cfg.scrollback < 0) cfg.scrollback = 0;
+    if (cfg.scrollback > 1000000) cfg.scrollback = 1000000;  // sane upper bound
     return cfg;
 }
 

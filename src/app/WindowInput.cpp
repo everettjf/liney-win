@@ -139,6 +139,16 @@ bool Window::onKeyDown(WPARAM vk) {
                 }
                 break;  // no selection: let WM_CHAR deliver ^C to the shell
             case 'F': openFind(); swallowNextChar_ = true; return true;
+            case '1': case '2': case '3': case '4':
+            case '5': case '6': case '7': case '8': {
+                // Ctrl+1..8 jump to that tab; Ctrl+9 jumps to the last tab.
+                const size_t idx = static_cast<size_t>(vk - '1');
+                if (idx < tabs_.size()) { clearSelection(); activeTab_ = idx; updateTitle(); }
+                swallowNextChar_ = true; return true;
+            }
+            case '9':
+                if (!tabs_.empty()) { clearSelection(); activeTab_ = tabs_.size() - 1; updateTitle(); }
+                swallowNextChar_ = true; return true;
             case VK_OEM_PLUS:
             case VK_ADD: zoomFont(+1); swallowNextChar_ = true; return true;
             case VK_OEM_MINUS:

@@ -22,13 +22,14 @@ Terminal::~Terminal() {
     if (terminal_) ghostty_terminal_free(terminal_);
 }
 
-bool Terminal::create(int cols, int rows) {
+bool Terminal::create(int cols, int rows, int scrollback) {
     if (cols <= 0 || rows <= 0) return false;
+    if (scrollback < 0) scrollback = 0;
 
     GhosttyTerminalOptions opts{};
     opts.cols = static_cast<uint16_t>(cols);
     opts.rows = static_cast<uint16_t>(rows);
-    opts.max_scrollback = 1000;
+    opts.max_scrollback = static_cast<uint32_t>(scrollback);
 
     if (ghostty_terminal_new(nullptr, &terminal_, opts) != GHOSTTY_SUCCESS)
         return false;
@@ -47,6 +48,9 @@ void Terminal::write(const char* data, size_t len) {
         ghostty_terminal_vt_write(
             terminal_, reinterpret_cast<const uint8_t*>(data), len);
     }
+    // Recover the bracketed-paste mode bit from the output stream and publish it
+    // for the UI thread's paste() to read.
+    bracketedPaste_.store(bracketScan_.feed(data, len), std::memory_order_relaxed);
 }
 
 void Terminal::resize(int cols, int rows, int cellWidthPx, int cellHeightPx) {
@@ -173,7 +177,9 @@ void Terminal::scrollToBottom() {
     ghostty_terminal_scroll_viewport(terminal_, sv);
 }
 
-bool Terminal::bracketedPaste() const { return false; }
+bool Terminal::bracketedPaste() const {
+    return bracketedPaste_.load(std::memory_order_relaxed);
+}
 
 std::wstring Terminal::oscTitle() {
     std::lock_guard<std::mutex> lock(mutex_);

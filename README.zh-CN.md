@@ -102,6 +102,7 @@ powershell -ExecutionPolicy Bypass -File tools\build.ps1
 | `Ctrl+Shift+T` / `Ctrl+Shift+W` | 新建标签 / 关闭当前 pane |
 | `Alt+D` / `Shift+Alt+D` | 左右分屏(并排) / 上下分屏(堆叠) |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | 下一个 / 上一个标签 |
+| `Ctrl+1`…`Ctrl+8` / `Ctrl+9` | 跳到第 N 个 / 最后一个标签 |
 | `Alt+方向键` | 在分屏 pane 间移动焦点 |
 | `Ctrl+Shift+B` / `Ctrl+Shift+F` | 切换左侧边栏 / 右侧文件面板 |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | 复制选区 / 粘贴 |
@@ -125,6 +126,7 @@ powershell -ExecutionPolicy Bypass -File tools\build.ps1
   "shell": "cmd.exe",
   "fontFamily": "Cascadia Mono",
   "fontSize": 16,
+  "scrollback": 10000,
   "workspaceRoot": "",
   "unixTools": true,
   "copyOnSelect": false,
@@ -143,6 +145,7 @@ powershell -ExecutionPolicy Bypass -File tools\build.ps1
 | `unixTools` | 把 Git 的 `usr\bin` 加进 PATH,使 `ls`/`cat`/`grep`/… 可用 |
 | `copyOnSelect` | 选择结束即复制到剪贴板(PuTTY 风格) |
 | `fontSize` | 终端字号;`Ctrl +/-/0` 与 `Ctrl+滚轮` 会更新并记忆 |
+| `scrollback` | 每个会话保留的历史行数(默认 10000) |
 | `sshHosts` / `agents` | 侧边栏 SSH / AGENTS 区的入口 |
 | `projectIcons` | 每个仓库的侧边栏图标(否则用仓库自带的 `icon.png`/`logo.png`) |
 | `theme` | 终端前景/背景 + 16 色 ANSI 调色板 |
