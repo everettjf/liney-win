@@ -1,5 +1,7 @@
 #include "core/TerminalSession.h"
 
+#include "core/RenderSignal.h"
+
 namespace liney {
 
 namespace {
@@ -16,17 +18,20 @@ std::wstring basename(const std::wstring& path) {
 } // namespace
 
 bool TerminalSession::start(const std::wstring& shell, const std::wstring& cwd,
-                            int cols, int rows) {
+                            int cols, int rows, int scrollback) {
     cwd_ = cwd;
     shell_ = shell;
     title_ = basename(cwd);
     cols_ = cols;
     rows_ = rows;
 
-    if (!terminal_.create(cols, rows)) return false;
+    if (!terminal_.create(cols, rows, scrollback)) return false;
     const bool ok = pty_.start(
         shell, static_cast<short>(cols), static_cast<short>(rows), cwd,
-        [this](const char* data, size_t len) { terminal_.write(data, len); });
+        [this](const char* data, size_t len) {
+            terminal_.write(data, len);
+            markRenderDirty();  // wake the UI thread to repaint the new output
+        });
     active_ = ok;
     return ok;
 }

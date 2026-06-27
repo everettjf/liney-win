@@ -33,6 +33,7 @@ add_executable(liney_win WIN32
   src/app/WindowRender.cpp
   src/app/WindowInput.cpp
   src/app/WindowMouse.cpp
+  src/app/WindowFind.cpp
   src/app/WindowSession.cpp
   src/app/Tab.cpp
   src/core/TerminalSession.cpp

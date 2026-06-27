@@ -386,7 +386,20 @@ void D2DRenderer::drawGrid(const Grid& grid, float originX, float originY) {
                     y < grid.selEndY || (y == grid.selEndY && x <= grid.selEndX);
                 selected = afterStart && beforeEnd;
             }
+            // Find-on-screen highlight: 0 = none, 1 = match, 2 = active match.
+            int findHit = 0;
+            if (!selected && !grid.findMatches.empty()) {
+                for (size_t i = 0; i < grid.findMatches.size(); ++i) {
+                    const Grid::FindSpan& m = grid.findMatches[i];
+                    if (y == m.y && x >= m.x && x < m.x + m.len) {
+                        findHit = (static_cast<int>(i) == grid.findCurrent) ? 2 : 1;
+                        break;
+                    }
+                }
+            }
             if (selected) bg = Color{ 50, 78, 124 };
+            else if (findHit == 2) bg = Color{ 190, 145, 40 };   // active match
+            else if (findHit == 1) bg = Color{ 95, 80, 30 };     // other matches
 
             if (bg.r || bg.g || bg.b) {
                 brush_->SetColor(toColorF(bg));
