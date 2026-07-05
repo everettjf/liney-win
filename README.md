@@ -38,17 +38,23 @@ nothing but the OS.
 
 **🖥️ Terminal** — powered by **Ghostty's libghostty-vt** core
 - Full VT parsing: cursor / erase / scroll regions / insert-delete, SGR
-  16/256/truecolor + bold/italic/underline/inverse, UTF-8, wide chars, grapheme clusters
+  16/256/truecolor rendered with **bold/italic/underline/inverse/faint/strike**,
+  UTF-8, **wide (CJK) glyphs**, grapheme clusters
 - **Scrollback** (wheel · `Shift+PgUp`) with **reflow** of long lines on resize
-- **Alternate screen** — vim / less / `git log` and other full-screen apps just work
+- **Alternate screen** — vim / less / `git log` just work, and the **mouse wheel
+  scrolls them** (arrow keys are sent when the alt screen is active)
+- **Cursor** — DECSCUSR **block / bar / underline** shapes (vim mode-switching),
+  **blinking** per terminal modes, hollow when the pane is unfocused, OSC 12 color
 - OSC-driven **window title** and **cwd tracking** (the file tree follows your shell)
 - **Selection + copy/paste** — drag-select, **double-click word / triple-click line**,
-  **copy-on-select** (opt-in), right-click menu, `Shift+Insert` paste; **IME** (CJK)
+  **copy-on-select** (opt-in), right-click menu, `Ctrl+V` / `Shift+Insert` paste,
+  bracketed paste, an opt-out **multi-line paste confirm**; **IME** (CJK)
   with the candidate window at the cursor
 - **Find on screen** (`Ctrl+F`) — highlights every match in view, `Enter`/`F3` to
   step through them and page back through scrollback
-- **Font zoom** — `Ctrl +/-/0` or **`Ctrl+Wheel`**, remembered across launches;
-  configurable **color theme**
+- **Fonts** — a native **Font… picker** (☰ menu, monospace-filtered), zoom via
+  `Ctrl +/-/0` or **`Ctrl+Wheel`**, both remembered across launches; configurable
+  **color theme** (fg/bg + full 16-color ANSI palette)
 - **Unix tools** — with Git for Windows installed, `ls` / `cat` / `grep` / `rm` /
   `sed` / `awk` / … work in any shell
 
@@ -115,6 +121,7 @@ The first build fetches Ghostty and compiles `libghostty-vt`, so it takes a whil
 | `Alt+Arrows` | Move focus between split panes |
 | `Ctrl+Shift+B` / `Ctrl+Shift+F` | Toggle the left sidebar / right files panel |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | Copy selection / paste |
+| `Ctrl+C` / `Ctrl+V` | Copy when text is selected (else ^C) / paste |
 | `Shift+Insert` / `Ctrl+Insert` | Paste / copy selection |
 | `Ctrl+Shift+A` | Select all (visible buffer) |
 | `Ctrl+F` · `Enter`/`Shift+Enter` · `F3`/`Shift+F3` · `Esc` | Find on screen · next/prev match · close |
@@ -138,6 +145,7 @@ The first run writes `%USERPROFILE%\.liney\config.json` (mirroring macOS liney's
   "workspaceRoot": "",
   "unixTools": true,
   "copyOnSelect": false,
+  "multiLinePasteWarning": true,
   "hooks": { "sessionStart": "", "sessionExit": "", "appExit": "" },
   "sshHosts": ["user@host"],
   "agents": [{ "name": "agent", "command": "claude", "cwd": "" }],
@@ -152,7 +160,8 @@ The first run writes `%USERPROFILE%\.liney\config.json` (mirroring macOS liney's
 | `workspaceRoot` | Directory scanned for repos; empty = the launch directory's parent |
 | `unixTools` | Append Git's `usr\bin` to PATH so `ls`/`cat`/`grep`/… work |
 | `copyOnSelect` | Copy to the clipboard as soon as a selection ends (PuTTY-style) |
-| `fontSize` | Terminal font size; `Ctrl +/-/0` and `Ctrl+Wheel` update and persist it |
+| `multiLinePasteWarning` | Confirm before pasting text with line breaks (each break runs as Enter) |
+| `fontFamily` / `fontSize` | Terminal font; the ☰ → **Font…** picker, `Ctrl +/-/0` and `Ctrl+Wheel` update and persist them |
 | `scrollback` | History lines retained per session (default 10000) |
 | `sshHosts` / `agents` | Entries in the sidebar SSH / AGENTS sections |
 | `projectIcons` | Per-repo sidebar icons (else a repo-local `icon.png`/`logo.png`) |

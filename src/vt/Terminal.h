@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -8,7 +7,6 @@
 #include <vector>
 
 #include "render/Cell.h"
-#include "vt/ModeScanner.h"
 #include "vt/Notification.h"
 
 extern "C" {
@@ -58,8 +56,10 @@ public:
     void scrollViewport(int deltaLines);
     void scrollToBottom();
 
-    // Whether the app enabled bracketed paste (DEC mode ?2004).
-    bool bracketedPaste() const;
+    // Terminal modes the UI reacts to, queried straight from the core.
+    bool bracketedPaste();          // DEC ?2004: wrap pastes in ESC[200~ / 201~
+    bool applicationCursorKeys();   // DECCKM:    arrows send SS3 (ESC O A) form
+    bool altScreenActive();         // vim/less…: wheel should send arrows, not scroll
 
     // OSC-driven metadata (built-in backend only; libghostty returns empty).
     std::wstring oscTitle();
@@ -67,17 +67,14 @@ public:
     void drainNotifications(std::vector<Notification>& out);
 
 private:
+    bool modeGet(uint16_t mode, bool ansi);  // query a DEC/ANSI mode (locks mutex_)
+
     std::mutex mutex_;
     GhosttyTerminal terminal_ = nullptr;
     GhosttyRenderState state_ = nullptr;
     GhosttyRenderStateRowIterator rowIter_ = nullptr;
     GhosttyRenderStateRowCells rowCells_ = nullptr;
     std::wstring lastCwd_;  // dedup OSC 7 cwd reports (takeCwd returns changes)
-    // Recovers the bracketed-paste (?2004) bit from the output stream; read on
-    // the UI thread (paste) while write() runs on the reader thread, so the
-    // published flag is atomic. The scanner itself is touched only under mutex_.
-    BracketedPasteScanner bracketScan_;
-    std::atomic<bool> bracketedPaste_{ false };
 };
 
 } // namespace liney

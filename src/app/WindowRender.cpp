@@ -231,12 +231,16 @@ void Window::drawPanes(const Rect& r) {
     t->layout(r, metrics_);
 
     // Refresh selection + find highlights on the owning pane; clear elsewhere.
+    // Also stamp keyboard focus: only the active pane of a focused window gets
+    // a solid cursor (others draw it hollow).
+    const bool winFocused = GetFocus() == hwnd_;
     for (Pane* leaf : t->leaves())
         if (leaf->session) {
             Grid& g = leaf->session->grid();
             g.hasSelection = false;
             g.findMatches.clear();
             g.findCurrent = -1;
+            g.focused = winFocused && leaf == t->active();
         }
     applySelectionToGrid();
     if (findActive_) {

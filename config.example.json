@@ -6,6 +6,7 @@
   "workspaceRoot": "",
   "unixTools": true,
   "copyOnSelect": false,
+  "multiLinePasteWarning": true,
 
   "hooks": {
     "sessionStart": "",

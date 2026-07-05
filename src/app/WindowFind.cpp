@@ -70,6 +70,7 @@ std::wstring Window::rowText(const Grid& g, int y,
     if (colOfPos) colOfPos->clear();
     for (int x = 0; x < g.cols; ++x) {
         const Cell& c = g.at(x, y);
+        if (c.flags & kFlagWideTail) continue;  // spacer under a CJK glyph
         if (c.ch.empty()) {
             out.push_back(L' ');
             if (colOfPos) colOfPos->push_back(x);
@@ -102,7 +103,10 @@ void Window::stampFindMatches() {
         size_t pos = 0;
         while ((pos = line.find(q, pos)) != std::wstring::npos) {
             const int startCol = col[pos];
-            const int endCol = col[pos + qn - 1];
+            int endCol = col[pos + qn - 1];
+            // A match ending on a wide (CJK) glyph highlights its tail too.
+            if ((g.at(endCol, y).flags & kFlagWide) && endCol + 1 < g.cols)
+                ++endCol;
             findMatches_.push_back({ startCol, y, endCol - startCol + 1 });
             pos += qn;  // non-overlapping
         }

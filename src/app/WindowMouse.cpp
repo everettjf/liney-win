@@ -334,6 +334,7 @@ std::wstring Window::selectionText() const {
         std::wstring line;
         for (int x = x0; x <= x1 && x < g.cols; ++x) {
             const Cell& c = g.at(x, y);
+            if (c.flags & kFlagWideTail) continue;  // spacer under a CJK glyph
             line += c.ch.empty() ? L" " : c.ch;
         }
         size_t last = line.find_last_not_of(L' ');
@@ -390,6 +391,19 @@ void Window::paste() {
         }
     }
 
+    // Multi-line pastes execute every embedded newline as "Enter"; confirm
+    // first so a stray copy can't run commands (config: multiLinePasteWarning).
+    if (multiLinePasteWarning_ && norm.find(L'\r') != std::wstring::npos) {
+        int newlines = 0;
+        for (wchar_t c : norm) if (c == L'\r') ++newlines;
+        const std::wstring msg =
+            L"The clipboard contains " + std::to_wstring(newlines + 1) +
+            L" lines; each line break runs as Enter.\n\nPaste anyway?";
+        if (MessageBoxW(hwnd_, msg.c_str(), L"liney-win — paste",
+                        MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
+            return;
+    }
+
     int bytes = WideCharToMultiByte(CP_UTF8, 0, norm.data(),
                                     static_cast<int>(norm.size()), nullptr, 0,
                                     nullptr, nullptr);
@@ -411,6 +425,9 @@ bool Window::isWordChar(const std::wstring& ch) {
     if (ch.empty()) return false;
     const wchar_t c = ch[0];
     if (c == L' ') return false;
+    // Treat all non-ASCII (CJK, accented, …) as word characters — the CRT's
+    // iswalnum is locale-dependent and unreliable for them.
+    if (c >= 0x80) return true;
     if (iswalnum(c)) return true;
     // Keep common path / identifier punctuation as part of a "word" so a
     // double-click grabs whole filenames, URLs and flags.
@@ -423,15 +440,21 @@ void Window::selectWordAt(Pane* p, int cx, int cy) {
     if (cx < 0 || cx >= g.cols || cy < 0 || cy >= g.rows) return;
     selPane_ = p;
     selAY_ = selBY_ = cy;
-    if (!isWordChar(g.at(cx, cy).ch)) {
+    // A wide (CJK) glyph's spacer tail belongs to the word its head is in.
+    auto cellIsWord = [&](int x) {
+        const Cell& c = g.at(x, cy);
+        return (c.flags & kFlagWideTail) != 0 || isWordChar(c.ch);
+    };
+    if (g.at(cx, cy).flags & kFlagWideTail) --cx;  // click landed on a tail
+    if (cx < 0 || !cellIsWord(cx)) {
         // Not on a word: select just the single cell.
-        selAX_ = selBX_ = cx;
+        selAX_ = selBX_ = cx < 0 ? 0 : cx;
         hasSelection_ = true;
         return;
     }
     int a = cx, b = cx;
-    while (a > 0 && isWordChar(g.at(a - 1, cy).ch)) --a;
-    while (b < g.cols - 1 && isWordChar(g.at(b + 1, cy).ch)) ++b;
+    while (a > 0 && cellIsWord(a - 1)) --a;
+    while (b < g.cols - 1 && cellIsWord(b + 1)) ++b;
     selAX_ = a;
     selBX_ = b;
     hasSelection_ = true;

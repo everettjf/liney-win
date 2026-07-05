@@ -32,6 +32,7 @@ struct Config {
     Theme theme;                            // colors (defaults = built-in palette)
     bool unixTools = true;                  // append Git's usr/bin to PATH (ls/cat/…)
     bool copyOnSelect = false;              // copy to clipboard as soon as a drag ends
+    bool multiLinePasteWarning = true;      // confirm before pasting multiple lines
     // Per-project sidebar icons: repo name -> icon file path (png/ico).
     std::vector<std::pair<std::wstring, std::wstring>> projectIcons;
     // Explicit project folders added to the sidebar (besides scanned ones).
@@ -48,5 +49,9 @@ Config loadConfig();
 // (parse → set → dump). Best-effort: silently no-ops if the file can't be
 // read/written. Used to remember the zoom level across launches.
 void saveFontSize(float size);
+
+// Persist just the fontFamily, same parse → set → dump approach as
+// saveFontSize. Used by the in-app font picker.
+void saveFontFamily(const std::wstring& family);
 
 } // namespace liney

@@ -54,6 +54,8 @@ bool D2DRenderer::buildTextFormats() {
     if (!dwriteFactory_) return false;
     textFormat_.Reset();
     textFormatBold_.Reset();
+    textFormatItalic_.Reset();
+    textFormatBoldItalic_.Reset();
 
     const wchar_t* family = fontFamily_.c_str();
     HRESULT hr = dwriteFactory_->CreateTextFormat(
@@ -72,14 +74,22 @@ bool D2DRenderer::buildTextFormats() {
     textFormat_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
     textFormat_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
 
-    // Bold variant for SGR-bold cells (best-effort; ignore failure).
-    if (SUCCEEDED(dwriteFactory_->CreateTextFormat(
-            family, nullptr, DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL, fontSize_, L"en-us",
-            textFormatBold_.GetAddressOf()))) {
-        textFormatBold_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-        textFormatBold_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
-    }
+    // Bold / italic variants for SGR-styled cells (best-effort; cellFormat
+    // falls back to the plain format for any that failed).
+    auto makeVariant = [&](DWRITE_FONT_WEIGHT weight, DWRITE_FONT_STYLE style,
+                           ComPtr<IDWriteTextFormat>& out) {
+        if (SUCCEEDED(dwriteFactory_->CreateTextFormat(
+                family, nullptr, weight, style, DWRITE_FONT_STRETCH_NORMAL,
+                fontSize_, L"en-us", out.GetAddressOf()))) {
+            out->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+            out->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+        }
+    };
+    makeVariant(DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_NORMAL, textFormatBold_);
+    makeVariant(DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_ITALIC,
+                textFormatItalic_);
+    makeVariant(DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_ITALIC,
+                textFormatBoldItalic_);
 
     // Derive the monospace cell size from a representative glyph.
     ComPtr<IDWriteTextLayout> layout;
@@ -353,6 +363,48 @@ void D2DRenderer::drawIcon(IconKind kind, float x, float y, float size,
     }
 }
 
+IDWriteTextFormat* D2DRenderer::cellFormat(uint32_t flags) const {
+    const bool bold = (flags & kFlagBold) != 0;
+    const bool italic = (flags & kFlagItalic) != 0;
+    if (bold && italic && textFormatBoldItalic_) return textFormatBoldItalic_.Get();
+    if (italic && textFormatItalic_) return textFormatItalic_.Get();
+    if (bold && textFormatBold_) return textFormatBold_.Get();
+    return textFormat_.Get();
+}
+
+// Effective fg/bg of one cell after inverse video and the selection / find
+// highlights. Shared by both drawGrid passes so backgrounds and glyphs agree.
+static void cellColors(const Grid& grid, int x, int y, Color& fg, Color& bg) {
+    const Cell& cell = grid.at(x, y);
+    fg = cell.fg;
+    bg = cell.bg;
+    if (cell.flags & kFlagInverse) std::swap(fg, bg);
+
+    // Selection highlight (row-major inclusive range).
+    bool selected = false;
+    if (grid.hasSelection) {
+        const bool afterStart =
+            y > grid.selStartY || (y == grid.selStartY && x >= grid.selStartX);
+        const bool beforeEnd =
+            y < grid.selEndY || (y == grid.selEndY && x <= grid.selEndX);
+        selected = afterStart && beforeEnd;
+    }
+    // Find-on-screen highlight: 0 = none, 1 = match, 2 = active match.
+    int findHit = 0;
+    if (!selected && !grid.findMatches.empty()) {
+        for (size_t i = 0; i < grid.findMatches.size(); ++i) {
+            const Grid::FindSpan& m = grid.findMatches[i];
+            if (y == m.y && x >= m.x && x < m.x + m.len) {
+                findHit = (static_cast<int>(i) == grid.findCurrent) ? 2 : 1;
+                break;
+            }
+        }
+    }
+    if (selected) bg = Color{ 50, 78, 124 };
+    else if (findHit == 2) bg = Color{ 190, 145, 40 };   // active match
+    else if (findHit == 1) bg = Color{ 95, 80, 30 };     // other matches
+}
+
 void D2DRenderer::drawGrid(const Grid& grid, float originX, float originY) {
     if (!d2dContext_ || !brush_) return;
 
@@ -365,76 +417,125 @@ void D2DRenderer::drawGrid(const Grid& grid, float originX, float originY) {
     brush_->SetColor(toColorF(termBg_));
     d2dContext_->FillRectangle(clip, brush_.Get());
 
+    // Pass 1: cell backgrounds. Separate from the glyph pass so a wide (CJK)
+    // glyph spilling into its spacer-tail cell is never overpainted by that
+    // tail's background fill.
+    for (int y = 0; y < grid.rows; ++y) {
+        for (int x = 0; x < grid.cols; ++x) {
+            Color fg, bg;
+            cellColors(grid, x, y, fg, bg);
+            if (bg.r == termBg_.r && bg.g == termBg_.g && bg.b == termBg_.b)
+                continue;  // already painted by the clear above
+            const float px = originX + x * cellW_;
+            const float py = originY + y * cellH_;
+            brush_->SetColor(toColorF(bg));
+            d2dContext_->FillRectangle(
+                D2D1::RectF(px, py, px + cellW_, py + cellH_), brush_.Get());
+        }
+    }
+
+    // Pass 2: glyphs + decorations.
     for (int y = 0; y < grid.rows; ++y) {
         for (int x = 0; x < grid.cols; ++x) {
             const Cell& cell = grid.at(x, y);
+            if (cell.flags & kFlagWideTail) continue;  // drawn by its head cell
+            const bool hasGlyph = !cell.ch.empty() && cell.ch != L" ";
+            const uint32_t deco =
+                cell.flags & (kFlagUnderline | kFlagStrikethrough);
+            if (!hasGlyph && !deco) continue;
+
+            Color fg, bg;
+            cellColors(grid, x, y, fg, bg);
+            // Faint (SGR 2): draw at half intensity toward the background.
+            if (cell.flags & kFlagFaint)
+                fg = Color{ static_cast<uint8_t>((fg.r + bg.r) / 2),
+                            static_cast<uint8_t>((fg.g + bg.g) / 2),
+                            static_cast<uint8_t>((fg.b + bg.b) / 2) };
+
             const float px = originX + x * cellW_;
             const float py = originY + y * cellH_;
-            const D2D1_RECT_F rect = D2D1::RectF(px, py, px + cellW_, py + cellH_);
+            const float w = (cell.flags & kFlagWide) ? cellW_ * 2.0f : cellW_;
 
-            // Inverse video swaps foreground and background.
-            Color fg = cell.fg, bg = cell.bg;
-            if (cell.flags & kFlagInverse) std::swap(fg, bg);
-
-            // Selection highlight (row-major inclusive range).
-            bool selected = false;
-            if (grid.hasSelection) {
-                const bool afterStart =
-                    y > grid.selStartY ||
-                    (y == grid.selStartY && x >= grid.selStartX);
-                const bool beforeEnd =
-                    y < grid.selEndY || (y == grid.selEndY && x <= grid.selEndX);
-                selected = afterStart && beforeEnd;
-            }
-            // Find-on-screen highlight: 0 = none, 1 = match, 2 = active match.
-            int findHit = 0;
-            if (!selected && !grid.findMatches.empty()) {
-                for (size_t i = 0; i < grid.findMatches.size(); ++i) {
-                    const Grid::FindSpan& m = grid.findMatches[i];
-                    if (y == m.y && x >= m.x && x < m.x + m.len) {
-                        findHit = (static_cast<int>(i) == grid.findCurrent) ? 2 : 1;
-                        break;
-                    }
-                }
-            }
-            if (selected) bg = Color{ 50, 78, 124 };
-            else if (findHit == 2) bg = Color{ 190, 145, 40 };   // active match
-            else if (findHit == 1) bg = Color{ 95, 80, 30 };     // other matches
-
-            if (bg.r || bg.g || bg.b) {
-                brush_->SetColor(toColorF(bg));
-                d2dContext_->FillRectangle(rect, brush_.Get());
-            }
-            if (!cell.ch.empty() && cell.ch != L" ") {
-                IDWriteTextFormat* fmt =
-                    (cell.flags & kFlagBold) && textFormatBold_
-                        ? textFormatBold_.Get()
-                        : textFormat_.Get();
+            if (hasGlyph && !(cell.flags & kFlagInvisible)) {
                 brush_->SetColor(toColorF(fg));
                 d2dContext_->DrawText(
-                    cell.ch.c_str(), static_cast<UINT32>(cell.ch.size()), fmt,
-                    rect, brush_.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                    cell.ch.c_str(), static_cast<UINT32>(cell.ch.size()),
+                    cellFormat(cell.flags), D2D1::RectF(px, py, px + w, py + cellH_),
+                    brush_.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
             }
-            if (cell.flags & kFlagUnderline) {
+            if (deco) {
                 brush_->SetColor(toColorF(fg));
-                const float uy = py + cellH_ - 1.0f;
-                d2dContext_->DrawLine(D2D1::Point2F(px, uy),
-                                      D2D1::Point2F(px + cellW_, uy),
-                                      brush_.Get(), 1.0f);
+                if (cell.flags & kFlagUnderline) {
+                    const float uy = py + cellH_ - 1.0f;
+                    d2dContext_->DrawLine(D2D1::Point2F(px, uy),
+                                          D2D1::Point2F(px + w, uy),
+                                          brush_.Get(), 1.0f);
+                }
+                if (cell.flags & kFlagStrikethrough) {
+                    const float sy = py + cellH_ * 0.5f;
+                    d2dContext_->DrawLine(D2D1::Point2F(px, sy),
+                                          D2D1::Point2F(px + w, sy),
+                                          brush_.Get(), 1.0f);
+                }
             }
         }
     }
 
-    if (grid.cursorVisible && grid.cursorX < grid.cols &&
-        grid.cursorY < grid.rows) {
-        const float px = originX + grid.cursorX * cellW_;
-        const float py = originY + grid.cursorY * cellH_;
-        brush_->SetColor(D2D1::ColorF(0.80f, 0.80f, 0.80f, 0.55f));
-        d2dContext_->FillRectangle(
-            D2D1::RectF(px, py, px + cellW_, py + cellH_), brush_.Get());
-    }
+    drawCursor(grid, originX, originY);
 
     d2dContext_->PopAxisAlignedClip();
+}
+
+void D2DRenderer::drawCursor(const Grid& grid, float originX, float originY) {
+    if (!grid.cursorVisible || grid.cursorX >= grid.cols ||
+        grid.cursorY >= grid.rows)
+        return;
+
+    // Unfocused panes always show a hollow block (the universal terminal cue).
+    CursorShape shape = grid.focused ? grid.cursorShape : CursorShape::HollowBlock;
+
+    // Blink only while focused; the idle render tick (~100ms) keeps the phase
+    // fresh. Hollow cursors don't blink.
+    if (grid.focused && grid.cursorBlink && shape != CursorShape::HollowBlock &&
+        (GetTickCount64() / kCursorBlinkMs) % 2 != 0)
+        return;
+
+    const float px = originX + grid.cursorX * cellW_;
+    const float py = originY + grid.cursorY * cellH_;
+    const bool wide =
+        (grid.at(grid.cursorX, grid.cursorY).flags & kFlagWide) != 0;
+    const float w = wide ? cellW_ * 2.0f : cellW_;
+    const Color c = grid.cursorColorSet ? grid.cursorColor : Color{ 204, 204, 204 };
+
+    switch (shape) {
+    case CursorShape::Block:
+        // Translucent so the glyph underneath stays legible without a redraw.
+        brush_->SetColor(D2D1::ColorF(c.r / 255.0f, c.g / 255.0f, c.b / 255.0f,
+                                      0.55f));
+        d2dContext_->FillRectangle(D2D1::RectF(px, py, px + w, py + cellH_),
+                                   brush_.Get());
+        break;
+    case CursorShape::Bar: {
+        brush_->SetColor(toColorF(c));
+        const float bw = cellW_ * 0.14f < 1.5f ? 1.5f : cellW_ * 0.14f;
+        d2dContext_->FillRectangle(D2D1::RectF(px, py, px + bw, py + cellH_),
+                                   brush_.Get());
+        break;
+    }
+    case CursorShape::Underline: {
+        brush_->SetColor(toColorF(c));
+        const float uh = cellH_ * 0.12f < 2.0f ? 2.0f : cellH_ * 0.12f;
+        d2dContext_->FillRectangle(
+            D2D1::RectF(px, py + cellH_ - uh, px + w, py + cellH_), brush_.Get());
+        break;
+    }
+    case CursorShape::HollowBlock:
+        brush_->SetColor(toColorF(c));
+        d2dContext_->DrawRectangle(
+            D2D1::RectF(px + 0.5f, py + 0.5f, px + w - 0.5f, py + cellH_ - 0.5f),
+            brush_.Get(), 1.0f);
+        break;
+    }
 }
 
 } // namespace liney

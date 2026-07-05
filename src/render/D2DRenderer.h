@@ -69,9 +69,20 @@ private:
     ComPtr<ID2D1DeviceContext> d2dContext_;
     ComPtr<ID2D1Bitmap1> targetBitmap_;
     ComPtr<ID2D1SolidColorBrush> brush_;
+    // Pick the text format matching a cell's bold/italic flags (never null).
+    IDWriteTextFormat* cellFormat(uint32_t flags) const;
+
+    // Draw the cursor for `grid` (shape, blink phase, focus state).
+    void drawCursor(const Grid& grid, float originX, float originY);
+
+    // Blink half-period; the classic Windows caret cadence.
+    static constexpr unsigned long long kCursorBlinkMs = 530;
+
     ComPtr<IDWriteFactory> dwriteFactory_;
     ComPtr<IDWriteTextFormat> textFormat_;
     ComPtr<IDWriteTextFormat> textFormatBold_;
+    ComPtr<IDWriteTextFormat> textFormatItalic_;
+    ComPtr<IDWriteTextFormat> textFormatBoldItalic_;
     ComPtr<IWICImagingFactory> wicFactory_;
     // Cache of loaded images by path (null entry = failed-to-load, don't retry).
     std::unordered_map<std::wstring, ComPtr<ID2D1Bitmap>> imageCache_;

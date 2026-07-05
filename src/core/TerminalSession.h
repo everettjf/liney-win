@@ -41,7 +41,11 @@ public:
     // Scroll the viewport over scrollback history.
     void scrollViewport(int deltaLines) { terminal_.scrollViewport(deltaLines); }
     void scrollToBottom() { terminal_.scrollToBottom(); }
-    bool bracketedPaste() const { return terminal_.bracketedPaste(); }
+
+    // Terminal modes the UI keys off (queried from the core).
+    bool bracketedPaste() { return terminal_.bracketedPaste(); }
+    bool applicationCursorKeys() { return terminal_.applicationCursorKeys(); }
+    bool altScreenActive() { return terminal_.altScreenActive(); }
 
     bool exited() const { return pty_.hasExited(); }
     const std::wstring& cwd() const { return cwd_; }

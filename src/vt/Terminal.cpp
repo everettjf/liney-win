@@ -48,9 +48,6 @@ void Terminal::write(const char* data, size_t len) {
         ghostty_terminal_vt_write(
             terminal_, reinterpret_cast<const uint8_t*>(data), len);
     }
-    // Recover the bracketed-paste mode bit from the output stream and publish it
-    // for the UI thread's paste() to read.
-    bracketedPaste_.store(bracketScan_.feed(data, len), std::memory_order_relaxed);
 }
 
 void Terminal::resize(int cols, int rows, int cellWidthPx, int cellHeightPx) {
@@ -104,6 +101,45 @@ bool Terminal::snapshotInto(Grid& grid) {
                 cell.fg = { fg.r, fg.g, fg.b };
                 cell.bg = { bg.r, bg.g, bg.b };
 
+                // SGR attributes (bold/italic/underline/…). HAS_STYLING is a
+                // cheap bool, so most cells skip the full style fetch.
+                bool styled = false;
+                ghostty_render_state_row_cells_get(
+                    rowCells_, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_HAS_STYLING,
+                    &styled);
+                if (styled) {
+                    // (sized-struct ABI; GHOSTTY_INIT_SIZED is C-only)
+                    GhosttyStyle st{};
+                    st.size = sizeof(st);
+                    if (ghostty_render_state_row_cells_get(
+                            rowCells_, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_STYLE,
+                            &st) == GHOSTTY_SUCCESS) {
+                        if (st.bold) cell.flags |= kFlagBold;
+                        if (st.italic) cell.flags |= kFlagItalic;
+                        if (st.faint) cell.flags |= kFlagFaint;
+                        if (st.inverse) cell.flags |= kFlagInverse;
+                        if (st.invisible) cell.flags |= kFlagInvisible;
+                        if (st.strikethrough) cell.flags |= kFlagStrikethrough;
+                        if (st.underline != GHOSTTY_SGR_UNDERLINE_NONE)
+                            cell.flags |= kFlagUnderline;
+                    }
+                }
+
+                // Wide (2-column) glyphs: mark head + tail so the renderer can
+                // give the glyph both columns and skip the spacer.
+                GhosttyCell raw = 0;
+                if (ghostty_render_state_row_cells_get(
+                        rowCells_, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_RAW,
+                        &raw) == GHOSTTY_SUCCESS) {
+                    GhosttyCellWide wide = GHOSTTY_CELL_WIDE_NARROW;
+                    ghostty_cell_get(raw, GHOSTTY_CELL_DATA_WIDE, &wide);
+                    if (wide == GHOSTTY_CELL_WIDE_WIDE)
+                        cell.flags |= kFlagWide;
+                    else if (wide == GHOSTTY_CELL_WIDE_SPACER_TAIL ||
+                             wide == GHOSTTY_CELL_WIDE_SPACER_HEAD)
+                        cell.flags |= kFlagWideTail;
+                }
+
                 uint32_t glen = 0;
                 ghostty_render_state_row_cells_get(
                     rowCells_, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_LEN,
@@ -146,6 +182,31 @@ bool Terminal::snapshotInto(Grid& grid) {
             grid.cursorY = cy;
         }
     }
+
+    // Cursor shape (DECSCUSR — vim flips block/bar per mode), blink request,
+    // and an explicit cursor color if the app set one (OSC 12).
+    grid.cursorShape = CursorShape::Block;
+    GhosttyRenderStateCursorVisualStyle cstyle =
+        GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BLOCK;
+    if (ghostty_render_state_get(state_,
+                                 GHOSTTY_RENDER_STATE_DATA_CURSOR_VISUAL_STYLE,
+                                 &cstyle) == GHOSTTY_SUCCESS) {
+        switch (cstyle) {
+        case GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BAR:
+            grid.cursorShape = CursorShape::Bar; break;
+        case GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_UNDERLINE:
+            grid.cursorShape = CursorShape::Underline; break;
+        case GHOSTTY_RENDER_STATE_CURSOR_VISUAL_STYLE_BLOCK_HOLLOW:
+            grid.cursorShape = CursorShape::HollowBlock; break;
+        default: break;
+        }
+    }
+    grid.cursorBlink = false;
+    ghostty_render_state_get(state_, GHOSTTY_RENDER_STATE_DATA_CURSOR_BLINKING,
+                             &grid.cursorBlink);
+    grid.cursorColorSet = colors.cursor_has_value;
+    if (colors.cursor_has_value)
+        grid.cursorColor = { colors.cursor.r, colors.cursor.g, colors.cursor.b };
     return true;
 }
 
@@ -177,8 +238,28 @@ void Terminal::scrollToBottom() {
     ghostty_terminal_scroll_viewport(terminal_, sv);
 }
 
-bool Terminal::bracketedPaste() const {
-    return bracketedPaste_.load(std::memory_order_relaxed);
+bool Terminal::modeGet(uint16_t mode, bool ansi) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!terminal_) return false;
+    bool value = false;
+    if (ghostty_terminal_mode_get(terminal_, ghostty_mode_new(mode, ansi),
+                                  &value) != GHOSTTY_SUCCESS)
+        return false;
+    return value;
+}
+
+bool Terminal::bracketedPaste() { return modeGet(2004, false); }
+
+bool Terminal::applicationCursorKeys() { return modeGet(1, false); }  // DECCKM
+
+bool Terminal::altScreenActive() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!terminal_) return false;
+    GhosttyTerminalScreen screen = GHOSTTY_TERMINAL_SCREEN_PRIMARY;
+    if (ghostty_terminal_get(terminal_, GHOSTTY_TERMINAL_DATA_ACTIVE_SCREEN,
+                             &screen) != GHOSTTY_SUCCESS)
+        return false;
+    return screen == GHOSTTY_TERMINAL_SCREEN_ALTERNATE;
 }
 
 std::wstring Terminal::oscTitle() {
@@ -221,6 +302,22 @@ void Terminal::setTheme(const Theme& theme) {
     GhosttyColorRgb bg{ theme.background.r, theme.background.g, theme.background.b };
     ghostty_terminal_set(terminal_, GHOSTTY_TERMINAL_OPT_COLOR_FOREGROUND, &fg);
     ghostty_terminal_set(terminal_, GHOSTTY_TERMINAL_OPT_COLOR_BACKGROUND, &bg);
+
+    // Full 256-color palette: the theme's 16 ANSI colors, then the standard
+    // 6x6x6 color cube (16-231) and the 24-step grayscale ramp (232-255).
+    GhosttyColorRgb pal[256];
+    for (int i = 0; i < 16; ++i)
+        pal[i] = { theme.ansi[i].r, theme.ansi[i].g, theme.ansi[i].b };
+    static const uint8_t cube[6] = { 0, 95, 135, 175, 215, 255 };
+    for (int i = 16; i < 232; ++i) {
+        const int v = i - 16;
+        pal[i] = { cube[v / 36], cube[(v / 6) % 6], cube[v % 6] };
+    }
+    for (int i = 232; i < 256; ++i) {
+        const uint8_t g = static_cast<uint8_t>(8 + 10 * (i - 232));
+        pal[i] = { g, g, g };
+    }
+    ghostty_terminal_set(terminal_, GHOSTTY_TERMINAL_OPT_COLOR_PALETTE, pal);
 }
 
 

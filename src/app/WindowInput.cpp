@@ -27,7 +27,21 @@ int Window::activePaneRows() const {
 
 void Window::onWheel(int delta) {
     // One notch (WHEEL_DELTA) scrolls 3 lines into history (+) or toward live.
-    scrollActive((delta / WHEEL_DELTA) * 3);
+    const int lines = (delta / WHEEL_DELTA) * 3;
+    if (lines == 0) return;
+    if (auto* s = activeSession()) {
+        // Full-screen apps (vim/less/htop) run on the alternate screen, which
+        // has no scrollback — send arrow keys so the wheel scrolls the app.
+        if (s->altScreenActive()) {
+            const bool app = s->applicationCursorKeys();
+            const char* seq = lines > 0 ? (app ? "\x1bOA" : "\x1b[A")
+                                        : (app ? "\x1bOB" : "\x1b[B");
+            for (int i = 0, n = lines > 0 ? lines : -lines; i < n; ++i)
+                s->sendBytes(seq, 3);
+            return;
+        }
+    }
+    scrollActive(lines);
 }
 
 void Window::sendUtf16(const wchar_t* s, size_t len) {
@@ -155,6 +169,8 @@ bool Window::onKeyDown(WPARAM vk) {
             case VK_SUBTRACT: zoomFont(-1); swallowNextChar_ = true; return true;
             case '0':
             case VK_NUMPAD0: zoomFont(0); swallowNextChar_ = true; return true;
+            case 'V':  // paste (Windows Terminal convention; ^V is rarely typed)
+                paste(); swallowNextChar_ = true; return true;
             default: break;
             }
         }
@@ -202,15 +218,25 @@ bool Window::onKeyDown(WPARAM vk) {
         }
     }
 
-    // Keys that produce no WM_CHAR: forward as xterm escape sequences.
+    // Keys that produce no WM_CHAR: forward as xterm escape sequences. With
+    // DECCKM set (vim/less "application cursor keys"), arrows/Home/End switch
+    // to the SS3 (ESC O …) form.
+    bool app = false;
+    switch (vk) {
+    case VK_UP: case VK_DOWN: case VK_RIGHT: case VK_LEFT:
+    case VK_HOME: case VK_END:
+        if (auto* s = activeSession()) app = s->applicationCursorKeys();
+        break;
+    default: break;
+    }
     const char* seq = nullptr;
     switch (vk) {
-    case VK_UP:     seq = "\x1b[A"; break;
-    case VK_DOWN:   seq = "\x1b[B"; break;
-    case VK_RIGHT:  seq = "\x1b[C"; break;
-    case VK_LEFT:   seq = "\x1b[D"; break;
-    case VK_HOME:   seq = "\x1b[H"; break;
-    case VK_END:    seq = "\x1b[F"; break;
+    case VK_UP:     seq = app ? "\x1bOA" : "\x1b[A"; break;
+    case VK_DOWN:   seq = app ? "\x1bOB" : "\x1b[B"; break;
+    case VK_RIGHT:  seq = app ? "\x1bOC" : "\x1b[C"; break;
+    case VK_LEFT:   seq = app ? "\x1bOD" : "\x1b[D"; break;
+    case VK_HOME:   seq = app ? "\x1bOH" : "\x1b[H"; break;
+    case VK_END:    seq = app ? "\x1bOF" : "\x1b[F"; break;
     case VK_PRIOR:  seq = "\x1b[5~"; break;
     case VK_NEXT:   seq = "\x1b[6~"; break;
     case VK_INSERT: seq = "\x1b[2~"; break;

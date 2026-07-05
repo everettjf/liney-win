@@ -1,8 +1,8 @@
 # Standalone unit-test build for liney-win's platform-independent logic.
 #
 # Deliberately separate from the top-level CMakeLists (which is Windows-only and
-# pulls in Zig + libghostty): these tests cover pure pieces (ModeScanner, Json),
-# so they configure and run on any toolchain — `cmake -S tests -B build-tests`.
+# pulls in Zig + libghostty): these tests cover pure pieces (Json), so they
+# configure and run on any toolchain — `cmake -S tests -B build-tests`.
 cmake_minimum_required(VERSION 3.20)
 project(liney_tests LANGUAGES CXX)
 

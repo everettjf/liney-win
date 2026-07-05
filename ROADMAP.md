@@ -11,7 +11,7 @@
 
 | 领域 | macOS liney | liney-win 现状 |
 |---|---|---|
-| **终端内核** | Ghostty(完整 VT、scrollback、reflow、Unicode、连字、GPU) | ✅ Ghostty 的 libghostty-vt(经 Zig 构建,即上游同一引擎)—— 完整 VT、scrollback、reflow、Unicode、grapheme;经 C API 拿渲染快照 + 标题/cwd。已删除早期内置 VTEmulator。待补:桌面通知(OSC 9/777)与 bracketed-paste 需在 libghostty 路径重新接线 |
+| **终端内核** | Ghostty(完整 VT、scrollback、reflow、Unicode、连字、GPU) | ✅ Ghostty 的 libghostty-vt(经 Zig 构建,即上游同一引擎)—— 完整 VT、scrollback、reflow、Unicode、grapheme;经 C API 拿渲染快照(含 SGR 样式位、宽字符、光标形状/闪烁)+ 标题/cwd + 模式查询(bracketed paste / DECCKM / 备用屏)。已删除早期内置 VTEmulator 与输出流 ModeScanner。待补:桌面通知(OSC 9/777)需在 libghostty 路径重新接线 |
 | ├ 历史回滚 scrollback | ✅ | ❌ 仅当前屏,无历史、无滚轮滚动 |
 | ├ 选择 / 复制粘贴 | ✅ | ❌ 无选区、无剪贴板 |
 | ├ 备用屏 alt-screen | ✅(vim/less/htop 正常) | ❌ 全屏 TUI 应用会错乱 |
@@ -61,6 +61,24 @@ SSH / agent / tmux / 打包更新 体量大、相对独立,排在后面;diff/his
 - ✅ **resize reflow(scrollback 重排)**:记录每行软换行标记,改变列宽时把历史里的软换行行重新拼接成逻辑行再按新宽度重排(确定性验证:窄化后行尾 `_ENDMARK` 仍在、内容不丢;旧的截断行为会丢失)。活动屏由 shell 收到 resize 后重绘
 - ✅ **IME(中日韩输入)**:已提交字符走 `WM_CHAR`(含代理对);组词/候选窗口跟随光标定位(`WM_IME_STARTCOMPOSITION/COMPOSITION` + `ImmSetCompositionWindow/CandidateWindow`)
 - ⬜ **鼠标上报**:受 ConPTY 影响——经验证,子程序输出里的 `?1000h` 会被 ConPTY 吸收(host 输出流里收不到),需走 ConPTY 的鼠标透传机制(类似 Windows Terminal 的处理),非简单解析即可,留到后续专门处理
+
+### P1.5 — 终端呈现补完(本轮:让"能解析"变成"能看见")✅
+- ✅ **SGR 样式实际渲染**:此前快照只取了颜色和字形,粗体/斜体/下划线/反显从未画出;现从
+  render-state 逐 cell 读取样式位,渲染 **bold / italic / faint / inverse / invisible /
+  strikethrough / underline**(DirectWrite 四种字形变体 + 装饰线)
+- ✅ **宽字符(CJK)渲染修复**:逐 cell 裁剪会把 2 列宽的字形裁成一半、右半再被下一格背景盖掉;
+  改为两遍绘制(先背景后字形),宽字形按 2 列裁剪、spacer tail 跳过;复制/查找/双击选词
+  同步跳过 tail(不再混入假空格)
+- ✅ **光标形状/闪烁/失焦**:DECSCUSR 方块/竖线/下划线 + 空心(渲染态直出),按模式闪烁
+  (530ms 相位),窗口或 pane 失焦转空心;OSC 12 光标颜色
+- ✅ **16 色 ANSI 调色板真正生效**:config `theme.palette` 之前只写文档没接线;现连同标准
+  6×6×6 色立方 + 24 级灰阶一起下发给 libghostty
+- ✅ **模式查询走 C API**:bracketed paste 由 `ghostty_terminal_mode_get(?2004)` 判定
+  (删掉输出流字节扫描器);方向键按 **DECCKM** 输出 CSI/SS3 两种形态;**备用屏滚轮**
+  转方向键(vim/less 里滚轮直接滚动内容)
+- ✅ **字体更换 UI**:☰ → Font…(ChooseFont,只列等宽),family+size 持久化到 config
+- ✅ **粘贴补完**:`Ctrl+V` 直接粘贴(对齐 Windows Terminal);**多行粘贴确认**
+  (`multiLinePasteWarning`,默认开)
 
 ### P2 — 配置与会话基础 ✅ 已完成(配色主题除外)
 - ✅ **配置文件** `%USERPROFILE%\.liney\config.json`(极简 JSON 库,容忍 BOM;缺失则写默认)

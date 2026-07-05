@@ -67,6 +67,7 @@ private:
     // Font sizing.
     void applyFont();        // push current family/size to the renderer + metrics
     void zoomFont(int step); // step font size by `step` points (0 == reset)
+    void chooseFontDialog(); // native font picker (fixed-pitch); persists config
 
     // Top-right menu + quick actions.
     void toggleKeepAwake();  // prevent/allow system+display sleep (caffeine)
@@ -212,6 +213,7 @@ private:
     int selAX_ = 0, selAY_ = 0;    // anchor
     int selBX_ = 0, selBY_ = 0;    // head
     bool copyOnSelect_ = false;    // copy to clipboard as soon as a selection ends
+    bool multiLinePasteWarning_ = true;  // confirm before pasting multiple lines
 
     // Double / triple-click tracking (for word / line selection).
     DWORD lastClickTick_ = 0;
