@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # Fast, reliable gate: the platform-independent logic (ModeScanner, Json).
+  # Runs on Linux so it can't be blocked by the Windows toolchain.
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure + build tests
+        run: cmake -S tests -B build-tests -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build-tests
+      - name: Run
+        run: ctest --test-dir build-tests --output-on-failure
+
+  # Full Windows build (MSVC + Zig + libghostty-vt). This is the integration
+  # check that catches compile breaks in the Win32 / Direct2D / ConPTY code,
+  # which the unit tests can't reach. Heavier (fetches + builds Ghostty).
+  windows-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Set up Zig 0.15.2
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+      - name: Build
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools\build.ps1

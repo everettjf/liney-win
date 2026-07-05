@@ -97,9 +97,12 @@ private:
     bool onKeyDown(WPARAM vk);
     void onMouseDown(int x, int y);
     void onMouseDownRight(int x, int y);   // sidebar worktree create/remove
+    void onMouseDoubleClick(int x, int y); // word (double) / line (triple) select
     void onMouseMove(int x, int y);
     void onMouseUp(int x, int y);
     void onWheel(int delta);
+    bool updateCursor();      // WM_SETCURSOR: I-beam over text, resize over dividers
+    void openPaneMenu(int x, int y);  // right-click in a pane: copy/paste/find…
     void scrollActive(int lines);
     int activePaneRows() const;
     void sendToActive(const char* data, size_t len);
@@ -116,6 +119,23 @@ private:
     std::wstring selectionText() const;
     void copySelection();
     void paste();
+    void selectWordAt(Pane* p, int cx, int cy);   // double-click word selection
+    void selectLineAt(Pane* p, int cy);           // triple-click line selection
+    void selectAllActive();                       // Ctrl+Shift+A
+    void maybeCopyOnSelect();                      // copy if copyOnSelect_ is set
+    static bool isWordChar(const std::wstring& ch);
+
+    // Find-on-screen (Ctrl+F): highlights query matches in the focused pane's
+    // viewport; navigate with Enter/F3 (and Shift to reverse), Esc closes. See
+    // WindowFind.cpp.
+    void openFind();
+    void closeFind();
+    void onFindChar(wchar_t c);    // edit the query (printable / Enter / Backspace)
+    void findBackspace();
+    void findNext(bool previous);  // move the active match; page history if none
+    void stampFindMatches();       // recompute matches for the active pane
+    void drawFindBar(const Rect& paneRect);
+    std::wstring rowText(const Grid& g, int y, std::vector<int>* colOfPos) const;
 
     HWND hwnd_ = nullptr;
     std::unique_ptr<IRenderer> renderer_;
@@ -127,11 +147,14 @@ private:
     bool sidebarVisible_ = true;      // left WORKSPACE/SSH/AGENTS panel
     bool filesPanelVisible_ = false;  // right FILES (folder tree) panel (Ctrl+Shift+F)
     bool keepAwake_ = false;          // SetThreadExecutionState keep-awake state
+    bool pendingMaximize_ = false;    // restore a maximized window on first show
 
     std::wstring shell_ = L"cmd.exe";
     std::wstring fontFamily_ = L"Cascadia Mono";
-    float fontSize_ = 16.0f;
+    float fontSize_ = 16.0f;          // logical (DPI-independent) point size
     float defaultFontSize_ = 16.0f;
+    float dpiScale_ = 1.0f;           // device px per logical px (monitor DPI / 96)
+    int scrollback_ = 10000;          // history lines retained per session
     std::wstring sessionStartHook_; // command sent to each newly started shell
     std::wstring sessionExitHook_;  // command run when a pane closes
     std::wstring appExitHook_;      // command run on app quit
@@ -188,6 +211,19 @@ private:
     Pane* selPane_ = nullptr;      // pane the selection belongs to
     int selAX_ = 0, selAY_ = 0;    // anchor
     int selBX_ = 0, selBY_ = 0;    // head
+    bool copyOnSelect_ = false;    // copy to clipboard as soon as a selection ends
+
+    // Double / triple-click tracking (for word / line selection).
+    DWORD lastClickTick_ = 0;
+    int lastClickCY_ = -1;
+    int clickStreak_ = 0;          // 1 = single, 2 = double (word), 3 = triple (line)
+
+    // Find-on-screen state. Matches are in the active pane's viewport coords.
+    bool findActive_ = false;
+    std::wstring findQuery_;
+    std::vector<Grid::FindSpan> findMatches_;
+    int findIndex_ = -1;           // active match index into findMatches_ (-1 none)
+    Rect findBarRect_{};           // find bar hit rect (rebuilt each frame)
 };
 
 } // namespace liney

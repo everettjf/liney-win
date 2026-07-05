@@ -3,6 +3,8 @@
 #include "util/InputBox.h"
 
 #include <algorithm>
+#include <cwchar>
+#include <cwctype>
 #include <string>
 #include <utility>
 
@@ -91,6 +93,8 @@ void Window::onMouseDown(int xi, int yi) {
     }
 
     if (panes.contains(x, y)) {
+        // Clicks on the floating find bar shouldn't start a text selection.
+        if (findActive_ && findBarRect_.contains(x, y)) return;
         Tab* t = activeTab();
         if (!t) return;
         // A click near a split divider starts a resize drag instead of a select.
@@ -102,18 +106,61 @@ void Window::onMouseDown(int xi, int yi) {
         Pane* leaf = t->hitTest(x, y);
         if (!leaf) return;
         t->setActive(leaf);
+        int cx = 0, cy = 0;
+        if (!paneCellAt(leaf, xi, yi, cx, cy)) return;
+
+        // A third press shortly after a double-click on the same row escalates
+        // to whole-line selection (double-click already selected the word).
+        if (clickStreak_ == 2 && leaf == selPane_ && cy == lastClickCY_ &&
+            GetTickCount() - lastClickTick_ <= GetDoubleClickTime()) {
+            clickStreak_ = 3;
+            lastClickTick_ = GetTickCount();
+            selectLineAt(leaf, cy);
+            maybeCopyOnSelect();
+            return;
+        }
+
         // Begin a selection drag from this cell (a plain click selects nothing
         // until the mouse moves).
-        int cx = 0, cy = 0;
-        if (paneCellAt(leaf, xi, yi, cx, cy)) {
-            selecting_ = true;
-            selPane_ = leaf;
-            selAX_ = selBX_ = cx;
-            selAY_ = selBY_ = cy;
-            hasSelection_ = false;
-            SetCapture(hwnd_);
-        }
+        clickStreak_ = 1;
+        selecting_ = true;
+        selPane_ = leaf;
+        selAX_ = selBX_ = cx;
+        selAY_ = selBY_ = cy;
+        hasSelection_ = false;
+        SetCapture(hwnd_);
     }
+}
+
+void Window::onMouseDoubleClick(int xi, int yi) {
+    const float x = static_cast<float>(xi), y = static_cast<float>(yi);
+    Rect leftBar, rightPanel, tabBar, panes;
+    regions(leftBar, rightPanel, tabBar, panes);
+    if (tabBar.contains(x, y)) {
+        // Double-click empty tab-strip space opens a new tab (common convention);
+        // on a tab / + / ☰ it's just a click.
+        bool onTab = false;
+        for (const Rect& tr : tabRects_) if (tr.contains(x, y)) { onTab = true; break; }
+        if (!onTab && !plusRect_.contains(x, y) && !menuButtonRect_.contains(x, y))
+            newTab(activeSession() ? activeSession()->cwd() : workspace_.root());
+        else
+            onMouseDown(xi, yi);
+        return;
+    }
+    if (!panes.contains(x, y)) { onMouseDown(xi, yi); return; }  // other chrome: plain click
+    Tab* t = activeTab();
+    if (!t) return;
+    Pane* leaf = t->hitTest(x, y);
+    if (!leaf) return;
+    t->setActive(leaf);
+    int cx = 0, cy = 0;
+    if (!paneCellAt(leaf, xi, yi, cx, cy)) return;
+    selectWordAt(leaf, cx, cy);
+    maybeCopyOnSelect();
+    // Arm triple-click detection: a further press on this row escalates to line.
+    clickStreak_ = 2;
+    lastClickTick_ = GetTickCount();
+    lastClickCY_ = cy;
 }
 
 void Window::onMouseDownRight(int xi, int yi) {
@@ -133,6 +180,9 @@ void Window::onMouseDownRight(int xi, int yi) {
         }
         return;
     }
+
+    // Right-click inside a terminal pane → copy / paste / select-all / find menu.
+    if (panes.contains(x, y)) { openPaneMenu(xi, yi); return; }
 
     if (!sidebarVisible_ || !leftBar.contains(x, y)) return;
 
@@ -212,6 +262,11 @@ void Window::onMouseMove(int xi, int yi) {
         return;
     }
     if (!selecting_ || !selPane_) return;
+    // Auto-scroll when the drag runs past the top/bottom edge of the pane, so a
+    // selection can extend into scrollback (or back toward live output).
+    const Rect& pr = selPane_->rect;
+    if (yi < static_cast<int>(pr.y)) scrollActive(1);
+    else if (yi > static_cast<int>(pr.bottom())) scrollActive(-1);
     int cx = 0, cy = 0;
     if (!paneCellAt(selPane_, xi, yi, cx, cy)) return;
     selBX_ = cx;
@@ -233,6 +288,7 @@ void Window::onMouseUp(int /*xi*/, int /*yi*/) {
     if (selecting_) {
         selecting_ = false;
         ReleaseCapture();
+        maybeCopyOnSelect();  // PuTTY-style copy-on-select (when enabled)
     }
 }
 
@@ -348,6 +404,124 @@ void Window::paste() {
         s->sendBytes(out.data(), out.size());
     } else {
         s->sendBytes(utf8.data(), utf8.size());
+    }
+}
+
+bool Window::isWordChar(const std::wstring& ch) {
+    if (ch.empty()) return false;
+    const wchar_t c = ch[0];
+    if (c == L' ') return false;
+    if (iswalnum(c)) return true;
+    // Keep common path / identifier punctuation as part of a "word" so a
+    // double-click grabs whole filenames, URLs and flags.
+    return wcschr(L"_-./\\:~+@", c) != nullptr;
+}
+
+void Window::selectWordAt(Pane* p, int cx, int cy) {
+    if (!p || !p->session) return;
+    const Grid& g = p->session->grid();
+    if (cx < 0 || cx >= g.cols || cy < 0 || cy >= g.rows) return;
+    selPane_ = p;
+    selAY_ = selBY_ = cy;
+    if (!isWordChar(g.at(cx, cy).ch)) {
+        // Not on a word: select just the single cell.
+        selAX_ = selBX_ = cx;
+        hasSelection_ = true;
+        return;
+    }
+    int a = cx, b = cx;
+    while (a > 0 && isWordChar(g.at(a - 1, cy).ch)) --a;
+    while (b < g.cols - 1 && isWordChar(g.at(b + 1, cy).ch)) ++b;
+    selAX_ = a;
+    selBX_ = b;
+    hasSelection_ = true;
+}
+
+void Window::selectLineAt(Pane* p, int cy) {
+    if (!p || !p->session) return;
+    const Grid& g = p->session->grid();
+    if (cy < 0 || cy >= g.rows) return;
+    int last = g.cols - 1;
+    while (last > 0) {
+        const std::wstring& ch = g.at(last, cy).ch;
+        if (!ch.empty() && ch != L" ") break;
+        --last;
+    }
+    selPane_ = p;
+    selAY_ = selBY_ = cy;
+    selAX_ = 0;
+    selBX_ = last;
+    hasSelection_ = true;
+}
+
+void Window::selectAllActive() {
+    Tab* t = activeTab();
+    if (!t || !t->active() || !t->active()->session) return;
+    const Grid& g = t->active()->session->grid();
+    if (g.cols < 1 || g.rows < 1) return;
+    selPane_ = t->active();
+    selAX_ = 0;
+    selAY_ = 0;
+    selBX_ = g.cols - 1;
+    selBY_ = g.rows - 1;
+    hasSelection_ = true;
+}
+
+void Window::maybeCopyOnSelect() {
+    if (copyOnSelect_ && hasSelection_) copySelection();  // keep the highlight
+}
+
+bool Window::updateCursor() {
+    POINT pt{};
+    if (!GetCursorPos(&pt)) return false;
+    ScreenToClient(hwnd_, &pt);
+    const float x = static_cast<float>(pt.x), y = static_cast<float>(pt.y);
+    Rect leftBar, rightPanel, tabBar, panes;
+    regions(leftBar, rightPanel, tabBar, panes);
+
+    if (panes.contains(x, y)) {
+        if (Tab* t = activeTab()) {
+            if (Pane* d = t->splitDividerAt(x, y, 4.0f)) {
+                SetCursor(LoadCursorW(nullptr,
+                    d->dir == SplitDir::Cols ? IDC_SIZEWE : IDC_SIZENS));
+                return true;
+            }
+        }
+        if (findActive_ && findBarRect_.contains(x, y)) {
+            SetCursor(LoadCursorW(nullptr, IDC_ARROW));
+            return true;
+        }
+        SetCursor(LoadCursorW(nullptr, IDC_IBEAM));  // over terminal text
+        return true;
+    }
+    SetCursor(LoadCursorW(nullptr, IDC_ARROW));      // chrome
+    return true;
+}
+
+void Window::openPaneMenu(int xi, int yi) {
+    // Focus the pane under the cursor so copy/paste target it.
+    if (Tab* t = activeTab())
+        if (Pane* leaf = t->hitTest(static_cast<float>(xi), static_cast<float>(yi)))
+            t->setActive(leaf);
+
+    POINT pt{ xi, yi };
+    ClientToScreen(hwnd_, &pt);
+    HMENU m = CreatePopupMenu();
+    AppendMenuW(m, MF_STRING | (hasSelection_ ? 0 : MF_GRAYED), 1,
+                L"Copy\tCtrl+Shift+C");
+    AppendMenuW(m, MF_STRING, 2, L"Paste\tShift+Insert");
+    AppendMenuW(m, MF_STRING, 3, L"Select all\tCtrl+Shift+A");
+    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m, MF_STRING, 4, L"Find…\tCtrl+F");
+    const int cmd = TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y,
+                                   0, hwnd_, nullptr);
+    DestroyMenu(m);
+    switch (cmd) {
+    case 1: copySelection(); clearSelection(); break;
+    case 2: paste(); break;
+    case 3: selectAllActive(); break;
+    case 4: openFind(); break;
+    default: break;
     }
 }
 

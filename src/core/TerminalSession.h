@@ -25,8 +25,9 @@ public:
     TerminalSession& operator=(const TerminalSession&) = delete;
 
     // Start the shell in `cwd` (empty = inherit) at the given cell size.
+    // `scrollback` is the max number of history lines to retain.
     bool start(const std::wstring& shell, const std::wstring& cwd, int cols,
-               int rows);
+               int rows, int scrollback = 10000);
 
     void sendBytes(const char* data, size_t len);
     void resize(int cols, int rows, int cellWidthPx, int cellHeightPx);

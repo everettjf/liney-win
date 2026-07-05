@@ -1,6 +1,7 @@
 #include "util/Json.h"
 
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 
 namespace liney {

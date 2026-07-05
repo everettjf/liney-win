@@ -107,6 +107,8 @@ Config loadConfig() {
         cfg.fontFamily = utf8ToWide(j["fontFamily"].asString());
     if (j.contains("fontSize"))
         cfg.fontSize = static_cast<float>(j["fontSize"].asNumber(cfg.fontSize));
+    if (j.contains("scrollback"))
+        cfg.scrollback = static_cast<int>(j["scrollback"].asNumber(cfg.scrollback));
     if (j.contains("workspaceRoot"))
         cfg.workspaceRoot = utf8ToWide(j["workspaceRoot"].asString());
     // hooks.{sessionStart,sessionExit,appExit}
@@ -146,6 +148,8 @@ Config loadConfig() {
     }
 
     if (j.contains("unixTools")) cfg.unixTools = j["unixTools"].asBool(true);
+    if (j.contains("copyOnSelect"))
+        cfg.copyOnSelect = j["copyOnSelect"].asBool(false);
     // projectIcons: { "<repoName>": "<icon path>" }
     const Json& pi = j["projectIcons"];
     if (pi.isObject())
@@ -161,7 +165,23 @@ Config loadConfig() {
     if (cfg.shell.empty()) cfg.shell = L"cmd.exe";
     if (cfg.fontFamily.empty()) cfg.fontFamily = L"Cascadia Mono";
     if (cfg.fontSize < 6.0f || cfg.fontSize > 96.0f) cfg.fontSize = 16.0f;
+    if (cfg.scrollback < 0) cfg.scrollback = 0;
+    if (cfg.scrollback > 1000000) cfg.scrollback = 1000000;  // sane upper bound
     return cfg;
+}
+
+void saveFontSize(float size) {
+    const std::wstring dir = configDir();
+    if (dir.empty()) return;
+    const std::wstring path = dir + L"\\config.json";
+    // Re-parse the existing file so every other key survives the rewrite; the
+    // Json type preserves object key order, so the file stays stable.
+    const std::string text = readFile(path);
+    bool ok = false;
+    Json j = text.empty() ? Json::object() : Json::parse(text, &ok);
+    if (!j.isObject()) j = Json::object();
+    j.set("fontSize", Json::number(size));
+    writeFile(path, j.dump(2));
 }
 
 } // namespace liney
