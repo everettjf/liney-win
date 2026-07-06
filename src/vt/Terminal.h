@@ -61,6 +61,34 @@ public:
     bool applicationCursorKeys();   // DECCKM:    arrows send SS3 (ESC O A) form
     bool altScreenActive();         // vim/less…: wheel should send arrows, not scroll
 
+    // Selection, owned by the terminal core so it stays anchored to the text
+    // across scrolling, new output, and resize/reflow. Coordinates are
+    // viewport cells. The active selection is rendered via snapshotInto().
+    void selectionBegin(int vx, int vy);   // anchor a drag; clears the old selection
+    bool selectionDragTo(int vx, int vy);  // extend anchor → point; true once selecting
+    void selectionWord(int vx, int vy);    // double-click word selection
+    void selectionLine(int vx, int vy);    // triple-click line selection
+    void selectionAll();                   // whole buffer (scrollback included)
+    void selectionClear();
+    bool hasSelection();
+    std::string selectionUtf8();           // active selection as plain text (UTF-8)
+
+    // Scrollback-wide find support: dump the whole buffer as text (one line
+    // per row, top of scrollback first) and jump the viewport by absolute row.
+    bool dumpBufferUtf8(std::string& out);
+    uint64_t viewportRow();                // first visible row (scrollbar offset)
+    void scrollToRow(uint64_t row);
+
+    // Mouse reporting: true when the app enabled any tracking mode; encode
+    // turns one event into the escape sequence the app expects (empty = drop).
+    // action: 0 press, 1 release, 2 motion. button: 0 none, 1 left, 2 right,
+    // 3 middle, 4 wheel-up, 5 wheel-down. px/py are pane-relative pixels.
+    bool mouseTracking();
+    std::string encodeMouse(int action, int button, float px, float py,
+                            bool shift, bool ctrl, bool alt, bool anyButtonDown,
+                            unsigned cellW, unsigned cellH,
+                            unsigned screenW, unsigned screenH);
+
     // OSC-driven metadata (built-in backend only; libghostty returns empty).
     std::wstring oscTitle();
     bool takeCwd(std::wstring& out);                  // true if cwd changed
@@ -68,6 +96,9 @@ public:
 
 private:
     bool modeGet(uint16_t mode, bool ansi);  // query a DEC/ANSI mode (locks mutex_)
+    // Format `sel` (or the active selection when null) as plain UTF-8.
+    // Caller must hold mutex_.
+    std::string formatSelectionLocked(const GhosttySelection* sel, bool unwrap);
 
     std::mutex mutex_;
     GhosttyTerminal terminal_ = nullptr;
@@ -75,6 +106,12 @@ private:
     GhosttyRenderStateRowIterator rowIter_ = nullptr;
     GhosttyRenderStateRowCells rowCells_ = nullptr;
     std::wstring lastCwd_;  // dedup OSC 7 cwd reports (takeCwd returns changes)
+    // Drag-selection anchor: a tracked grid ref so it survives new output,
+    // scrolling and reflow while the user is still dragging.
+    GhosttyTrackedGridRef selAnchor_ = nullptr;
+    // Mouse-reporting encoder + reusable event (created on first use).
+    GhosttyMouseEncoder mouseEnc_ = nullptr;
+    GhosttyMouseEvent mouseEvt_ = nullptr;
 };
 
 } // namespace liney

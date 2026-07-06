@@ -8,18 +8,19 @@
 
 namespace liney {
 
-// Find-on-screen: a lightweight, viewport-scoped search. The terminal core owns
-// scrollback (we only snapshot the visible viewport), so find highlights every
-// match currently on screen and lets the user walk them with Enter / F3. When
-// the query isn't visible, Enter pages up into history (Shift+Enter pages down)
-// so you can hunt back through the scrollback the same way you would by hand.
+// Find: matches visible in the viewport are highlighted every frame
+// (stampFindMatches); Enter / F3 walk them, and when the walk runs off the
+// screen the whole scrollback is searched (findJumpGlobal) and the viewport
+// jumps straight to the nearest match row. Enter goes up (older output),
+// Shift+Enter comes back down.
 
 void Window::openFind() {
     findActive_ = true;
     findIndex_ = -1;
+    findSeekRow_ = -1;
     // Seed the query from a single-line selection, if there is one — the classic
     // "select a word, hit Ctrl+F, it's already filled in" flow.
-    if (hasSelection_ && selPane_ && selAY_ == selBY_) {
+    if (paneHasSelection()) {
         const std::wstring sel = selectionText();
         if (!sel.empty() && sel.find(L'\n') == std::wstring::npos &&
             sel.find(L'\r') == std::wstring::npos)
@@ -32,6 +33,7 @@ void Window::closeFind() {
     findQuery_.clear();
     findMatches_.clear();
     findIndex_ = -1;
+    findSeekRow_ = -1;
 }
 
 void Window::onFindChar(wchar_t c) {
@@ -43,25 +45,77 @@ void Window::onFindChar(wchar_t c) {
     if (c < 0x20 || c == 0x7f) return;   // ignore other control characters
     findQuery_.push_back(c);
     findIndex_ = -1;                      // re-seed selection on the new query
+    findSeekRow_ = -1;
 }
 
 void Window::findBackspace() {
     if (!findQuery_.empty()) findQuery_.pop_back();
     findIndex_ = -1;
+    findSeekRow_ = -1;
 }
 
-void Window::findNext(bool previous) {
+void Window::findNext(bool newer) {
+    // Enter/F3 walk upward through older output; Shift reverses.
     if (findQuery_.empty()) return;
-    const int page = activePaneRows() - 1;
-    if (findMatches_.empty()) {
-        // Nothing matches on screen: page through history to keep hunting.
-        // Enter pages up (older); Shift+Enter pages down (newer).
-        if (page > 0) scrollActive(previous ? -page : page);
-        return;
+    const bool up = !newer;
+    if (!findMatches_.empty() && findIndex_ >= 0) {
+        // Matches are stamped top-to-bottom, so "older" is a smaller index.
+        if (up && findIndex_ > 0) { --findIndex_; return; }
+        if (!up && findIndex_ < static_cast<int>(findMatches_.size()) - 1) {
+            ++findIndex_;
+            return;
+        }
     }
-    const int n = static_cast<int>(findMatches_.size());
-    if (findIndex_ < 0) findIndex_ = previous ? 0 : n - 1;
-    findIndex_ = previous ? (findIndex_ - 1 + n) % n : (findIndex_ + 1) % n;
+    // Walked off the visible matches: search the whole scrollback and jump.
+    findJumpGlobal(up);
+}
+
+void Window::findJumpGlobal(bool up) {
+    TerminalSession* s = activeSession();
+    if (!s || findQuery_.empty()) return;
+
+    std::string dumpUtf8;
+    if (!s->dumpBufferUtf8(dumpUtf8)) return;
+    std::wstring dump = utf8ToWide(dumpUtf8);
+    for (wchar_t& c : dump) c = static_cast<wchar_t>(towlower(c));
+    std::wstring q = findQuery_;
+    for (wchar_t& c : q) c = static_cast<wchar_t>(towlower(c));
+
+    // Reference row: the current active match, else the viewport edge we are
+    // leaving from. Dump line index == absolute row (top of scrollback = 0).
+    const long long viewTop = static_cast<long long>(s->viewportRow());
+    const int visible = activePaneRows();
+    long long refRow;
+    if (findIndex_ >= 0 && findIndex_ < static_cast<int>(findMatches_.size()))
+        refRow = viewTop + findMatches_[findIndex_].y;
+    else
+        refRow = up ? viewTop : viewTop + visible - 1;
+
+    // Walk every occurrence once, tracking which row (line) it falls in.
+    long long best = -1;
+    long long row = 0;
+    size_t lineStart = 0;
+    for (size_t hit = dump.find(q); hit != std::wstring::npos;
+         hit = dump.find(q, hit + 1)) {
+        size_t eol;
+        while ((eol = dump.find(L'\n', lineStart)) != std::wstring::npos &&
+               eol < hit) {
+            lineStart = eol + 1;
+            ++row;
+        }
+        if (up) {
+            if (row >= refRow) break;  // only rows above matter
+            best = row;                // keep the closest one above
+        } else if (row > refRow) {
+            best = row;                // first one below wins
+            break;
+        }
+    }
+    if (best < 0) return;  // nowhere further to go
+
+    const long long target = best - visible / 2;  // center the match
+    s->scrollToRow(target < 0 ? 0 : static_cast<uint64_t>(target));
+    findSeekRow_ = best;  // stampFindMatches re-seeds the active match here
 }
 
 std::wstring Window::rowText(const Grid& g, int y,
@@ -113,9 +167,30 @@ void Window::stampFindMatches() {
     }
 
     // Keep the active index valid; default to the newest (bottom-most) match.
-    if (findMatches_.empty())
+    if (findMatches_.empty()) {
         findIndex_ = -1;
-    else if (findIndex_ < 0 || findIndex_ >= static_cast<int>(findMatches_.size()))
+        return;
+    }
+    // After a scrollback jump, activate the match nearest the row we jumped to.
+    if (findSeekRow_ >= 0 && t->active()->session) {
+        const long long wantY =
+            findSeekRow_ -
+            static_cast<long long>(t->active()->session->viewportRow());
+        findSeekRow_ = -1;
+        int best = 0;
+        long long bestD = -1;
+        for (size_t i = 0; i < findMatches_.size(); ++i) {
+            long long d = findMatches_[i].y - wantY;
+            if (d < 0) d = -d;
+            if (bestD < 0 || d < bestD) {
+                bestD = d;
+                best = static_cast<int>(i);
+            }
+        }
+        findIndex_ = best;
+        return;
+    }
+    if (findIndex_ < 0 || findIndex_ >= static_cast<int>(findMatches_.size()))
         findIndex_ = static_cast<int>(findMatches_.size()) - 1;
 }
 

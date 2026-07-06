@@ -60,7 +60,10 @@ SSH / agent / tmux / 打包更新 体量大、相对独立,排在后面;diff/his
 - ✅ **选择 + 复制粘贴**:鼠标拖选、`Ctrl+Shift+C/V`、bracketed paste(`?2004`)、`WM_COPY/WM_PASTE`
 - ✅ **resize reflow(scrollback 重排)**:记录每行软换行标记,改变列宽时把历史里的软换行行重新拼接成逻辑行再按新宽度重排(确定性验证:窄化后行尾 `_ENDMARK` 仍在、内容不丢;旧的截断行为会丢失)。活动屏由 shell 收到 resize 后重绘
 - ✅ **IME(中日韩输入)**:已提交字符走 `WM_CHAR`(含代理对);组词/候选窗口跟随光标定位(`WM_IME_STARTCOMPOSITION/COMPOSITION` + `ImmSetCompositionWindow/CandidateWindow`)
-- ⬜ **鼠标上报**:受 ConPTY 影响——经验证,子程序输出里的 `?1000h` 会被 ConPTY 吸收(host 输出流里收不到),需走 ConPTY 的鼠标透传机制(类似 Windows Terminal 的处理),非简单解析即可,留到后续专门处理
+- ✅ **鼠标上报**:libghostty 直接跟踪应用的鼠标模式(`GHOSTTY_TERMINAL_DATA_MOUSE_TRACKING`),
+  UI 把点击/拖动/滚轮交给 `ghostty_mouse_encoder`(自动按终端当前 tracking 模式 + SGR/传统格式编码)写回 PTY;
+  按住 Shift 回退到本地选择。前提:ConPTY 需把子程序的 `?1000h` 等 DECSET 透传到 host 输出
+  (Windows 11 / 较新的 Windows 10 conhost 支持;旧 conhost 会吸收该序列,此时功能自动保持关闭)
 
 ### P1.5 — 终端呈现补完(本轮:让"能解析"变成"能看见")✅
 - ✅ **SGR 样式实际渲染**:此前快照只取了颜色和字形,粗体/斜体/下划线/反显从未画出;现从
@@ -79,6 +82,19 @@ SSH / agent / tmux / 打包更新 体量大、相对独立,排在后面;diff/his
 - ✅ **字体更换 UI**:☰ → Font…(ChooseFont,只列等宽),family+size 持久化到 config
 - ✅ **粘贴补完**:`Ctrl+V` 直接粘贴(对齐 Windows Terminal);**多行粘贴确认**
   (`multiLinePasteWarning`,默认开)
+
+### P1.6 — 核心交互内核化(本轮:选区/查找/鼠标/渲染四件套)✅
+- ✅ **选区迁移到终端核心**:改用 libghostty 的 selection API——拖选锚点是 tracked grid ref、
+  选区经 `OPT_SELECTION` 装入终端(核心自动跟随滚动/新输出/reflow),高亮从 render-state
+  的 row-local selection 直出,双击选词/三击选行/全选走核心语义(全选含 scrollback),
+  复制文本经 `selection_format`(unwrap+trim,软换行合并为逻辑行)。修复了旧实现
+  「滚动时高亮不跟内容走」的根本缺陷
+- ✅ **全 scrollback 查找**:Enter/F3 走到屏幕边界后,用 select-all + formatter 导出整个
+  缓冲文本,定位最近的上/下一个匹配行,`SCROLL_VIEWPORT_ROW` 直接把视口跳过去并选中该匹配
+- ✅ **鼠标上报**(见 P1 表项)
+- ✅ **glyph atlas(D2D 阶段)**:每个唯一 (字形, 粗/斜, 宽) 只栅格化一次到 2048² 离屏位图,
+  逐 cell 绘制改为 `FillOpacityMask` 着色,不再每帧重排版每个字形;atlas 不可用时自动回退
+  DrawText。D3D11 + 自定义 shader 的完整渲染管线仍留待后续
 
 ### P2 — 配置与会话基础 ✅ 已完成(配色主题除外)
 - ✅ **配置文件** `%USERPROFILE%\.liney\config.json`(极简 JSON 库,容忍 BOM;缺失则写默认)
@@ -104,7 +120,8 @@ SSH / agent / tmux / 打包更新 体量大、相对独立,排在后面;diff/his
 - ✅ **agent 会话**:config `agents: [{name, command, cwd}]` → 侧边栏 AGENTS 区,点击在新标签起该命令(对标 liney 的 agent 会话)。确定性验证:点击后 liney 子进程出现配置的命令
 - 🟡 **tmux 集成**:可通过把 `shell` 设为 `wsl tmux` 或在 `agents` 加一条命令实现(ConPTY 起任意程序);原生 tmux control-mode 集成留待后续
 - ⬜ 远程文件树(SFTP)
-- ⬜ **glyph atlas + D3D11** 渲染升级(性能/连字)
+- 🟡 **glyph atlas + D3D11** 渲染升级:atlas 已落地(D2D `FillOpacityMask`,见 P1.6);
+  D3D11 自定义 shader 管线与连字仍待做
 
 ### P6 — 分发 🟡 进行中
 - ✅ **应用图标**:`res/liney.ico`(多尺寸,`tools/gen-icon.ps1` 生成)经 `res/resource.rc` 编入 exe(已验证可从 exe 提取)

@@ -36,6 +36,7 @@ enum CellFlags : uint32_t {
     kFlagInvisible     = 1u << 6,  // SGR 8: reserve space, draw no glyph
     kFlagWide          = 1u << 7,  // 2-column glyph (CJK…); next cell is its tail
     kFlagWideTail      = 1u << 8,  // spacer under a wide glyph: never drawn
+    kFlagSelected      = 1u << 9,  // inside the terminal-owned selection
 };
 
 // A single terminal cell. `ch` holds one grapheme (UTF-16; may span >1 code
@@ -71,12 +72,6 @@ struct Grid {
     // Whether this grid's pane has keyboard focus (window focused + active
     // pane). Stamped by the UI each frame; an unfocused cursor draws hollow.
     bool focused = true;
-
-    // Selection highlight, in cell coordinates, normalized and inclusive
-    // (row-major from start to end). Set by the UI on the focused pane's grid.
-    bool hasSelection = false;
-    int selStartX = 0, selStartY = 0;
-    int selEndX = 0, selEndY = 0;
 
     // Find-on-screen highlights (viewport cell coordinates). Each span covers
     // [x, x+len) on row y. `findCurrent` indexes the span drawn as the active

@@ -45,13 +45,17 @@ nothing but the OS.
   scrolls them** (arrow keys are sent when the alt screen is active)
 - **Cursor** — DECSCUSR **block / bar / underline** shapes (vim mode-switching),
   **blinking** per terminal modes, hollow when the pane is unfocused, OSC 12 color
+- **Mouse reporting** — vim (`:set mouse=a`) / htop / mc receive clicks, drags and
+  the wheel (SGR + legacy protocols); hold **Shift** to select text locally instead
 - OSC-driven **window title** and **cwd tracking** (the file tree follows your shell)
-- **Selection + copy/paste** — drag-select, **double-click word / triple-click line**,
-  **copy-on-select** (opt-in), right-click menu, `Ctrl+V` / `Shift+Insert` paste,
-  bracketed paste, an opt-out **multi-line paste confirm**; **IME** (CJK)
-  with the candidate window at the cursor
-- **Find on screen** (`Ctrl+F`) — highlights every match in view, `Enter`/`F3` to
-  step through them and page back through scrollback
+- **Selection + copy/paste** — **buffer-anchored** (the highlight stays on its text
+  while you scroll or output streams in), drag-select, **double-click word /
+  triple-click line**, **copy-on-select** (opt-in), right-click menu,
+  `Ctrl+V` / `Shift+Insert` paste, bracketed paste, an opt-out **multi-line paste
+  confirm**; **IME** (CJK) with the candidate window at the cursor
+- **Find** (`Ctrl+F`) — highlights every match in view and **searches the whole
+  scrollback**: `Enter`/`F3` jump match-to-match up through history,
+  `Shift+Enter` walks back down
 - **Fonts** — a native **Font… picker** (☰ menu, monospace-filtered), zoom via
   `Ctrl +/-/0` or **`Ctrl+Wheel`**, both remembered across launches; configurable
   **color theme** (fg/bg + full 16-color ANSI palette)
@@ -123,8 +127,9 @@ The first build fetches Ghostty and compiles `libghostty-vt`, so it takes a whil
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | Copy selection / paste |
 | `Ctrl+C` / `Ctrl+V` | Copy when text is selected (else ^C) / paste |
 | `Shift+Insert` / `Ctrl+Insert` | Paste / copy selection |
-| `Ctrl+Shift+A` | Select all (visible buffer) |
-| `Ctrl+F` · `Enter`/`Shift+Enter` · `F3`/`Shift+F3` · `Esc` | Find on screen · next/prev match · close |
+| `Ctrl+Shift+A` | Select all (scrollback included) |
+| `Ctrl+F` · `Enter`/`F3` · `Shift+Enter` · `Esc` | Find · older match (searches scrollback) · newer match · close |
+| `Shift`+click/drag | Select locally while an app (vim/htop) captures the mouse |
 | `Ctrl++` / `Ctrl+-` / `Ctrl+0` · `Ctrl+Wheel` | Zoom font in / out / reset · zoom |
 | `Ctrl+Shift+L` / `Ctrl+Shift+G` | `git log` / `git diff` for the current repo |
 | `Ctrl+Shift+K` | Keep awake (block sleep) on / off |
@@ -193,8 +198,10 @@ keyboard/mouse → Window (workspace orchestration) → routes to the focused pa
                  ↑ composes sidebar · tab strip · split tree · files panel · toolbar
 TerminalSession = Terminal + ConPty + Grid
    ConPty      — Windows pseudoconsole (spawn shell, read/write, resize)
-   Terminal    — wraps libghostty-vt (Ghostty's VT engine): PTY bytes → render snapshot → Grid
-   D2DRenderer — Direct2D/DirectWrite draws the Grid + chrome to the window
+   Terminal    — wraps libghostty-vt (Ghostty's VT engine): PTY bytes → render
+                 snapshot → Grid; selection / find / mouse encoding via its C API
+   D2DRenderer — Direct2D/DirectWrite draws the Grid + chrome; glyphs rasterize
+                 once into an atlas and draw as tinted opacity masks
 ```
 
 Source map in [`src/`](src). Design / research notes: [`RESEARCH.md`](RESEARCH.md),
@@ -205,8 +212,9 @@ Source map in [`src/`](src). Design / research notes: [`RESEARCH.md`](RESEARCH.m
 ## 🗺️ Roadmap
 
 Done & remaining items (with a macOS-liney comparison) live in
-[`ROADMAP.md`](ROADMAP.md). Still pending: mouse reporting (ConPTY-limited),
-SFTP remote file tree, a glyph-atlas renderer, native tmux control-mode.
+[`ROADMAP.md`](ROADMAP.md). Still pending: SFTP remote file tree, native tmux
+control-mode, a D3D11 shader-based renderer. (Mouse reporting needs a ConPTY
+that passes mouse-mode requests through — Windows 11 / recent Windows 10.)
 
 ## 🤝 Contributing
 

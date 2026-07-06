@@ -25,10 +25,20 @@ int Window::activePaneRows() const {
     return r < 1 ? 1 : r;
 }
 
-void Window::onWheel(int delta) {
+void Window::onWheel(int delta, int xi, int yi) {
     // One notch (WHEEL_DELTA) scrolls 3 lines into history (+) or toward live.
     const int lines = (delta / WHEEL_DELTA) * 3;
     if (lines == 0) return;
+
+    // Wheel priority: an app tracking the mouse gets wheel events (buttons
+    // 4/5) > alt-screen apps get arrow keys > the scrollback scrolls.
+    const int notches = (lines > 0 ? lines : -lines) / 3;
+    bool forwarded = false;
+    for (int i = 0; i < notches; ++i)
+        forwarded = forwardMouse(0 /*press*/, lines > 0 ? 4 : 5, xi, yi) ||
+                    forwarded;
+    if (forwarded) return;
+
     if (auto* s = activeSession()) {
         // Full-screen apps (vim/less/htop) run on the alternate screen, which
         // has no scrollback — send arrow keys so the wheel scrolls the app.
@@ -145,7 +155,7 @@ bool Window::onKeyDown(WPARAM vk) {
         if (!shift) {
             switch (vk) {
             case 'C':  // copy if text is selected; otherwise fall through to ^C (interrupt)
-                if (hasSelection_) {
+                if (paneHasSelection()) {
                     copySelection();
                     clearSelection();
                     swallowNextChar_ = true;

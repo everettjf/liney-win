@@ -106,6 +106,11 @@ void Window::onMouseDown(int xi, int yi) {
         Pane* leaf = t->hitTest(x, y);
         if (!leaf) return;
         t->setActive(leaf);
+
+        // Apps that track the mouse (vim :set mouse=a, htop, mc…) get the
+        // click; hold Shift to make a local selection instead.
+        if (forwardMouse(0 /*press*/, 1 /*left*/, xi, yi)) return;
+
         int cx = 0, cy = 0;
         if (!paneCellAt(leaf, xi, yi, cx, cy)) return;
 
@@ -121,13 +126,17 @@ void Window::onMouseDown(int xi, int yi) {
         }
 
         // Begin a selection drag from this cell (a plain click selects nothing
-        // until the mouse moves).
+        // until the mouse leaves the cell — WM_MOUSEMOVE fires spuriously on
+        // clicks). The anchor is buffer-tracked by the core.
         clickStreak_ = 1;
         selecting_ = true;
+        selDragged_ = false;
+        selDragCX_ = cx;
+        selDragCY_ = cy;
+        if (selPane_ && selPane_ != leaf && selPane_->session)
+            selPane_->session->selectionClear();
         selPane_ = leaf;
-        selAX_ = selBX_ = cx;
-        selAY_ = selBY_ = cy;
-        hasSelection_ = false;
+        if (leaf->session) leaf->session->selectionBegin(cx, cy);
         SetCapture(hwnd_);
     }
 }
@@ -153,6 +162,9 @@ void Window::onMouseDoubleClick(int xi, int yi) {
     Pane* leaf = t->hitTest(x, y);
     if (!leaf) return;
     t->setActive(leaf);
+    // The second press of a double-click arrives here instead of BUTTONDOWN;
+    // mouse-tracking apps still just get the press.
+    if (forwardMouse(0 /*press*/, 1 /*left*/, xi, yi)) return;
     int cx = 0, cy = 0;
     if (!paneCellAt(leaf, xi, yi, cx, cy)) return;
     selectWordAt(leaf, cx, cy);
@@ -181,8 +193,17 @@ void Window::onMouseDownRight(int xi, int yi) {
         return;
     }
 
-    // Right-click inside a terminal pane → copy / paste / select-all / find menu.
-    if (panes.contains(x, y)) { openPaneMenu(xi, yi); return; }
+    // Right-click inside a terminal pane → the app when it tracks the mouse
+    // (mc, vim…; Shift bypasses), else the copy / paste / find menu. There is
+    // no WM_RBUTTONUP handler, so send the release right away.
+    if (panes.contains(x, y)) {
+        if (forwardMouse(0 /*press*/, 2 /*right*/, xi, yi)) {
+            forwardMouse(1 /*release*/, 2, xi, yi);
+            return;
+        }
+        openPaneMenu(xi, yi);
+        return;
+    }
 
     if (!sidebarVisible_ || !leftBar.contains(x, y)) return;
 
@@ -261,20 +282,27 @@ void Window::onMouseMove(int xi, int yi) {
         s->ratio = r < 0.05f ? 0.05f : (r > 0.95f ? 0.95f : r);
         return;
     }
-    if (!selecting_ || !selPane_) return;
-    // Auto-scroll when the drag runs past the top/bottom edge of the pane, so a
-    // selection can extend into scrollback (or back toward live output).
-    const Rect& pr = selPane_->rect;
-    if (yi < static_cast<int>(pr.y)) scrollActive(1);
-    else if (yi > static_cast<int>(pr.bottom())) scrollActive(-1);
-    int cx = 0, cy = 0;
-    if (!paneCellAt(selPane_, xi, yi, cx, cy)) return;
-    selBX_ = cx;
-    selBY_ = cy;
-    if (selBX_ != selAX_ || selBY_ != selAY_) hasSelection_ = true;
+    if (selecting_ && selPane_ && selPane_->session) {
+        // Auto-scroll when the drag runs past the top/bottom edge of the pane,
+        // so a selection can extend into scrollback (or back toward live
+        // output); the anchor is buffer-tracked so it stays put.
+        const Rect& pr = selPane_->rect;
+        if (yi < static_cast<int>(pr.y)) scrollActive(1);
+        else if (yi > static_cast<int>(pr.bottom())) scrollActive(-1);
+        int cx = 0, cy = 0;
+        if (!paneCellAt(selPane_, xi, yi, cx, cy)) return;
+        if (!selDragged_ && cx == selDragCX_ && cy == selDragCY_)
+            return;  // still inside the press cell: not a drag yet
+        selDragged_ = true;
+        selPane_->session->selectionDragTo(cx, cy);
+        return;
+    }
+    // Not a local gesture: motion goes to mouse-tracking apps (the encoder
+    // only emits what the app's tracking mode asked for, deduped per cell).
+    forwardMouse(2 /*motion*/, (mouseButtonsDown_ & (1 << 1)) ? 1 : 0, xi, yi);
 }
 
-void Window::onMouseUp(int /*xi*/, int /*yi*/) {
+void Window::onMouseUp(int xi, int yi) {
     if (tabDragIndex_ >= 0) {
         tabDragIndex_ = -1;
         ReleaseCapture();
@@ -289,6 +317,14 @@ void Window::onMouseUp(int /*xi*/, int /*yi*/) {
         selecting_ = false;
         ReleaseCapture();
         maybeCopyOnSelect();  // PuTTY-style copy-on-select (when enabled)
+        return;
+    }
+    // Close out a press that was forwarded to a mouse-tracking app. If the
+    // forward is refused (Shift now held / tracking turned off), still drop
+    // the button bit so it can't wedge.
+    if (mouseButtonsDown_ & (1 << 1)) {
+        if (!forwardMouse(1 /*release*/, 1, xi, yi))
+            mouseButtonsDown_ &= ~(1 << 1);
     }
 }
 
@@ -305,55 +341,37 @@ bool Window::paneCellAt(const Pane* p, int px, int py, int& cx, int& cy) const {
 
 void Window::clearSelection() {
     selecting_ = false;
-    hasSelection_ = false;
+    if (selPane_ && selPane_->session) selPane_->session->selectionClear();
     selPane_ = nullptr;
     dragDivider_ = nullptr;
     tabDragIndex_ = -1;
 }
 
-void Window::applySelectionToGrid() {
-    if (!hasSelection_ || !selPane_ || !selPane_->session) return;
-    int sx = selAX_, sy = selAY_, ex = selBX_, ey = selBY_;
-    if (sy > ey || (sy == ey && sx > ex)) { std::swap(sx, ex); std::swap(sy, ey); }
-    Grid& g = selPane_->session->grid();
-    g.hasSelection = true;
-    g.selStartX = sx; g.selStartY = sy;
-    g.selEndX = ex; g.selEndY = ey;
+bool Window::paneHasSelection() const {
+    return selPane_ && selPane_->session && selPane_->session->hasSelection();
 }
 
 std::wstring Window::selectionText() const {
-    if (!hasSelection_ || !selPane_ || !selPane_->session) return L"";
-    const Grid& g = selPane_->session->grid();
-    int sx = selAX_, sy = selAY_, ex = selBX_, ey = selBY_;
-    if (sy > ey || (sy == ey && sx > ex)) { std::swap(sx, ex); std::swap(sy, ey); }
-
-    std::wstring out;
-    for (int y = sy; y <= ey && y < g.rows; ++y) {
-        const int x0 = (y == sy) ? sx : 0;
-        const int x1 = (y == ey) ? ex : g.cols - 1;
-        std::wstring line;
-        for (int x = x0; x <= x1 && x < g.cols; ++x) {
-            const Cell& c = g.at(x, y);
-            if (c.flags & kFlagWideTail) continue;  // spacer under a CJK glyph
-            line += c.ch.empty() ? L" " : c.ch;
-        }
-        size_t last = line.find_last_not_of(L' ');
-        if (last == std::wstring::npos) line.clear();
-        else line.erase(last + 1);
-        out += line;
-        if (y < ey) out += L"\r\n";
-    }
-    return out;
+    if (!selPane_ || !selPane_->session) return L"";
+    return utf8ToWide(selPane_->session->selectionUtf8());
 }
 
 void Window::copySelection() {
     const std::wstring text = selectionText();
-    if (text.empty() || !OpenClipboard(hwnd_)) return;
+    if (text.empty()) return;
+    // The core emits LF line breaks; the Windows clipboard wants CRLF.
+    std::wstring crlf;
+    crlf.reserve(text.size() + 16);
+    for (wchar_t c : text) {
+        if (c == L'\n') crlf += L"\r\n";
+        else crlf.push_back(c);
+    }
+    if (!OpenClipboard(hwnd_)) return;
     EmptyClipboard();
-    const size_t bytes = (text.size() + 1) * sizeof(wchar_t);
+    const size_t bytes = (crlf.size() + 1) * sizeof(wchar_t);
     if (HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, bytes)) {
         if (void* p = GlobalLock(h)) {
-            memcpy(p, text.c_str(), bytes);
+            memcpy(p, crlf.c_str(), bytes);
             GlobalUnlock(h);
             SetClipboardData(CF_UNICODETEXT, h);
         } else {
@@ -421,77 +439,60 @@ void Window::paste() {
     }
 }
 
-bool Window::isWordChar(const std::wstring& ch) {
-    if (ch.empty()) return false;
-    const wchar_t c = ch[0];
-    if (c == L' ') return false;
-    // Treat all non-ASCII (CJK, accented, …) as word characters — the CRT's
-    // iswalnum is locale-dependent and unreliable for them.
-    if (c >= 0x80) return true;
-    if (iswalnum(c)) return true;
-    // Keep common path / identifier punctuation as part of a "word" so a
-    // double-click grabs whole filenames, URLs and flags.
-    return wcschr(L"_-./\\:~+@", c) != nullptr;
-}
-
 void Window::selectWordAt(Pane* p, int cx, int cy) {
     if (!p || !p->session) return;
-    const Grid& g = p->session->grid();
-    if (cx < 0 || cx >= g.cols || cy < 0 || cy >= g.rows) return;
+    if (selPane_ && selPane_ != p && selPane_->session)
+        selPane_->session->selectionClear();
     selPane_ = p;
-    selAY_ = selBY_ = cy;
-    // A wide (CJK) glyph's spacer tail belongs to the word its head is in.
-    auto cellIsWord = [&](int x) {
-        const Cell& c = g.at(x, cy);
-        return (c.flags & kFlagWideTail) != 0 || isWordChar(c.ch);
-    };
-    if (g.at(cx, cy).flags & kFlagWideTail) --cx;  // click landed on a tail
-    if (cx < 0 || !cellIsWord(cx)) {
-        // Not on a word: select just the single cell.
-        selAX_ = selBX_ = cx < 0 ? 0 : cx;
-        hasSelection_ = true;
-        return;
-    }
-    int a = cx, b = cx;
-    while (a > 0 && cellIsWord(a - 1)) --a;
-    while (b < g.cols - 1 && cellIsWord(b + 1)) ++b;
-    selAX_ = a;
-    selBX_ = b;
-    hasSelection_ = true;
+    p->session->selectionWord(cx, cy);  // core word rules (CJK-aware)
 }
 
 void Window::selectLineAt(Pane* p, int cy) {
     if (!p || !p->session) return;
-    const Grid& g = p->session->grid();
-    if (cy < 0 || cy >= g.rows) return;
-    int last = g.cols - 1;
-    while (last > 0) {
-        const std::wstring& ch = g.at(last, cy).ch;
-        if (!ch.empty() && ch != L" ") break;
-        --last;
-    }
+    if (selPane_ && selPane_ != p && selPane_->session)
+        selPane_->session->selectionClear();
     selPane_ = p;
-    selAY_ = selBY_ = cy;
-    selAX_ = 0;
-    selBX_ = last;
-    hasSelection_ = true;
+    p->session->selectionLine(0, cy);
 }
 
 void Window::selectAllActive() {
     Tab* t = activeTab();
     if (!t || !t->active() || !t->active()->session) return;
-    const Grid& g = t->active()->session->grid();
-    if (g.cols < 1 || g.rows < 1) return;
+    if (selPane_ && selPane_ != t->active() && selPane_->session)
+        selPane_->session->selectionClear();
     selPane_ = t->active();
-    selAX_ = 0;
-    selAY_ = 0;
-    selBX_ = g.cols - 1;
-    selBY_ = g.rows - 1;
-    hasSelection_ = true;
+    selPane_->session->selectionAll();  // whole buffer, scrollback included
 }
 
 void Window::maybeCopyOnSelect() {
-    if (copyOnSelect_ && hasSelection_) copySelection();  // keep the highlight
+    if (copyOnSelect_ && paneHasSelection()) copySelection();  // keep highlight
+}
+
+bool Window::forwardMouse(int action, int button, int xi, int yi) {
+    if (keyDown(VK_SHIFT)) return false;  // Shift bypasses to local selection
+    Tab* t = activeTab();
+    if (!t) return false;
+    Pane* leaf = t->hitTest(static_cast<float>(xi), static_cast<float>(yi));
+    if (!leaf || !leaf->session) return false;
+    TerminalSession* s = leaf->session.get();
+    if (!s->mouseTracking()) {
+        mouseButtonsDown_ = 0;
+        return false;
+    }
+    const Rect& pr = leaf->rect;
+    const std::string seq = s->encodeMouse(
+        action, button, static_cast<float>(xi) - pr.x,
+        static_cast<float>(yi) - pr.y, false, keyDown(VK_CONTROL),
+        keyDown(VK_MENU), mouseButtonsDown_ != 0,
+        static_cast<unsigned>(metrics_.cellW),
+        static_cast<unsigned>(metrics_.cellH), static_cast<unsigned>(pr.w),
+        static_cast<unsigned>(pr.h));
+    if (action == 0 && button >= 1 && button <= 3)
+        mouseButtonsDown_ |= 1 << button;
+    else if (action == 1)
+        mouseButtonsDown_ &= ~(1 << button);
+    if (!seq.empty()) s->sendBytes(seq.data(), seq.size());
+    return true;
 }
 
 bool Window::updateCursor() {
@@ -530,7 +531,7 @@ void Window::openPaneMenu(int xi, int yi) {
     POINT pt{ xi, yi };
     ClientToScreen(hwnd_, &pt);
     HMENU m = CreatePopupMenu();
-    AppendMenuW(m, MF_STRING | (hasSelection_ ? 0 : MF_GRAYED), 1,
+    AppendMenuW(m, MF_STRING | (paneHasSelection() ? 0 : MF_GRAYED), 1,
                 L"Copy\tCtrl+Shift+C");
     AppendMenuW(m, MF_STRING, 2, L"Paste\tShift+Insert");
     AppendMenuW(m, MF_STRING, 3, L"Select all\tCtrl+Shift+A");

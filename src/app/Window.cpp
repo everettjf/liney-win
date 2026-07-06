@@ -276,11 +276,15 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
         paste();
         return 0;
     case WM_MOUSEWHEEL:
-        // Ctrl+Wheel zooms the font; a plain wheel scrolls scrollback.
-        if (GET_KEYSTATE_WPARAM(wParam) & MK_CONTROL)
+        // Ctrl+Wheel zooms the font; a plain wheel scrolls (or reports to the
+        // app — see onWheel). Wheel coordinates arrive in screen space.
+        if (GET_KEYSTATE_WPARAM(wParam) & MK_CONTROL) {
             zoomFont(GET_WHEEL_DELTA_WPARAM(wParam) > 0 ? +1 : -1);
-        else
-            onWheel(GET_WHEEL_DELTA_WPARAM(wParam));
+        } else {
+            POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+            ScreenToClient(hwnd_, &pt);
+            onWheel(GET_WHEEL_DELTA_WPARAM(wParam), pt.x, pt.y);
+        }
         return 0;
     case WM_LINEY_WAKE:
         // Posted by off-thread producers to pop the message wait; the repaint

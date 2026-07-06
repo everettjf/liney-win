@@ -57,6 +57,15 @@ bool D2DRenderer::buildTextFormats() {
     textFormatItalic_.Reset();
     textFormatBoldItalic_.Reset();
 
+    // Font (or size) changed: every cached glyph is stale. The atlas is
+    // recreated lazily at the new cell size.
+    glyphCache_.clear();
+    atlasBrush_.Reset();
+    atlasBitmap_.Reset();
+    atlasRT_.Reset();
+    atlasX_ = atlasY_ = 0.0f;
+    atlasBroken_ = false;
+
     const wchar_t* family = fontFamily_.c_str();
     HRESULT hr = dwriteFactory_->CreateTextFormat(
         family, nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
@@ -372,6 +381,82 @@ IDWriteTextFormat* D2DRenderer::cellFormat(uint32_t flags) const {
     return textFormat_.Get();
 }
 
+bool D2DRenderer::ensureAtlas() {
+    if (atlasBroken_) return false;
+    if (atlasRT_) return true;
+    if (!d2dContext_) return false;
+    if (FAILED(d2dContext_->CreateCompatibleRenderTarget(
+            D2D1::SizeF(kAtlasSize, kAtlasSize), atlasRT_.GetAddressOf())) ||
+        FAILED(atlasRT_->GetBitmap(atlasBitmap_.ReleaseAndGetAddressOf())) ||
+        FAILED(atlasRT_->CreateSolidColorBrush(
+            D2D1::ColorF(D2D1::ColorF::White),
+            atlasBrush_.ReleaseAndGetAddressOf()))) {
+        atlasBrush_.Reset();
+        atlasBitmap_.Reset();
+        atlasRT_.Reset();
+        atlasBroken_ = true;
+        return false;
+    }
+    atlasX_ = atlasY_ = 0.0f;
+    glyphCache_.clear();
+    return true;
+}
+
+bool D2DRenderer::atlasSlot(const std::wstring& ch, uint32_t flags,
+                            D2D1_RECT_F& src) {
+    if (!ensureAtlas()) return false;
+
+    wchar_t styleKey = 1;  // never 0 so the key unit can't be a terminator
+    if (flags & kFlagBold) styleKey |= 2;
+    if (flags & kFlagItalic) styleKey |= 4;
+    if (flags & kFlagWide) styleKey |= 8;
+    std::wstring key = ch;
+    key.push_back(styleKey);
+
+    auto it = glyphCache_.find(key);
+    if (it != glyphCache_.end()) {
+        src = it->second;
+        return true;
+    }
+
+    const float w = (flags & kFlagWide) ? cellW_ * 2.0f : cellW_;
+    const float h = cellH_;
+    if (atlasX_ + w > kAtlasSize) {
+        atlasX_ = 0.0f;
+        atlasY_ += h;
+    }
+    if (atlasY_ + h > kAtlasSize) {
+        // Atlas full (enormous glyph variety): wipe and start over — far
+        // simpler than eviction and rare enough not to matter.
+        glyphCache_.clear();
+        atlasX_ = atlasY_ = 0.0f;
+        atlasRT_->BeginDraw();
+        atlasRT_->Clear(D2D1::ColorF(0, 0, 0, 0.0f));
+        if (FAILED(atlasRT_->EndDraw())) {
+            atlasBroken_ = true;
+            return false;
+        }
+    }
+
+    const D2D1_RECT_F rect =
+        D2D1::RectF(atlasX_, atlasY_, atlasX_ + w, atlasY_ + h);
+    atlasRT_->BeginDraw();
+    atlasRT_->PushAxisAlignedClip(rect, D2D1_ANTIALIAS_MODE_ALIASED);
+    atlasRT_->Clear(D2D1::ColorF(0, 0, 0, 0.0f));
+    atlasRT_->DrawText(ch.c_str(), static_cast<UINT32>(ch.size()),
+                       cellFormat(flags), rect, atlasBrush_.Get(),
+                       D2D1_DRAW_TEXT_OPTIONS_CLIP);
+    atlasRT_->PopAxisAlignedClip();
+    if (FAILED(atlasRT_->EndDraw())) {
+        atlasBroken_ = true;
+        return false;
+    }
+    atlasX_ += w;
+    glyphCache_.emplace(std::move(key), rect);
+    src = rect;
+    return true;
+}
+
 // Effective fg/bg of one cell after inverse video and the selection / find
 // highlights. Shared by both drawGrid passes so backgrounds and glyphs agree.
 static void cellColors(const Grid& grid, int x, int y, Color& fg, Color& bg) {
@@ -380,15 +465,8 @@ static void cellColors(const Grid& grid, int x, int y, Color& fg, Color& bg) {
     bg = cell.bg;
     if (cell.flags & kFlagInverse) std::swap(fg, bg);
 
-    // Selection highlight (row-major inclusive range).
-    bool selected = false;
-    if (grid.hasSelection) {
-        const bool afterStart =
-            y > grid.selStartY || (y == grid.selStartY && x >= grid.selStartX);
-        const bool beforeEnd =
-            y < grid.selEndY || (y == grid.selEndY && x <= grid.selEndX);
-        selected = afterStart && beforeEnd;
-    }
+    // Selection highlight (stamped per cell from the terminal's selection).
+    const bool selected = (cell.flags & kFlagSelected) != 0;
     // Find-on-screen highlight: 0 = none, 1 = match, 2 = active match.
     int findHit = 0;
     if (!selected && !grid.findMatches.empty()) {
@@ -434,7 +512,11 @@ void D2DRenderer::drawGrid(const Grid& grid, float originX, float originY) {
         }
     }
 
-    // Pass 2: glyphs + decorations.
+    // Pass 2: glyphs + decorations. Glyphs come from the atlas (rasterized
+    // once, tinted per cell via FillOpacityMask — which requires the aliased
+    // antialias mode); DrawText is the fallback when the atlas is unavailable.
+    const D2D1_ANTIALIAS_MODE prevAA = d2dContext_->GetAntialiasMode();
+    d2dContext_->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
     for (int y = 0; y < grid.rows; ++y) {
         for (int x = 0; x < grid.cols; ++x) {
             const Cell& cell = grid.at(x, y);
@@ -458,10 +540,18 @@ void D2DRenderer::drawGrid(const Grid& grid, float originX, float originY) {
 
             if (hasGlyph && !(cell.flags & kFlagInvisible)) {
                 brush_->SetColor(toColorF(fg));
-                d2dContext_->DrawText(
-                    cell.ch.c_str(), static_cast<UINT32>(cell.ch.size()),
-                    cellFormat(cell.flags), D2D1::RectF(px, py, px + w, py + cellH_),
-                    brush_.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                const D2D1_RECT_F dst = D2D1::RectF(px, py, px + w, py + cellH_);
+                D2D1_RECT_F srcRect{};
+                if (atlasSlot(cell.ch, cell.flags, srcRect)) {
+                    d2dContext_->FillOpacityMask(
+                        atlasBitmap_.Get(), brush_.Get(),
+                        D2D1_OPACITY_MASK_CONTENT_TEXT_NATURAL, &dst, &srcRect);
+                } else {
+                    d2dContext_->DrawText(
+                        cell.ch.c_str(), static_cast<UINT32>(cell.ch.size()),
+                        cellFormat(cell.flags), dst, brush_.Get(),
+                        D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                }
             }
             if (deco) {
                 brush_->SetColor(toColorF(fg));
@@ -480,6 +570,7 @@ void D2DRenderer::drawGrid(const Grid& grid, float originX, float originY) {
             }
         }
     }
+    d2dContext_->SetAntialiasMode(prevAA);
 
     drawCursor(grid, originX, originY);
 

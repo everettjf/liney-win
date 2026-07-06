@@ -16,10 +16,22 @@ static void appendUtf16(uint32_t cp, std::wstring& out) {
 }
 
 Terminal::~Terminal() {
+    if (mouseEvt_) ghostty_mouse_event_free(mouseEvt_);
+    if (mouseEnc_) ghostty_mouse_encoder_free(mouseEnc_);
+    if (selAnchor_) ghostty_tracked_grid_ref_free(selAnchor_);
     if (rowCells_) ghostty_render_state_row_cells_free(rowCells_);
     if (rowIter_) ghostty_render_state_row_iterator_free(rowIter_);
     if (state_) ghostty_render_state_free(state_);
     if (terminal_) ghostty_terminal_free(terminal_);
+}
+
+// A viewport-cell point for the grid-ref APIs.
+static GhosttyPoint viewportPoint(int vx, int vy) {
+    GhosttyPoint pt{};
+    pt.tag = GHOSTTY_POINT_TAG_VIEWPORT;
+    pt.value.coordinate.x = static_cast<uint16_t>(vx < 0 ? 0 : vx);
+    pt.value.coordinate.y = static_cast<uint32_t>(vy < 0 ? 0 : vy);
+    return pt;
 }
 
 bool Terminal::create(int cols, int rows, int scrollback) {
@@ -158,6 +170,19 @@ bool Terminal::snapshotInto(Grid& grid) {
                 ++x;
             }
         }
+
+        // The terminal-owned selection, as a row-local span (NO_VALUE when the
+        // row is outside the selection). Stamped as per-cell flags so the
+        // highlight stays glued to the text while scrolling.
+        GhosttyRenderStateRowSelection rsel{};
+        rsel.size = sizeof(rsel);
+        if (ghostty_render_state_row_get(
+                rowIter_, GHOSTTY_RENDER_STATE_ROW_DATA_SELECTION, &rsel) ==
+            GHOSTTY_SUCCESS) {
+            for (int x = rsel.start_x; x <= static_cast<int>(rsel.end_x) &&
+                                       x < static_cast<int>(cols); ++x)
+                grid.at(x, y).flags |= kFlagSelected;
+        }
         ++y;
     }
 
@@ -236,6 +261,236 @@ void Terminal::scrollToBottom() {
     GhosttyTerminalScrollViewport sv{};
     sv.tag = GHOSTTY_SCROLL_VIEWPORT_BOTTOM;
     ghostty_terminal_scroll_viewport(terminal_, sv);
+}
+
+// ---------------------------------------------------------------------------
+// Selection (terminal-owned, buffer-anchored)
+// ---------------------------------------------------------------------------
+
+void Terminal::selectionBegin(int vx, int vy) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!terminal_) return;
+    const GhosttyPoint pt = viewportPoint(vx, vy);
+    if (!selAnchor_) {
+        if (ghostty_terminal_grid_ref_track(terminal_, pt, &selAnchor_) !=
+            GHOSTTY_SUCCESS)
+            selAnchor_ = nullptr;
+    } else {
+        ghostty_tracked_grid_ref_set(selAnchor_, terminal_, pt);
+    }
+    ghostty_terminal_set(terminal_, GHOSTTY_TERMINAL_OPT_SELECTION, nullptr);
+}
+
+bool Terminal::selectionDragTo(int vx, int vy) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!terminal_ || !selAnchor_) return false;
+    GhosttyGridRef a{};
+    a.size = sizeof(a);
+    if (ghostty_tracked_grid_ref_snapshot(selAnchor_, &a) != GHOSTTY_SUCCESS)
+        return false;
+    GhosttyGridRef b{};
+    b.size = sizeof(b);
+    if (ghostty_terminal_grid_ref(terminal_, viewportPoint(vx, vy), &b) !=
+        GHOSTTY_SUCCESS)
+        return false;
+    GhosttySelection sel{};
+    sel.size = sizeof(sel);
+    sel.start = a;
+    sel.end = b;
+    sel.rectangle = false;
+    return ghostty_terminal_set(terminal_, GHOSTTY_TERMINAL_OPT_SELECTION,
+                                &sel) == GHOSTTY_SUCCESS;
+}
+
+void Terminal::selectionWord(int vx, int vy) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!terminal_) return;
+    GhosttyGridRef ref{};
+    ref.size = sizeof(ref);
+    if (ghostty_terminal_grid_ref(terminal_, viewportPoint(vx, vy), &ref) !=
+        GHOSTTY_SUCCESS)
+        return;
+    GhosttyTerminalSelectWordOptions o{};
+    o.size = sizeof(o);
+    o.ref = ref;
+    GhosttySelection sel{};
+    sel.size = sizeof(sel);
+    if (ghostty_terminal_select_word(terminal_, &o, &sel) == GHOSTTY_SUCCESS)
+        ghostty_terminal_set(terminal_, GHOSTTY_TERMINAL_OPT_SELECTION, &sel);
+}
+
+void Terminal::selectionLine(int vx, int vy) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!terminal_) return;
+    GhosttyGridRef ref{};
+    ref.size = sizeof(ref);
+    if (ghostty_terminal_grid_ref(terminal_, viewportPoint(vx, vy), &ref) !=
+        GHOSTTY_SUCCESS)
+        return;
+    GhosttyTerminalSelectLineOptions o{};
+    o.size = sizeof(o);
+    o.ref = ref;
+    GhosttySelection sel{};
+    sel.size = sizeof(sel);
+    if (ghostty_terminal_select_line(terminal_, &o, &sel) == GHOSTTY_SUCCESS)
+        ghostty_terminal_set(terminal_, GHOSTTY_TERMINAL_OPT_SELECTION, &sel);
+}
+
+void Terminal::selectionAll() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!terminal_) return;
+    GhosttySelection sel{};
+    sel.size = sizeof(sel);
+    if (ghostty_terminal_select_all(terminal_, &sel) == GHOSTTY_SUCCESS)
+        ghostty_terminal_set(terminal_, GHOSTTY_TERMINAL_OPT_SELECTION, &sel);
+}
+
+void Terminal::selectionClear() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!terminal_) return;
+    ghostty_terminal_set(terminal_, GHOSTTY_TERMINAL_OPT_SELECTION, nullptr);
+}
+
+bool Terminal::hasSelection() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!terminal_) return false;
+    GhosttySelection sel{};
+    sel.size = sizeof(sel);
+    return ghostty_terminal_get(terminal_, GHOSTTY_TERMINAL_DATA_SELECTION,
+                                &sel) == GHOSTTY_SUCCESS;
+}
+
+std::string Terminal::formatSelectionLocked(const GhosttySelection* sel,
+                                            bool unwrap) {
+    GhosttyTerminalSelectionFormatOptions o{};
+    o.size = sizeof(o);
+    o.emit = GHOSTTY_FORMATTER_FORMAT_PLAIN;
+    o.unwrap = unwrap;
+    o.trim = true;
+    o.selection = sel;
+    uint8_t* ptr = nullptr;
+    size_t len = 0;
+    if (ghostty_terminal_selection_format_alloc(terminal_, nullptr, o, &ptr,
+                                                &len) != GHOSTTY_SUCCESS ||
+        !ptr)
+        return {};
+    std::string out(reinterpret_cast<const char*>(ptr), len);
+    ghostty_free(nullptr, ptr, len);
+    return out;
+}
+
+std::string Terminal::selectionUtf8() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!terminal_) return {};
+    // unwrap so a soft-wrapped command copies as one logical line.
+    return formatSelectionLocked(nullptr, true);
+}
+
+// ---------------------------------------------------------------------------
+// Scrollback-wide find support
+// ---------------------------------------------------------------------------
+
+bool Terminal::dumpBufferUtf8(std::string& out) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!terminal_) return false;
+    // Format a select-all range with unwrap=false: one output line per buffer
+    // row, starting at the top of the scrollback, so line index == the row
+    // space used by the scrollbar / SCROLL_VIEWPORT_ROW.
+    GhosttySelection all{};
+    all.size = sizeof(all);
+    if (ghostty_terminal_select_all(terminal_, &all) != GHOSTTY_SUCCESS)
+        return false;
+    out = formatSelectionLocked(&all, false);
+    return !out.empty();
+}
+
+uint64_t Terminal::viewportRow() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!terminal_) return 0;
+    GhosttyTerminalScrollbar sb{};
+    if (ghostty_terminal_get(terminal_, GHOSTTY_TERMINAL_DATA_SCROLLBAR, &sb) !=
+        GHOSTTY_SUCCESS)
+        return 0;
+    return sb.offset;
+}
+
+void Terminal::scrollToRow(uint64_t row) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!terminal_) return;
+    GhosttyTerminalScrollViewport sv{};
+    sv.tag = GHOSTTY_SCROLL_VIEWPORT_ROW;
+    sv.value.row = static_cast<size_t>(row);
+    ghostty_terminal_scroll_viewport(terminal_, sv);
+}
+
+// ---------------------------------------------------------------------------
+// Mouse reporting
+// ---------------------------------------------------------------------------
+
+bool Terminal::mouseTracking() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!terminal_) return false;
+    bool tracking = false;
+    if (ghostty_terminal_get(terminal_, GHOSTTY_TERMINAL_DATA_MOUSE_TRACKING,
+                             &tracking) != GHOSTTY_SUCCESS)
+        return false;
+    return tracking;
+}
+
+std::string Terminal::encodeMouse(int action, int button, float px, float py,
+                                  bool shift, bool ctrl, bool alt,
+                                  bool anyButtonDown, unsigned cellW,
+                                  unsigned cellH, unsigned screenW,
+                                  unsigned screenH) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!terminal_ || cellW == 0 || cellH == 0) return {};
+    if (!mouseEnc_ &&
+        ghostty_mouse_encoder_new(nullptr, &mouseEnc_) != GHOSTTY_SUCCESS) {
+        mouseEnc_ = nullptr;
+        return {};
+    }
+    if (!mouseEvt_ &&
+        ghostty_mouse_event_new(nullptr, &mouseEvt_) != GHOSTTY_SUCCESS) {
+        mouseEvt_ = nullptr;
+        return {};
+    }
+
+    // Tracking mode + output format come from the terminal's current state.
+    ghostty_mouse_encoder_setopt_from_terminal(mouseEnc_, terminal_);
+    GhosttyMouseEncoderSize sz{};
+    sz.size = sizeof(sz);
+    sz.screen_width = screenW;
+    sz.screen_height = screenH;
+    sz.cell_width = cellW;
+    sz.cell_height = cellH;
+    ghostty_mouse_encoder_setopt(mouseEnc_, GHOSTTY_MOUSE_ENCODER_OPT_SIZE, &sz);
+    const bool anyDown = anyButtonDown;
+    ghostty_mouse_encoder_setopt(
+        mouseEnc_, GHOSTTY_MOUSE_ENCODER_OPT_ANY_BUTTON_PRESSED, &anyDown);
+    const bool dedup = true;  // motion events collapse to one per cell
+    ghostty_mouse_encoder_setopt(
+        mouseEnc_, GHOSTTY_MOUSE_ENCODER_OPT_TRACK_LAST_CELL, &dedup);
+
+    ghostty_mouse_event_set_action(mouseEvt_,
+                                   static_cast<GhosttyMouseAction>(action));
+    if (button <= 0)
+        ghostty_mouse_event_clear_button(mouseEvt_);
+    else
+        ghostty_mouse_event_set_button(mouseEvt_,
+                                       static_cast<GhosttyMouseButton>(button));
+    GhosttyMods mods = 0;
+    if (shift) mods |= GHOSTTY_MODS_SHIFT;
+    if (ctrl) mods |= GHOSTTY_MODS_CTRL;
+    if (alt) mods |= GHOSTTY_MODS_ALT;
+    ghostty_mouse_event_set_mods(mouseEvt_, mods);
+    ghostty_mouse_event_set_position(mouseEvt_, GhosttyMousePosition{ px, py });
+
+    char buf[64];
+    size_t len = 0;
+    if (ghostty_mouse_encoder_encode(mouseEnc_, mouseEvt_, buf, sizeof(buf),
+                                     &len) != GHOSTTY_SUCCESS)
+        return {};
+    return std::string(buf, len);
 }
 
 bool Terminal::modeGet(uint16_t mode, bool ansi) {
