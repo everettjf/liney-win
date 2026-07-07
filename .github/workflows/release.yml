@@ -1,0 +1,70 @@
+name: Release
+
+# Pushing a version tag (v0.2.0, …) builds the Windows binaries, packages the
+# NSIS installer + portable zip, and publishes them as a GitHub release. The
+# tag must match the version in res\resource.rc (which also feeds the
+# installer), so a mismatched bump fails fast instead of shipping wrong
+# metadata.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set up Zig 0.15.2
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Check the tag matches res/resource.rc
+        shell: pwsh
+        run: |
+          $rc = Get-Content res\resource.rc -Raw
+          if ($rc -notmatch 'FILEVERSION\s+(\d+),(\d+),(\d+)') {
+            throw 'FILEVERSION not found in res\resource.rc'
+          }
+          $ver = "$($matches[1]).$($matches[2]).$($matches[3])"
+          $tag = '${{ github.ref_name }}'.TrimStart('v')
+          if ($ver -ne $tag) {
+            throw "Tag v$tag != resource.rc version $ver. Bump res\resource.rc, src\app\WindowInternal.h and packaging manifests first."
+          }
+
+      - name: Ensure NSIS
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue) -and
+              -not (Test-Path "$env:ProgramFiles\NSIS\makensis.exe") -and
+              -not (Test-Path "${env:ProgramFiles(x86)}\NSIS\makensis.exe")) {
+            choco install nsis -y --no-progress
+          }
+
+      - name: Build installer + portable zip
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools\make-installer.ps1
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: liney-win ${{ github.ref_name }}
+          body: |
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for the full list of changes.
+
+            | File | Description |
+            |---|---|
+            | `liney-win-setup.exe` | Installer — per-user, no admin, Start Menu + uninstall |
+            | `liney-win-portable.zip` | Portable — unzip and run `liney_win.exe` |
+          generate_release_notes: true
+          files: |
+            dist/liney-win-setup.exe
+            dist/liney-win-portable.zip

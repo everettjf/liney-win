@@ -26,7 +26,7 @@ $dll = Join-Path (Split-Path $winExe) 'ghostty-vt.dll'
 if (-not (Test-Path $dll)) { throw "ghostty-vt.dll not found next to liney_win.exe" }
 
 # Read the version from res\resource.rc (FileVersion x,y,z,0).
-$ver = '0.1.0'
+$ver = '0.2.0'
 $rc = Get-Content (Join-Path $root 'res\resource.rc') -Raw
 if ($rc -match 'FILEVERSION\s+(\d+),(\d+),(\d+)') { $ver = "$($matches[1]).$($matches[2]).$($matches[3])" }
 

@@ -12,7 +12,7 @@
 
 namespace liney {
 
-inline constexpr const wchar_t* kAppVersion = L"0.1.0";  // sync with AppxManifest
+inline constexpr const wchar_t* kAppVersion = L"0.2.0";  // sync with AppxManifest
 
 // Chrome palette.
 inline constexpr Color kSidebarBg{ 24, 24, 28 };
