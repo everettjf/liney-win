@@ -69,12 +69,40 @@ private:
     ComPtr<ID2D1DeviceContext> d2dContext_;
     ComPtr<ID2D1Bitmap1> targetBitmap_;
     ComPtr<ID2D1SolidColorBrush> brush_;
+    // Pick the text format matching a cell's bold/italic flags (never null).
+    IDWriteTextFormat* cellFormat(uint32_t flags) const;
+
+    // Draw the cursor for `grid` (shape, blink phase, focus state).
+    void drawCursor(const Grid& grid, float originX, float originY);
+
+    // Blink half-period; the classic Windows caret cadence.
+    static constexpr unsigned long long kCursorBlinkMs = 530;
+
+    // Glyph atlas: each unique (grapheme, bold/italic, wide) is rasterized
+    // once into an offscreen bitmap; cells then draw as FillOpacityMask with
+    // the cell's fg brush instead of re-shaping text every frame. Falls back
+    // to per-cell DrawText when the atlas can't be created.
+    bool ensureAtlas();
+    bool atlasSlot(const std::wstring& ch, uint32_t flags, D2D1_RECT_F& src);
+    static constexpr float kAtlasSize = 2048.0f;
+
     ComPtr<IDWriteFactory> dwriteFactory_;
     ComPtr<IDWriteTextFormat> textFormat_;
     ComPtr<IDWriteTextFormat> textFormatBold_;
+    ComPtr<IDWriteTextFormat> textFormatItalic_;
+    ComPtr<IDWriteTextFormat> textFormatBoldItalic_;
     ComPtr<IWICImagingFactory> wicFactory_;
     // Cache of loaded images by path (null entry = failed-to-load, don't retry).
     std::unordered_map<std::wstring, ComPtr<ID2D1Bitmap>> imageCache_;
+
+    // Glyph atlas state (see ensureAtlas/atlasSlot). Keys are the grapheme's
+    // UTF-16 units plus one trailing style unit.
+    ComPtr<ID2D1BitmapRenderTarget> atlasRT_;
+    ComPtr<ID2D1Bitmap> atlasBitmap_;
+    ComPtr<ID2D1SolidColorBrush> atlasBrush_;  // white; owned by atlasRT_
+    std::unordered_map<std::wstring, D2D1_RECT_F> glyphCache_;
+    float atlasX_ = 0.0f, atlasY_ = 0.0f;      // next free slot position
+    bool atlasBroken_ = false;                 // creation failed: use DrawText
 };
 
 } // namespace liney

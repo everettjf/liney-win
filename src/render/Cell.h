@@ -26,11 +26,17 @@ struct Theme {
 
 // Per-cell attribute bits.
 enum CellFlags : uint32_t {
-    kFlagNone      = 0,
-    kFlagBold      = 1u << 0,
-    kFlagItalic    = 1u << 1,
-    kFlagUnderline = 1u << 2,
-    kFlagInverse   = 1u << 3,
+    kFlagNone          = 0,
+    kFlagBold          = 1u << 0,
+    kFlagItalic        = 1u << 1,
+    kFlagUnderline     = 1u << 2,
+    kFlagInverse       = 1u << 3,
+    kFlagFaint         = 1u << 4,
+    kFlagStrikethrough = 1u << 5,
+    kFlagInvisible     = 1u << 6,  // SGR 8: reserve space, draw no glyph
+    kFlagWide          = 1u << 7,  // 2-column glyph (CJK…); next cell is its tail
+    kFlagWideTail      = 1u << 8,  // spacer under a wide glyph: never drawn
+    kFlagSelected      = 1u << 9,  // inside the terminal-owned selection
 };
 
 // A single terminal cell. `ch` holds one grapheme (UTF-16; may span >1 code
@@ -41,6 +47,10 @@ struct Cell {
     Color bg{ 0, 0, 0 };
     uint32_t flags = kFlagNone;
 };
+
+// Cursor shape, driven by the app via DECSCUSR (block/bar/underline) plus the
+// hollow-block style terminals use for unfocused panes/windows.
+enum class CursorShape { Block, Bar, Underline, HollowBlock };
 
 // A fixed-size, row-major grid of cells. This is what the renderer consumes;
 // it is produced from a terminal screen snapshot (built-in emulator or
@@ -54,12 +64,14 @@ struct Grid {
     int cursorX = 0;
     int cursorY = 0;
     bool cursorVisible = false;
+    CursorShape cursorShape = CursorShape::Block;
+    bool cursorBlink = false;       // terminal modes request a blinking cursor
+    bool cursorColorSet = false;    // an explicit cursor color (OSC 12) is set
+    Color cursorColor{ 204, 204, 204 };
 
-    // Selection highlight, in cell coordinates, normalized and inclusive
-    // (row-major from start to end). Set by the UI on the focused pane's grid.
-    bool hasSelection = false;
-    int selStartX = 0, selStartY = 0;
-    int selEndX = 0, selEndY = 0;
+    // Whether this grid's pane has keyboard focus (window focused + active
+    // pane). Stamped by the UI each frame; an unfocused cursor draws hollow.
+    bool focused = true;
 
     // Find-on-screen highlights (viewport cell coordinates). Each span covers
     // [x, x+len) on row y. `findCurrent` indexes the span drawn as the active

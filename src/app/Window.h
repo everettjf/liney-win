@@ -67,6 +67,7 @@ private:
     // Font sizing.
     void applyFont();        // push current family/size to the renderer + metrics
     void zoomFont(int step); // step font size by `step` points (0 == reset)
+    void chooseFontDialog(); // native font picker (fixed-pitch); persists config
 
     // Top-right menu + quick actions.
     void toggleKeepAwake();  // prevent/allow system+display sleep (caffeine)
@@ -100,7 +101,7 @@ private:
     void onMouseDoubleClick(int x, int y); // word (double) / line (triple) select
     void onMouseMove(int x, int y);
     void onMouseUp(int x, int y);
-    void onWheel(int delta);
+    void onWheel(int delta, int x, int y);
     bool updateCursor();      // WM_SETCURSOR: I-beam over text, resize over dividers
     void openPaneMenu(int x, int y);  // right-click in a pane: copy/paste/find…
     void scrollActive(int lines);
@@ -112,10 +113,12 @@ private:
     void positionIme();
     void cursorPixelPos(int& px, int& py) const;
 
-    // Selection / clipboard.
+    // Selection / clipboard. The selection itself lives in the terminal core
+    // (buffer-anchored, so it stays on its text through scrolling and reflow);
+    // the Window tracks which pane owns it and the drag gesture.
     bool paneCellAt(const Pane* p, int px, int py, int& cx, int& cy) const;
-    void applySelectionToGrid();   // push current selection onto the active grid
     void clearSelection();         // drop selection (e.g. before freeing panes)
+    bool paneHasSelection() const; // does selPane_'s terminal hold a selection?
     std::wstring selectionText() const;
     void copySelection();
     void paste();
@@ -123,7 +126,13 @@ private:
     void selectLineAt(Pane* p, int cy);           // triple-click line selection
     void selectAllActive();                       // Ctrl+Shift+A
     void maybeCopyOnSelect();                      // copy if copyOnSelect_ is set
-    static bool isWordChar(const std::wstring& ch);
+
+    // Mouse reporting: forward one event to the pane under the pointer when
+    // its app enabled tracking (holding Shift bypasses, keeping local
+    // selection available). Returns true when the event was consumed.
+    // action: 0 press, 1 release, 2 motion; button: 0 none, 1 left, 2 right,
+    // 3 middle, 4 wheel-up, 5 wheel-down.
+    bool forwardMouse(int action, int button, int xi, int yi);
 
     // Find-on-screen (Ctrl+F): highlights query matches in the focused pane's
     // viewport; navigate with Enter/F3 (and Shift to reverse), Esc closes. See
@@ -132,7 +141,8 @@ private:
     void closeFind();
     void onFindChar(wchar_t c);    // edit the query (printable / Enter / Backspace)
     void findBackspace();
-    void findNext(bool previous);  // move the active match; page history if none
+    void findNext(bool newer);     // Enter/F3 = older (up); +Shift = newer (down)
+    void findJumpGlobal(bool up);  // search the whole scrollback, jump viewport
     void stampFindMatches();       // recompute matches for the active pane
     void drawFindBar(const Rect& paneRect);
     std::wstring rowText(const Grid& g, int y, std::vector<int>* colOfPos) const;
@@ -204,25 +214,29 @@ private:
     struct FileEntry { std::wstring name; std::wstring path; bool isDir; };
     std::vector<FileEntry> fileEntries_;
 
-    // Selection (over the focused pane's viewport, in that pane's cell coords).
+    // Selection gesture state (the selection itself is terminal-owned).
     bool selecting_ = false;       // a text-selection drag is in progress
     Pane* dragDivider_ = nullptr;  // split node being resized by a divider drag
-    bool hasSelection_ = false;
-    Pane* selPane_ = nullptr;      // pane the selection belongs to
-    int selAX_ = 0, selAY_ = 0;    // anchor
-    int selBX_ = 0, selBY_ = 0;    // head
+    Pane* selPane_ = nullptr;      // pane whose terminal owns the selection
+    int selDragCX_ = -1, selDragCY_ = -1;  // press cell: drags start on leaving it
+    bool selDragged_ = false;      // the drag left its press cell at least once
     bool copyOnSelect_ = false;    // copy to clipboard as soon as a selection ends
+    bool multiLinePasteWarning_ = true;  // confirm before pasting multiple lines
+    int mouseButtonsDown_ = 0;     // forwarded-to-app buttons, bitmask by number
 
     // Double / triple-click tracking (for word / line selection).
     DWORD lastClickTick_ = 0;
     int lastClickCY_ = -1;
     int clickStreak_ = 0;          // 1 = single, 2 = double (word), 3 = triple (line)
 
-    // Find-on-screen state. Matches are in the active pane's viewport coords.
+    // Find state. Matches are in the active pane's viewport coords; when a
+    // jump into scrollback is pending, findSeekRow_ holds the absolute row to
+    // re-seed the active match on after the viewport lands there.
     bool findActive_ = false;
     std::wstring findQuery_;
     std::vector<Grid::FindSpan> findMatches_;
     int findIndex_ = -1;           // active match index into findMatches_ (-1 none)
+    long long findSeekRow_ = -1;   // absolute row of a pending scrollback jump
     Rect findBarRect_{};           // find bar hit rect (rebuilt each frame)
 };
 

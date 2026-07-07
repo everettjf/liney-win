@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -41,7 +42,37 @@ public:
     // Scroll the viewport over scrollback history.
     void scrollViewport(int deltaLines) { terminal_.scrollViewport(deltaLines); }
     void scrollToBottom() { terminal_.scrollToBottom(); }
-    bool bracketedPaste() const { return terminal_.bracketedPaste(); }
+
+    // Terminal modes the UI keys off (queried from the core).
+    bool bracketedPaste() { return terminal_.bracketedPaste(); }
+    bool applicationCursorKeys() { return terminal_.applicationCursorKeys(); }
+    bool altScreenActive() { return terminal_.altScreenActive(); }
+
+    // Selection (terminal-owned; viewport cell coordinates).
+    void selectionBegin(int vx, int vy) { terminal_.selectionBegin(vx, vy); }
+    bool selectionDragTo(int vx, int vy) { return terminal_.selectionDragTo(vx, vy); }
+    void selectionWord(int vx, int vy) { terminal_.selectionWord(vx, vy); }
+    void selectionLine(int vx, int vy) { terminal_.selectionLine(vx, vy); }
+    void selectionAll() { terminal_.selectionAll(); }
+    void selectionClear() { terminal_.selectionClear(); }
+    bool hasSelection() { return terminal_.hasSelection(); }
+    std::string selectionUtf8() { return terminal_.selectionUtf8(); }
+
+    // Scrollback-wide find support.
+    bool dumpBufferUtf8(std::string& out) { return terminal_.dumpBufferUtf8(out); }
+    uint64_t viewportRow() { return terminal_.viewportRow(); }
+    void scrollToRow(uint64_t row) { terminal_.scrollToRow(row); }
+
+    // Mouse reporting (see Terminal::encodeMouse for the parameters).
+    bool mouseTracking() { return terminal_.mouseTracking(); }
+    std::string encodeMouse(int action, int button, float px, float py,
+                            bool shift, bool ctrl, bool alt, bool anyButtonDown,
+                            unsigned cellW, unsigned cellH, unsigned screenW,
+                            unsigned screenH) {
+        return terminal_.encodeMouse(action, button, px, py, shift, ctrl, alt,
+                                     anyButtonDown, cellW, cellH, screenW,
+                                     screenH);
+    }
 
     bool exited() const { return pty_.hasExited(); }
     const std::wstring& cwd() const { return cwd_; }

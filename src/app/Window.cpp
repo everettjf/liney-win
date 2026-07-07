@@ -1,6 +1,7 @@
 #include "app/Window.h"
 
 #include <windowsx.h>  // GET_X_LPARAM / GET_WHEEL_DELTA_WPARAM
+#include <commdlg.h>   // ChooseFontW (the Font… picker)
 
 #include <memory>
 #include <string>
@@ -107,6 +108,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     sessionExitHook_ = cfg.sessionExitHook;
     appExitHook_ = cfg.appExitHook;
     copyOnSelect_ = cfg.copyOnSelect;
+    multiLinePasteWarning_ = cfg.multiLinePasteWarning;
     scrollback_ = cfg.scrollback;
     if (cfg.unixTools) addGitUnixToolsToPath();  // ls/cat/grep/… in spawned shells
     // cmd shell integration: prepend an OSC 7 cwd report to PROMPT so the files
@@ -274,11 +276,15 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
         paste();
         return 0;
     case WM_MOUSEWHEEL:
-        // Ctrl+Wheel zooms the font; a plain wheel scrolls scrollback.
-        if (GET_KEYSTATE_WPARAM(wParam) & MK_CONTROL)
+        // Ctrl+Wheel zooms the font; a plain wheel scrolls (or reports to the
+        // app — see onWheel). Wheel coordinates arrive in screen space.
+        if (GET_KEYSTATE_WPARAM(wParam) & MK_CONTROL) {
             zoomFont(GET_WHEEL_DELTA_WPARAM(wParam) > 0 ? +1 : -1);
-        else
-            onWheel(GET_WHEEL_DELTA_WPARAM(wParam));
+        } else {
+            POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+            ScreenToClient(hwnd_, &pt);
+            onWheel(GET_WHEEL_DELTA_WPARAM(wParam), pt.x, pt.y);
+        }
         return 0;
     case WM_LINEY_WAKE:
         // Posted by off-thread producers to pop the message wait; the repaint
@@ -476,6 +482,32 @@ void Window::zoomFont(int step) {
     saveFontSize(fontSize_);  // remember the zoom level across launches
 }
 
+void Window::chooseFontDialog() {
+    LOGFONTW lf{};
+    wcsncpy_s(lf.lfFaceName, fontFamily_.c_str(), _TRUNCATE);
+    lf.lfPitchAndFamily = FIXED_PITCH | FF_MODERN;
+    // fontSize_ is a 96-DPI-relative pixel size; ChooseFont previews via
+    // lfHeight in device pixels and reports the pick in tenths of a point.
+    lf.lfHeight = -static_cast<LONG>(fontSize_ * dpiScale_ + 0.5f);
+
+    CHOOSEFONTW cf{};
+    cf.lStructSize = sizeof(cf);
+    cf.hwndOwner = hwnd_;
+    cf.lpLogFont = &lf;
+    cf.Flags = CF_SCREENFONTS | CF_INITTOLOGFONTSTRUCT | CF_FIXEDPITCHONLY |
+               CF_NOSCRIPTSEL | CF_FORCEFONTEXIST;
+    if (!ChooseFontW(&cf) || lf.lfFaceName[0] == L'\0') return;
+
+    fontFamily_ = lf.lfFaceName;
+    fontSize_ = cf.iPointSize / 10.0f * (96.0f / 72.0f);  // pt → px @96dpi
+    if (fontSize_ < 6.0f) fontSize_ = 6.0f;
+    if (fontSize_ > 72.0f) fontSize_ = 72.0f;
+    defaultFontSize_ = fontSize_;  // Ctrl+0 now resets to the chosen size
+    applyFont();
+    saveFontFamily(fontFamily_);
+    saveFontSize(fontSize_);
+}
+
 void Window::toggleKeepAwake() {
     keepAwake_ = !keepAwake_;
     // ES_CONTINUOUS persists the request; SYSTEM/DISPLAY keep both awake.
@@ -511,6 +543,7 @@ void Window::openMainMenu() {
     item(6, L"Split stacked\tShift+Alt+D");
     item(9, L"Find on screen…\tCtrl+F");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    item(10, L"Font…");
     item(7, L"Settings (config.json)…");
     item(8, L"Check for updates\tCtrl+Shift+U");
 
@@ -527,6 +560,7 @@ void Window::openMainMenu() {
     case 7: openConfigFile(); break;
     case 8: checkForUpdates(); break;
     case 9: openFind(); break;
+    case 10: chooseFontDialog(); break;
     default: break;
     }
 }

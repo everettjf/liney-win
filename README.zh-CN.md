@@ -34,15 +34,25 @@ Direct2D**。用 **MSVC + Zig** 构建。
 ## ✨ 功能
 
 **🖥️ 终端** —— 由 **Ghostty 的 libghostty-vt** 核心驱动
-- 完整 VT 解析:光标 / 擦除 / 滚动区 / 插入删除,SGR 16/256/truecolor +
-  粗体/斜体/下划线/反显,UTF-8,宽字符,grapheme 簇
+- 完整 VT 解析:光标 / 擦除 / 滚动区 / 插入删除,SGR 16/256/truecolor,实际渲染
+  **粗体/斜体/下划线/反显/弱化/删除线**,UTF-8,**宽字符(中日韩)整字形绘制**,grapheme 簇
 - **scrollback 历史**(滚轮 · `Shift+PgUp`),改窗口大小时长行**重排(reflow)**
-- **备用屏 alt-screen** —— vim / less / `git log` 等全屏程序正常工作
+- **备用屏 alt-screen** —— vim / less / `git log` 等全屏程序正常工作,且**滚轮直接
+  滚动它们**(备用屏激活时滚轮转为方向键)
+- **光标** —— DECSCUSR **方块 / 竖线 / 下划线** 三种形状(vim 换模式即换形状)、
+  按终端模式**闪烁**、pane 失焦变空心、支持 OSC 12 光标颜色
+- **鼠标上报** —— vim(`:set mouse=a`)/ htop / mc 能收到点击、拖动和滚轮
+  (SGR + 传统协议);按住 **Shift** 则回到本地文本选择
 - OSC 驱动的**窗口标题**与 **cwd 跟踪**(文件树跟随 shell 当前目录)
-- **选择 + 复制粘贴** —— 拖动选择、**双击选词 / 三击选行**、**选中即复制**(可选)、
-  右键菜单、`Shift+Insert` 粘贴;**IME**(中日韩)候选窗口跟随光标
-- **屏内查找**(`Ctrl+F`)—— 高亮所有可见匹配,`Enter`/`F3` 逐个跳转并翻阅 scrollback
-- **字号缩放** —— `Ctrl +/-/0` 或 **`Ctrl+滚轮`**,并跨次启动记忆;可配置**配色主题**
+- **选择 + 复制粘贴** —— **选区锚定在文本上**(滚动、新输出涌入时高亮跟着内容走)、
+  拖动选择、**双击选词 / 三击选行**(中日韩友好)、**选中即复制**(可选)、右键菜单、
+  `Ctrl+V` / `Shift+Insert` 粘贴、bracketed paste、**多行粘贴确认**(可关);
+  **IME**(中日韩)候选窗口跟随光标
+- **查找**(`Ctrl+F`)—— 高亮所有可见匹配,并**搜索整个 scrollback**:
+  `Enter`/`F3` 逐个向上跳到历史里的匹配,`Shift+Enter` 往回走
+- **字体** —— ☰ 菜单原生 **字体选择器**(只列等宽字体),`Ctrl +/-/0` 或
+  **`Ctrl+滚轮`** 缩放,字体与字号都跨次启动记忆;可配置**配色主题**(前景/背景 + 16 色
+  ANSI 调色板)
 - **Unix 命令** —— 装了 Git for Windows 后,`ls` / `cat` / `grep` / `rm` / `sed` /
   `awk` / … 在任意 shell 都能用
 
@@ -106,9 +116,11 @@ powershell -ExecutionPolicy Bypass -File tools\build.ps1
 | `Alt+方向键` | 在分屏 pane 间移动焦点 |
 | `Ctrl+Shift+B` / `Ctrl+Shift+F` | 切换左侧边栏 / 右侧文件面板 |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | 复制选区 / 粘贴 |
+| `Ctrl+C` / `Ctrl+V` | 有选区时复制(否则发 ^C)/ 粘贴 |
 | `Shift+Insert` / `Ctrl+Insert` | 粘贴 / 复制选区 |
-| `Ctrl+Shift+A` | 全选(可见缓冲区) |
-| `Ctrl+F` · `Enter`/`Shift+Enter` · `F3`/`Shift+F3` · `Esc` | 屏内查找 · 下一个/上一个匹配 · 关闭 |
+| `Ctrl+Shift+A` | 全选(含 scrollback) |
+| `Ctrl+F` · `Enter`/`F3` · `Shift+Enter` · `Esc` | 查找 · 向上跳匹配(搜整个历史)· 向下 · 关闭 |
+| `Shift`+点击/拖动 | 应用占用鼠标(vim/htop)时仍做本地选择 |
 | `Ctrl++` / `Ctrl+-` / `Ctrl+0` · `Ctrl+滚轮` | 放大 / 缩小 / 重置字号 · 缩放 |
 | `Ctrl+Shift+L` / `Ctrl+Shift+G` | 当前仓库的 `git log` / `git diff` |
 | `Ctrl+Shift+K` | 防睡眠(阻止休眠)开 / 关 |

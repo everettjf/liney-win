@@ -38,17 +38,27 @@ nothing but the OS.
 
 **🖥️ Terminal** — powered by **Ghostty's libghostty-vt** core
 - Full VT parsing: cursor / erase / scroll regions / insert-delete, SGR
-  16/256/truecolor + bold/italic/underline/inverse, UTF-8, wide chars, grapheme clusters
+  16/256/truecolor rendered with **bold/italic/underline/inverse/faint/strike**,
+  UTF-8, **wide (CJK) glyphs**, grapheme clusters
 - **Scrollback** (wheel · `Shift+PgUp`) with **reflow** of long lines on resize
-- **Alternate screen** — vim / less / `git log` and other full-screen apps just work
+- **Alternate screen** — vim / less / `git log` just work, and the **mouse wheel
+  scrolls them** (arrow keys are sent when the alt screen is active)
+- **Cursor** — DECSCUSR **block / bar / underline** shapes (vim mode-switching),
+  **blinking** per terminal modes, hollow when the pane is unfocused, OSC 12 color
+- **Mouse reporting** — vim (`:set mouse=a`) / htop / mc receive clicks, drags and
+  the wheel (SGR + legacy protocols); hold **Shift** to select text locally instead
 - OSC-driven **window title** and **cwd tracking** (the file tree follows your shell)
-- **Selection + copy/paste** — drag-select, **double-click word / triple-click line**,
-  **copy-on-select** (opt-in), right-click menu, `Shift+Insert` paste; **IME** (CJK)
-  with the candidate window at the cursor
-- **Find on screen** (`Ctrl+F`) — highlights every match in view, `Enter`/`F3` to
-  step through them and page back through scrollback
-- **Font zoom** — `Ctrl +/-/0` or **`Ctrl+Wheel`**, remembered across launches;
-  configurable **color theme**
+- **Selection + copy/paste** — **buffer-anchored** (the highlight stays on its text
+  while you scroll or output streams in), drag-select, **double-click word /
+  triple-click line**, **copy-on-select** (opt-in), right-click menu,
+  `Ctrl+V` / `Shift+Insert` paste, bracketed paste, an opt-out **multi-line paste
+  confirm**; **IME** (CJK) with the candidate window at the cursor
+- **Find** (`Ctrl+F`) — highlights every match in view and **searches the whole
+  scrollback**: `Enter`/`F3` jump match-to-match up through history,
+  `Shift+Enter` walks back down
+- **Fonts** — a native **Font… picker** (☰ menu, monospace-filtered), zoom via
+  `Ctrl +/-/0` or **`Ctrl+Wheel`**, both remembered across launches; configurable
+  **color theme** (fg/bg + full 16-color ANSI palette)
 - **Unix tools** — with Git for Windows installed, `ls` / `cat` / `grep` / `rm` /
   `sed` / `awk` / … work in any shell
 
@@ -115,9 +125,11 @@ The first build fetches Ghostty and compiles `libghostty-vt`, so it takes a whil
 | `Alt+Arrows` | Move focus between split panes |
 | `Ctrl+Shift+B` / `Ctrl+Shift+F` | Toggle the left sidebar / right files panel |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | Copy selection / paste |
+| `Ctrl+C` / `Ctrl+V` | Copy when text is selected (else ^C) / paste |
 | `Shift+Insert` / `Ctrl+Insert` | Paste / copy selection |
-| `Ctrl+Shift+A` | Select all (visible buffer) |
-| `Ctrl+F` · `Enter`/`Shift+Enter` · `F3`/`Shift+F3` · `Esc` | Find on screen · next/prev match · close |
+| `Ctrl+Shift+A` | Select all (scrollback included) |
+| `Ctrl+F` · `Enter`/`F3` · `Shift+Enter` · `Esc` | Find · older match (searches scrollback) · newer match · close |
+| `Shift`+click/drag | Select locally while an app (vim/htop) captures the mouse |
 | `Ctrl++` / `Ctrl+-` / `Ctrl+0` · `Ctrl+Wheel` | Zoom font in / out / reset · zoom |
 | `Ctrl+Shift+L` / `Ctrl+Shift+G` | `git log` / `git diff` for the current repo |
 | `Ctrl+Shift+K` | Keep awake (block sleep) on / off |
@@ -138,6 +150,7 @@ The first run writes `%USERPROFILE%\.liney\config.json` (mirroring macOS liney's
   "workspaceRoot": "",
   "unixTools": true,
   "copyOnSelect": false,
+  "multiLinePasteWarning": true,
   "hooks": { "sessionStart": "", "sessionExit": "", "appExit": "" },
   "sshHosts": ["user@host"],
   "agents": [{ "name": "agent", "command": "claude", "cwd": "" }],
@@ -152,7 +165,8 @@ The first run writes `%USERPROFILE%\.liney\config.json` (mirroring macOS liney's
 | `workspaceRoot` | Directory scanned for repos; empty = the launch directory's parent |
 | `unixTools` | Append Git's `usr\bin` to PATH so `ls`/`cat`/`grep`/… work |
 | `copyOnSelect` | Copy to the clipboard as soon as a selection ends (PuTTY-style) |
-| `fontSize` | Terminal font size; `Ctrl +/-/0` and `Ctrl+Wheel` update and persist it |
+| `multiLinePasteWarning` | Confirm before pasting text with line breaks (each break runs as Enter) |
+| `fontFamily` / `fontSize` | Terminal font; the ☰ → **Font…** picker, `Ctrl +/-/0` and `Ctrl+Wheel` update and persist them |
 | `scrollback` | History lines retained per session (default 10000) |
 | `sshHosts` / `agents` | Entries in the sidebar SSH / AGENTS sections |
 | `projectIcons` | Per-repo sidebar icons (else a repo-local `icon.png`/`logo.png`) |
@@ -184,8 +198,10 @@ keyboard/mouse → Window (workspace orchestration) → routes to the focused pa
                  ↑ composes sidebar · tab strip · split tree · files panel · toolbar
 TerminalSession = Terminal + ConPty + Grid
    ConPty      — Windows pseudoconsole (spawn shell, read/write, resize)
-   Terminal    — wraps libghostty-vt (Ghostty's VT engine): PTY bytes → render snapshot → Grid
-   D2DRenderer — Direct2D/DirectWrite draws the Grid + chrome to the window
+   Terminal    — wraps libghostty-vt (Ghostty's VT engine): PTY bytes → render
+                 snapshot → Grid; selection / find / mouse encoding via its C API
+   D2DRenderer — Direct2D/DirectWrite draws the Grid + chrome; glyphs rasterize
+                 once into an atlas and draw as tinted opacity masks
 ```
 
 Source map in [`src/`](src). Design / research notes: [`RESEARCH.md`](RESEARCH.md),
@@ -196,8 +212,9 @@ Source map in [`src/`](src). Design / research notes: [`RESEARCH.md`](RESEARCH.m
 ## 🗺️ Roadmap
 
 Done & remaining items (with a macOS-liney comparison) live in
-[`ROADMAP.md`](ROADMAP.md). Still pending: mouse reporting (ConPTY-limited),
-SFTP remote file tree, a glyph-atlas renderer, native tmux control-mode.
+[`ROADMAP.md`](ROADMAP.md). Still pending: SFTP remote file tree, native tmux
+control-mode, a D3D11 shader-based renderer. (Mouse reporting needs a ConPTY
+that passes mouse-mode requests through — Windows 11 / recent Windows 10.)
 
 ## 🤝 Contributing
 
