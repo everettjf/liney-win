@@ -87,11 +87,23 @@ powershell -ExecutionPolicy Bypass -File tools\make-installer.ps1   # NSIS setup
 
 Both accept `-BuildDir <dir>` to package from an existing build.
 
+## Releasing
+
+1. Bump the version in `res\resource.rc` (FILEVERSION/PRODUCTVERSION + the two
+   string values), `src\app\WindowInternal.h` (`kAppVersion`),
+   `packaging\AppxManifest.xml`, `packaging\liney-win.nsi` (default), and the
+   `packaging\winget\*.yaml` manifests — all should agree.
+2. Add a section to `CHANGELOG.md`.
+3. Merge, then tag: `git tag v0.x.0 && git push origin v0.x.0`.
+4. The `Release` workflow builds `liney-win-setup.exe` + `liney-win-portable.zip`
+   and publishes the GitHub release (it fails if the tag doesn't match
+   `resource.rc`).
+
 ## Style & PRs
 
 - Plain **C++20 + Win32 + Direct2D**, no third-party runtime deps beyond
   libghostty-vt. Match the surrounding style; keep files small and cohesive.
 - Build and smoke-test before opening a PR.
-- Known gaps worth picking up: desktop notifications (OSC 9/777) and bracketed
-  paste need re-wiring through Ghostty's OSC parser for the libghostty core. See
-  [`ROADMAP.md`](ROADMAP.md).
+- Known gaps worth picking up: desktop notifications (OSC 9/777) need re-wiring
+  through Ghostty's OSC parser for the libghostty core; SFTP file tree and
+  tmux control-mode are open. See [`ROADMAP.md`](ROADMAP.md).

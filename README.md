@@ -212,9 +212,10 @@ Source map in [`src/`](src). Design / research notes: [`RESEARCH.md`](RESEARCH.m
 ## 🗺️ Roadmap
 
 Done & remaining items (with a macOS-liney comparison) live in
-[`ROADMAP.md`](ROADMAP.md). Still pending: SFTP remote file tree, native tmux
-control-mode, a D3D11 shader-based renderer. (Mouse reporting needs a ConPTY
-that passes mouse-mode requests through — Windows 11 / recent Windows 10.)
+[`ROADMAP.md`](ROADMAP.md); per-release changes in [`CHANGELOG.md`](CHANGELOG.md).
+Still pending: SFTP remote file tree, native tmux control-mode, a D3D11
+shader-based renderer. (Mouse reporting needs a ConPTY that passes mouse-mode
+requests through — Windows 11 / recent Windows 10.)
 
 ## 🤝 Contributing
 
