@@ -1,5 +1,7 @@
 #include "pty/ConPty.h"
 
+#include <tlhelp32.h>  // process snapshot for hasRunningChild
+
 #include <utility>
 #include <vector>
 
@@ -113,6 +115,26 @@ bool ConPty::hasExited() const {
     // never sees EOF — poll the child process itself.
     return procInfo_.hProcess &&
            WaitForSingleObject(procInfo_.hProcess, 0) == WAIT_OBJECT_0;
+}
+
+bool ConPty::hasRunningChild() const {
+    const DWORD shellPid = procInfo_.dwProcessId;
+    if (shellPid == 0) return false;
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return false;
+    PROCESSENTRY32W pe{};
+    pe.dwSize = sizeof(pe);
+    bool found = false;
+    // A direct child of the shell means it's running a command (idle cmd /
+    // pwsh have no children). One level is enough — the child itself may have
+    // grandchildren, but its mere presence already means "busy".
+    if (Process32FirstW(snap, &pe)) {
+        do {
+            if (pe.th32ParentProcessID == shellPid) { found = true; break; }
+        } while (Process32NextW(snap, &pe));
+    }
+    CloseHandle(snap);
+    return found;
 }
 
 void ConPty::write(const char* data, size_t len) {

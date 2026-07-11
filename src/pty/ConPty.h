@@ -46,6 +46,11 @@ public:
     // child exits (e.g. after `exit`), so EOF alone is not enough.
     bool hasExited() const;
 
+    // True if the shell has any live child process — i.e. it's running a
+    // command rather than sitting idle at the prompt. Used to warn before
+    // closing a tab/pane that's doing work. Best-effort (a process snapshot).
+    bool hasRunningChild() const;
+
 private:
     HPCON hpc_ = nullptr;
     HANDLE inputWrite_ = nullptr;  // we write -> child stdin

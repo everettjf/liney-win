@@ -191,7 +191,7 @@ bool Window::onKeyDown(WPARAM vk) {
         if (shift) {
             switch (vk) {
             case 'T': newTab(activeSession() ? activeSession()->cwd() : workspace_.root()); swallowNextChar_ = true; return true;
-            case 'W': closeActivePane(); swallowNextChar_ = true; return true;
+            case 'W': closeActivePaneConfirming(); swallowNextChar_ = true; return true;
             case 'B': sidebarVisible_ = !sidebarVisible_; swallowNextChar_ = true; return true;
             case 'F': filesPanelVisible_ = !filesPanelVisible_; swallowNextChar_ = true; return true;
             case 'K': toggleKeepAwake(); swallowNextChar_ = true; return true;

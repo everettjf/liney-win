@@ -504,6 +504,19 @@ void Window::splitActive(SplitDir dir) {
     t->splitActive(dir, std::move(session));
 }
 
+void Window::closeActivePaneConfirming() {
+    // User-initiated (Ctrl+Shift+W): warn if the pane is running a command.
+    // The automatic reaper calls closeActivePane() directly (no prompt).
+    if (TerminalSession* s = activeSession(); s && s->hasRunningChild()) {
+        const std::wstring msg =
+            L"This pane is still running a command.\n\nClose it anyway?";
+        if (MessageBoxW(hwnd_, msg.c_str(), L"liney-win — close pane",
+                        MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
+            return;
+    }
+    closeActivePane();
+}
+
 void Window::closeActivePane() {
     clearSelection();
     runDetached(sessionExitHook_, L"");  // hooks.sessionExit
@@ -825,14 +838,35 @@ void Window::openTabMenu(int xi, int yi) {
             CloseClipboard();
         }
         break;
-    case 4: closeTab(activeTab_); break;
+    case 4: closeTabConfirming(activeTab_); break;
     default: break;
     }
+}
+
+bool Window::tabHasRunningProcess(size_t idx) const {
+    if (idx >= tabs_.size()) return false;
+    for (Pane* leaf : tabs_[idx]->leaves())
+        if (leaf->session && leaf->session->hasRunningChild()) return true;
+    return false;
+}
+
+void Window::closeTabConfirming(size_t idx) {
+    if (idx >= tabs_.size()) return;
+    if (tabHasRunningProcess(idx)) {
+        const std::wstring name = tabs_[idx]->title();
+        const std::wstring msg =
+            L"“" + name + L"” is still running a command.\n\nClose it anyway?";
+        if (MessageBoxW(hwnd_, msg.c_str(), L"liney-win — close tab",
+                        MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
+            return;
+    }
+    closeTab(idx);
 }
 
 void Window::closeTab(size_t idx) {
     if (idx >= tabs_.size()) return;
     clearSelection();
+    hoverTab_ = -1;  // indices shift; drop stale hover
     runDetached(sessionExitHook_, L"");  // hooks.sessionExit
     tabs_.erase(tabs_.begin() + idx);
     if (tabs_.empty()) { PostQuitMessage(0); return; }

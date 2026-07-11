@@ -62,6 +62,7 @@ private:
     void splitActive(SplitDir dir);
     void runStartHook(TerminalSession* s);  // send sessionStart hook to a shell
     void closeActivePane();
+    void closeActivePaneConfirming();  // Ctrl+Shift+W: prompt if pane is busy
     void switchTab(int delta);
     void updateTitle();
 
@@ -85,6 +86,10 @@ private:
     void openMainMenu();     // native popup menu for the top-right "☰" button
     void openTabMenu(int x, int y);  // right-click a tab: close / open in explorer…
     void closeTab(size_t idx);       // close an entire tab (all its panes)
+    // Close a tab, but confirm first if any of its shells is running a command
+    // (a child process is alive). Used by the tab × button and the tab menu.
+    void closeTabConfirming(size_t idx);
+    bool tabHasRunningProcess(size_t idx) const;
 
     // Layout persistence (%USERPROFILE%\.liney\layout.json).
     void saveLayout() const;
@@ -218,6 +223,9 @@ private:
     };
     std::vector<SidebarRow> sidebarRows_;
     std::vector<Rect> tabRects_;
+    std::vector<Rect> tabCloseRects_;  // per-tab × button hit rects
+    int hoverTab_ = -1;        // tab under the pointer (-1 = none); shows its ×
+    int lastMouseX_ = -1, lastMouseY_ = -1;  // client-space pointer, for hover
     Rect workspaceAddRect_{};  // the WORKSPACE "+" (add project) button
     Rect plusRect_{};
     int tabDragIndex_ = -1;  // tab being dragged in the strip (-1 = none)

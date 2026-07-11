@@ -203,9 +203,11 @@ void Window::refreshFileList() {
 
 void Window::drawTabBar(const Rect& r) {
     tabRects_.clear();
+    tabCloseRects_.clear();
     renderer_->fillRect(r.x, r.y, r.w, r.h, uiTheme_.tabBg);
 
     const float pad = metrics_.cellW;
+    const float closeW = metrics_.cellH;  // square × hit area at the tab's right
     float x = r.x;
     for (size_t i = 0; i < tabs_.size(); ++i) {
         std::wstring title = tabs_[i]->title();
@@ -215,13 +217,26 @@ void Window::drawTabBar(const Rect& r) {
             if (title[cut - 1] >= 0xD800 && title[cut - 1] <= 0xDBFF) --cut;
             title = title.substr(0, cut) + L"…";
         }
-        const float tw = (static_cast<float>(title.size()) + 3.0f) * metrics_.cellW;
+        // +4 chars of slack leaves room for the × button after the title.
+        const float tw = (static_cast<float>(title.size()) + 4.0f) * metrics_.cellW;
         const bool active = (i == activeTab_);
         if (active) renderer_->fillRect(x, r.y, tw, r.h, uiTheme_.tabActiveBg);
-        renderer_->drawText(title, x + pad, r.y + 5.0f, tw - pad, metrics_.cellH,
-                            active ? uiTheme_.accent : uiTheme_.dim, active);
+        renderer_->drawText(title, x + pad, r.y + 5.0f, tw - pad - closeW,
+                            metrics_.cellH, active ? uiTheme_.accent : uiTheme_.dim,
+                            active);
         if (active)
             renderer_->fillRect(x, r.bottom() - 2.0f, tw, 2.0f, uiTheme_.accent);
+        // × close button — shown on the active or hovered tab (the whole area
+        // stays clickable regardless, matching browser/VS Code behavior).
+        const Rect closeRect{ x + tw - closeW, r.y, closeW, r.h };
+        tabCloseRects_.push_back(closeRect);
+        if (active || static_cast<int>(i) == hoverTab_) {
+            const bool hotClose = closeRect.contains(
+                static_cast<float>(lastMouseX_), static_cast<float>(lastMouseY_));
+            renderer_->drawText(L"×", closeRect.x + closeW * 0.28f, r.y + 5.0f,
+                                closeW, metrics_.cellH,
+                                hotClose ? uiTheme_.text : uiTheme_.dim, true);
+        }
         tabRects_.push_back({ x, r.y, tw, r.h });
         x += tw;
     }

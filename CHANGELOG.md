@@ -3,6 +3,14 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
+## [Unreleased]
+
+### Added
+- **Tab close button** — each tab shows an **×** (on the active tab and on
+  hover); clicking it closes that tab. Closing a tab (or a pane via
+  `Ctrl+Shift+W`) whose shell is **running a command** now asks for
+  confirmation first, so a long-running job isn't killed by a stray click.
+
 ## [0.4.0] — 2026-07-11
 
 Customization + polish, aligning further with macOS liney.

@@ -1,5 +1,6 @@
 #include "app/Window.h"
 #include "app/WindowInternal.h"
+#include "core/RenderSignal.h"
 #include "util/InputBox.h"
 
 #include <algorithm>
@@ -78,6 +79,14 @@ void Window::onMouseDown(int xi, int yi) {
         if (plusRect_.contains(x, y)) {
             newTab(activeSession() ? activeSession()->cwd() : workspace_.root());
             return;
+        }
+        // A hit on a tab's × closes it (with a confirm if it's running a
+        // command). Checked before the tab body so it never starts a drag.
+        for (size_t i = 0; i < tabCloseRects_.size(); ++i) {
+            if (tabCloseRects_[i].contains(x, y)) {
+                closeTabConfirming(i);
+                return;
+            }
         }
         for (size_t i = 0; i < tabRects_.size(); ++i) {
             if (tabRects_[i].contains(x, y)) {
@@ -263,6 +272,17 @@ void Window::onMouseDownRight(int xi, int yi) {
 }
 
 void Window::onMouseMove(int xi, int yi) {
+    lastMouseX_ = xi;
+    lastMouseY_ = yi;
+    // Track which tab the pointer is over so its × button shows (and so the ×
+    // hover-highlights). Only meaningful while not dragging.
+    if (tabDragIndex_ < 0 && !selecting_ && !dragDivider_) {
+        const float x = static_cast<float>(xi), y = static_cast<float>(yi);
+        int hover = -1;
+        for (size_t i = 0; i < tabRects_.size(); ++i)
+            if (tabRects_[i].contains(x, y)) { hover = static_cast<int>(i); break; }
+        if (hover != hoverTab_) { hoverTab_ = hover; markRenderDirty(); }
+    }
     if (tabDragIndex_ >= 0) {
         const float x = static_cast<float>(xi), y = static_cast<float>(yi);
         for (size_t i = 0; i < tabRects_.size(); ++i) {
