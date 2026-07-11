@@ -94,9 +94,21 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     wc.lpszClassName = kClassName;
     RegisterClassExW(&wc);
 
+    // Default size: ~70% of the primary work area, centered. A fixed pixel
+    // size is postage-stamp small on high-DPI monitors (we're per-monitor DPI
+    // aware, so pixels are physical). The caller's width/height act as a
+    // floor; a saved layout (restoreLayout) overrides this right afterwards.
+    RECT wa{ 0, 0, 1280, 800 };
+    SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0);
+    const int waW = wa.right - wa.left, waH = wa.bottom - wa.top;
+    int w = waW * 7 / 10, h = waH * 7 / 10;
+    if (w < width) w = width;
+    if (h < height) h = height;
+    const int x = wa.left + (waW - w) / 2;
+    const int y = wa.top + (waH - h) / 2;
+
     hwnd_ = CreateWindowExW(0, kClassName, title, WS_OVERLAPPEDWINDOW,
-                            CW_USEDEFAULT, CW_USEDEFAULT, width, height, nullptr,
-                            nullptr, hInstance, this);
+                            x, y, w, h, nullptr, nullptr, hInstance, this);
     if (!hwnd_) return false;
 
     g_wakeHwnd.store(hwnd_, std::memory_order_relaxed);  // PTY thread wakes us here
@@ -321,7 +333,7 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
                         L"Keep awake ended — normal sleep resumed");
             return 0;
         }
-        break;
+        return DefWindowProcW(hwnd_, msg, wParam, lParam);
     case WM_DESTROY:
         removeTray();
         PostQuitMessage(0);

@@ -3,7 +3,7 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
-## [Unreleased]
+## [0.3.0] — 2026-07-11
 
 Hardening pass from a full-codebase review + on-Windows verification: crash
 and data-loss fixes, terminal correctness, and rendering resilience. Plus a
@@ -27,6 +27,10 @@ and UI polish.
   the pane border (matches Windows Terminal / Ghostty defaults; scales with
   font size and DPI). Mouse hit-testing, IME placement, and mouse reporting
   account for it.
+- **The default window is sized to the screen** — first launch opens at ~70%
+  of the work area, centered, instead of a fixed 1000×640 physical pixels
+  (postage-stamp small on high-DPI monitors). A saved layout still restores
+  its exact geometry.
 
 ### Fixed
 - **Stack buffer overflow on long grapheme clusters** — a cell whose cluster
