@@ -26,7 +26,14 @@
     "my-repo": "C:\\path\\to\\icon.png"
   },
 
-  "theme": {
+  "//theme": "A built-in preset NAME: Emerald Night | Azure Night | Violet Night | Amber Dark | Rose Dark | Slate Frost | Paper Light. Pick one in Settings…, or set it here.",
+  "theme": "Emerald Night",
+
+  "//accentColor": "Overrides just the accent (active-pane divider / active tab / icons) on top of the preset.",
+  "accentColor": "#78c8a0",
+
+  "//theme-advanced": "Instead of a preset name, `theme` may be an object of terminal-only overrides:",
+  "//theme-object-example": {
     "background": "#102840",
     "foreground": "#e8e8d0",
     "palette": [

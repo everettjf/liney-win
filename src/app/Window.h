@@ -79,6 +79,9 @@ private:
     std::wstring keepAwakeStatus() const;  // e.g. "on — 1h 12m left" for menus
     void openConfigFile();   // open %USERPROFILE%\.liney\config.json in the editor
     void openSettingsDialog();  // GUI settings; applies + persists on OK
+    // Switch to a theme preset (by name) with an accent override, live across
+    // all panes. Used by the Settings dialog.
+    void applyTheme(const std::wstring& presetName, const Color& accent);
     void openMainMenu();     // native popup menu for the top-right "☰" button
     void openTabMenu(int x, int y);  // right-click a tab: close / open in explorer…
     void closeTab(size_t idx);       // close an entire tab (all its panes)
@@ -183,7 +186,9 @@ private:
     std::vector<std::wstring> projects_;   // explicit sidebar project folders
     std::wstring workspaceRoot_;           // scanned root (empty = launch parent)
     std::wstring launchParent_;            // parent of the launch dir (default root)
-    Theme theme_;
+    Theme theme_;                  // terminal palette
+    UiTheme uiTheme_;              // chrome palette (sidebar/tabs/accent/border)
+    std::wstring themeName_;       // active preset name (persisted)
     std::wstring lastTitle_;        // avoid redundant SetWindowText calls
     NOTIFYICONDATAW nid_{};
     bool trayAdded_ = false;

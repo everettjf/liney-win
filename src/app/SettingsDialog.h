@@ -4,13 +4,18 @@
 
 #include <string>
 
+#include "render/Cell.h"
+
 namespace liney {
 
 // The settings the dialog edits. In/out: pass current values, read them back
-// when showSettingsDialog returns true (OK). Font/theme stay in their own
-// pickers (Font… menu, config.json).
+// when showSettingsDialog returns true (OK).
 struct SettingsValues {
     std::wstring shell;              // default shell command for new tabs
+    std::wstring fontFamily;         // monospace font family
+    float fontSize = 16.0f;          // logical point size
+    std::wstring themeName;          // active theme preset (see Themes.h)
+    Color accent{ 120, 200, 160 };   // chrome accent (divider / active tab)
     int scrollback = 10000;          // history lines per session
     bool copyOnSelect = false;       // copy as soon as a selection ends
     bool multiLinePasteWarning = true;  // confirm multi-line pastes

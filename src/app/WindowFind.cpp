@@ -204,7 +204,7 @@ void Window::drawFindBar(const Rect& pr) {
     findBarRect_ = { x, y, w, h };
 
     renderer_->fillRect(x, y, w, h, Color{ 30, 30, 36 });
-    renderer_->strokeRect(x, y, w, h, kAccent, 1.0f);
+    renderer_->strokeRect(x, y, w, h, uiTheme_.accent, 1.0f);
 
     const float pad = 8.0f;
     const std::wstring shown = L"Find: " + findQuery_;
@@ -217,11 +217,11 @@ void Window::drawFindBar(const Rect& pr) {
 
     const float countW = 64.0f;
     renderer_->drawText(shown, x + pad, y + 5.0f, w - pad * 2.0f - countW,
-                        metrics_.cellH, kText, false);
+                        metrics_.cellH, uiTheme_.text, false);
     if (!count.empty())
         renderer_->drawText(
             count, x + w - countW - pad, y + 5.0f, countW, metrics_.cellH,
-            findMatches_.empty() ? Color{ 200, 120, 120 } : kDim, false);
+            findMatches_.empty() ? Color{ 200, 120, 120 } : uiTheme_.dim, false);
 }
 
 } // namespace liney

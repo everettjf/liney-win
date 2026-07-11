@@ -14,15 +14,8 @@ namespace liney {
 
 inline constexpr const wchar_t* kAppVersion = L"0.3.0";  // sync with AppxManifest
 
-// Chrome palette.
-inline constexpr Color kSidebarBg{ 24, 24, 28 };
-inline constexpr Color kSidebarHdr{ 130, 130, 140 };
-inline constexpr Color kText{ 205, 205, 210 };
-inline constexpr Color kDim{ 140, 140, 150 };
-inline constexpr Color kTabBg{ 18, 18, 22 };
-inline constexpr Color kTabActiveBg{ 40, 42, 52 };
-inline constexpr Color kAccent{ 120, 200, 160 };
-inline constexpr Color kBorder{ 55, 55, 66 };
+// Chrome colors are now runtime-themeable (Window::uiTheme_, see core/Themes.h).
+// The drawing code refers to uiTheme_.sidebarBg / .accent / … directly.
 
 inline std::wstring parentDir(const std::wstring& path) {
     size_t end = path.size();

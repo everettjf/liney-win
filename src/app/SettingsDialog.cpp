@@ -1,9 +1,14 @@
 #include "app/SettingsDialog.h"
 
-#include <shlobj.h>  // SHBrowseForFolderW (workspace root picker)
+#include <commdlg.h>  // ChooseColorW (accent picker)
+#include <shlobj.h>   // SHBrowseForFolderW (workspace root picker)
 
+#include <algorithm>
+#include <cstdio>
 #include <string>
 #include <vector>
+
+#include "core/Themes.h"
 
 namespace liney {
 
@@ -16,17 +21,56 @@ constexpr int kIdPasteWarn = 103;
 constexpr int kIdUnixTools = 104;
 constexpr int kIdRoot = 105;
 constexpr int kIdBrowse = 106;
+constexpr int kIdFont = 107;
+constexpr int kIdFontSize = 108;
+constexpr int kIdTheme = 109;
+constexpr int kIdAccent = 110;
 
 struct State {
     HWND shell = nullptr;
+    HWND font = nullptr;
+    HWND fontSize = nullptr;
+    HWND theme = nullptr;
+    HWND accentSwatch = nullptr;  // static showing the current accent hex
     HWND scrollback = nullptr;
     HWND copyOnSelect = nullptr;
     HWND pasteWarn = nullptr;
     HWND unixTools = nullptr;
     HWND root = nullptr;
+    Color accent{ 120, 200, 160 };
     bool done = false;
     bool accepted = false;
 };
+
+// Enumerate installed fixed-pitch (monospace) font families, deduped + sorted.
+std::vector<std::wstring> monospaceFonts() {
+    std::vector<std::wstring> out;
+    HDC dc = GetDC(nullptr);
+    LOGFONTW lf{};
+    lf.lfCharSet = DEFAULT_CHARSET;
+    EnumFontFamiliesExW(
+        dc, &lf,
+        [](const LOGFONTW* f, const TEXTMETRICW*, DWORD, LPARAM p) -> int {
+            // FIXED_PITCH is bit 0 of the low nibble; skip vertical (@) faces.
+            if ((f->lfPitchAndFamily & 0x03) == FIXED_PITCH &&
+                f->lfFaceName[0] != L'@') {
+                auto* v = reinterpret_cast<std::vector<std::wstring>*>(p);
+                v->push_back(f->lfFaceName);
+            }
+            return 1;
+        },
+        reinterpret_cast<LPARAM>(&out), 0);
+    ReleaseDC(nullptr, dc);
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    return out;
+}
+
+void setAccentSwatch(HWND swatch, const Color& c) {
+    wchar_t buf[16];
+    swprintf_s(buf, L"#%02X%02X%02X", c.r, c.g, c.b);
+    SetWindowTextW(swatch, buf);
+}
 
 std::wstring windowText(HWND h) {
     const int n = GetWindowTextLengthW(h);
@@ -79,6 +123,23 @@ LRESULT CALLBACK proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             if (!dir.empty()) SetWindowTextW(st->root, dir.c_str());
             return 0;
         }
+        case kIdAccent: {
+            static COLORREF custom[16] = {};
+            CHOOSECOLORW cc{};
+            cc.lStructSize = sizeof(cc);
+            cc.hwndOwner = hwnd;
+            cc.rgbResult =
+                RGB(st->accent.r, st->accent.g, st->accent.b);
+            cc.lpCustColors = custom;
+            cc.Flags = CC_FULLOPEN | CC_RGBINIT;
+            if (ChooseColorW(&cc)) {
+                st->accent = { static_cast<uint8_t>(GetRValue(cc.rgbResult)),
+                               static_cast<uint8_t>(GetGValue(cc.rgbResult)),
+                               static_cast<uint8_t>(GetBValue(cc.rgbResult)) };
+                setAccentSwatch(st->accentSwatch, st->accent);
+            }
+            return 0;
+        }
         default:
             break;
         }
@@ -110,7 +171,7 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
         registered = true;
     }
 
-    const int w = 440, h = 330;
+    const int w = 460, h = 470;
     RECT orc{};
     if (owner) GetWindowRect(owner, &orc);
     else { orc.left = 200; orc.top = 200; orc.right = 900; orc.bottom = 700; }
@@ -146,6 +207,62 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
         SendMessageW(st.shell, CB_ADDSTRING, 0,
                      reinterpret_cast<LPARAM>(s.c_str()));
     SetWindowTextW(st.shell, v.shell.c_str());
+    cy += 34;
+
+    // Font family: dropdown of installed monospace faces (editable so an
+    // unlisted family can still be typed).
+    label(L"Font");
+    st.font = CreateWindowExW(
+        0, L"COMBOBOX", L"",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWN | CBS_AUTOHSCROLL |
+            WS_VSCROLL,
+        cx, cy, cw - 90, 260, dlg,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdFont)), inst, nullptr);
+    for (const std::wstring& f : monospaceFonts())
+        SendMessageW(st.font, CB_ADDSTRING, 0,
+                     reinterpret_cast<LPARAM>(f.c_str()));
+    SetWindowTextW(st.font, v.fontFamily.c_str());
+    // Font size (points), just to the right of the family box.
+    st.fontSize = CreateWindowExW(
+        WS_EX_CLIENTEDGE, L"EDIT", std::to_wstring(static_cast<int>(v.fontSize))
+                                       .c_str(),
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_NUMBER | ES_CENTER,
+        cx + cw - 80, cy, 44, 24, dlg,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdFontSize)), inst,
+        nullptr);
+    CreateWindowExW(0, L"STATIC", L"pt", WS_CHILD | WS_VISIBLE, cx + cw - 30,
+                    cy + 4, 24, 18, dlg, nullptr, inst, nullptr);
+    cy += 34;
+
+    // Theme preset dropdown + accent color.
+    label(L"Theme");
+    st.theme = CreateWindowExW(
+        0, L"COMBOBOX", L"",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL, cx,
+        cy, cw, 240, dlg,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdTheme)), inst, nullptr);
+    {
+        int sel = 0, idx = 0;
+        for (const ThemePreset& p : builtinThemePresets()) {
+            SendMessageW(st.theme, CB_ADDSTRING, 0,
+                         reinterpret_cast<LPARAM>(p.name.c_str()));
+            if (p.name == v.themeName) sel = idx;
+            ++idx;
+        }
+        SendMessageW(st.theme, CB_SETCURSEL, sel, 0);
+    }
+    cy += 34;
+
+    label(L"Accent color");
+    st.accent = v.accent;
+    CreateWindowExW(0, L"BUTTON", L"Choose…",
+                    WS_CHILD | WS_VISIBLE | WS_TABSTOP, cx, cy, 84, 24, dlg,
+                    reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdAccent)),
+                    inst, nullptr);
+    st.accentSwatch = CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE,
+                                      cx + 94, cy + 4, 90, 18, dlg, nullptr,
+                                      inst, nullptr);
+    setAccentSwatch(st.accentSwatch, st.accent);
     cy += 34;
 
     label(L"Scrollback lines");
@@ -230,6 +347,24 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
     if (st.accepted) {
         v.shell = windowText(st.shell);
         if (v.shell.empty()) v.shell = L"cmd.exe";
+        v.fontFamily = windowText(st.font);
+        if (v.fontFamily.empty()) v.fontFamily = L"Cascadia Mono";
+        const std::wstring fs = windowText(st.fontSize);
+        if (!fs.empty()) {
+            int pt = 0;
+            for (wchar_t c : fs)
+                if (c >= L'0' && c <= L'9') pt = pt * 10 + (c - L'0');
+            if (pt < 6) pt = 6;
+            if (pt > 96) pt = 96;  // same range as loadConfig / zoom
+            v.fontSize = static_cast<float>(pt);
+        }
+        const int ti = static_cast<int>(SendMessageW(st.theme, CB_GETCURSEL, 0, 0));
+        if (ti >= 0) {
+            const auto presets = builtinThemePresets();
+            if (ti < static_cast<int>(presets.size()))
+                v.themeName = presets[ti].name;
+        }
+        v.accent = st.accent;
         const std::wstring sb = windowText(st.scrollback);
         int lines = v.scrollback;
         if (!sb.empty()) {

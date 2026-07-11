@@ -21,45 +21,54 @@ std::wstring Window::resolveRepoIcon(const Repo& repo) const {
 }
 
 void Window::drawLeftSidebar(const Rect& r) {
-    renderer_->fillRect(r.x, r.y, r.w, r.h, kSidebarBg);
+    renderer_->fillRect(r.x, r.y, r.w, r.h, uiTheme_.sidebarBg);
 
-    const float pad = 8.0f;
+    const float pad = metrics_.sidebarPad();
     const float rowH = metrics_.rowH();
-    float y = r.y + 6.0f;
+    const float th = metrics_.cellH;               // text glyph height
+    const float tDY = (rowH - th) * 0.5f;          // vertical-center text in a row
+    float y = r.y + 10.0f;
 
-    // Draw a small vector icon at ix, then the label after it.
+    // A section header ("WORKSPACE" / "SSH" / "AGENTS"), vertically centered.
+    auto header = [&](const wchar_t* txt) {
+        renderer_->drawText(txt, r.x + pad, y + tDY, r.w - pad, th,
+                            uiTheme_.sidebarHdr, true);
+    };
+    // Draw a small vector icon at ix, then the label after it — both centered
+    // vertically against the (roomier) row height.
     auto iconRow = [&](IconKind k, float ix, float ty, const std::wstring& txt,
                        const Color& tc, const Color& ic) {
-        const float isz = metrics_.cellH * 0.78f;
+        const float isz = th * 0.78f;
         renderer_->drawIcon(k, ix, ty + (rowH - isz) * 0.5f, isz, ic);
-        const float tx = ix + isz + 5.0f;
-        renderer_->drawText(txt, tx, ty, r.x + r.w - tx - pad, rowH, tc, false);
+        const float tx = ix + isz + 7.0f;
+        renderer_->drawText(txt, tx, ty + tDY, r.x + r.w - tx - pad, th, tc,
+                            false);
     };
 
-    renderer_->drawText(L"WORKSPACE", r.x + pad, y, r.w - pad, rowH, kSidebarHdr,
-                        true);
+    header(L"WORKSPACE");
     // "+" add-project button at the right of the header row.
     {
         const float bw = rowH;
-        const float bx = r.x + r.w - bw - 2.0f;
-        workspaceAddRect_ = { bx, y - 2.0f, bw, rowH };
-        renderer_->drawText(L"+", bx + bw * 0.28f, y, bw, rowH, kAccent, true);
+        const float bx = r.x + r.w - bw - pad * 0.5f;
+        workspaceAddRect_ = { bx, y, bw, rowH };
+        renderer_->drawText(L"+", bx + bw * 0.30f, y + tDY, bw, th,
+                            uiTheme_.accent, true);
     }
-    y += rowH + 2.0f;
+    y += rowH + 4.0f;
 
     auto& repos = workspace_.repos();
     if (repos.empty()) {
-        renderer_->drawText(L"(no git repos found)", r.x + pad, y, r.w - pad,
-                            rowH, kDim, false);
+        renderer_->drawText(L"(no git repos found)", r.x + pad, y + tDY,
+                            r.w - pad, th, uiTheme_.dim, false);
         y += rowH;
     }
-    const float iconSz = metrics_.cellH;  // square project icon
+    const float iconSz = th;  // square project icon
     for (int i = 0; i < static_cast<int>(repos.size()); ++i) {
         if (y > r.bottom()) break;
         Repo& repo = repos[i];
         // expand chevron, then a project icon, then the name.
-        renderer_->drawText(repo.expanded ? L"v" : L">", r.x + pad, y,
-                            metrics_.cellW * 1.5f, rowH, kDim, true);
+        renderer_->drawText(repo.expanded ? L"v" : L">", r.x + pad, y + tDY,
+                            metrics_.cellW * 1.5f, th, uiTheme_.dim, true);
         const float iconX = r.x + pad + metrics_.cellW * 1.5f;
         const float iconY = y + (rowH - iconSz) * 0.5f;
         std::wstring iconPath = resolveRepoIcon(repo);
@@ -72,16 +81,16 @@ void Window::drawLeftSidebar(const Rect& r) {
             renderer_->drawIcon(IconKind::Folder, iconX, iconY, iconSz,
                                 kRepoTints[i % 6]);
         }
-        const float nameX = iconX + iconSz + 6.0f;
-        renderer_->drawText(repo.name, nameX, y, r.x + r.w - nameX - pad, rowH,
-                            kText, true);
+        const float nameX = iconX + iconSz + 8.0f;
+        renderer_->drawText(repo.name, nameX, y + tDY, r.x + r.w - nameX - pad,
+                            th, uiTheme_.text, true);
         sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::RepoHeader, i, -1, L"" });
         y += rowH;
 
         if (repo.expanded) {
             for (int w = 0; w < static_cast<int>(repo.worktrees.size()); ++w) {
                 iconRow(IconKind::Branch, r.x + pad + metrics_.cellW * 2.0f, y,
-                        repo.worktrees[w].label, kDim, kAccent);
+                        repo.worktrees[w].label, uiTheme_.dim, uiTheme_.accent);
                 sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::Worktree, i, w, L"" });
                 y += rowH;
             }
@@ -90,12 +99,12 @@ void Window::drawLeftSidebar(const Rect& r) {
 
     // ---- SSH: configured hosts; click to open `ssh <host>` in a new tab -----
     if (!sshHosts_.empty()) {
-        y += rowH * 0.5f;
-        renderer_->drawText(L"SSH", r.x + pad, y, r.w - pad, rowH, kSidebarHdr, true);
-        y += rowH + 2.0f;
+        y += metrics_.sectionGap();
+        header(L"SSH");
+        y += rowH + 4.0f;
         for (int i = 0; i < static_cast<int>(sshHosts_.size()); ++i) {
             if (y > r.bottom()) break;
-            iconRow(IconKind::Globe, r.x + pad, y, sshHosts_[i], kText, kAccent);
+            iconRow(IconKind::Globe, r.x + pad, y, sshHosts_[i], uiTheme_.text, uiTheme_.accent);
             sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::SshHost, i, -1, L"" });
             y += rowH;
         }
@@ -103,12 +112,12 @@ void Window::drawLeftSidebar(const Rect& r) {
 
     // ---- AGENTS: configured agent sessions; click to open in a new tab ------
     if (!agents_.empty()) {
-        y += rowH * 0.5f;
-        renderer_->drawText(L"AGENTS", r.x + pad, y, r.w - pad, rowH, kSidebarHdr, true);
-        y += rowH + 2.0f;
+        y += metrics_.sectionGap();
+        header(L"AGENTS");
+        y += rowH + 4.0f;
         for (int i = 0; i < static_cast<int>(agents_.size()); ++i) {
             if (y > r.bottom()) break;
-            iconRow(IconKind::Spark, r.x + pad, y, agents_[i].name, kText, kAccent);
+            iconRow(IconKind::Spark, r.x + pad, y, agents_[i].name, uiTheme_.text, uiTheme_.accent);
             sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::Agent, i, -1, L"" });
             y += rowH;
         }
@@ -116,10 +125,12 @@ void Window::drawLeftSidebar(const Rect& r) {
 }
 
 void Window::drawFilesPanel(const Rect& r) {
-    renderer_->fillRect(r.x, r.y, r.w, r.h, kSidebarBg);
-    const float pad = 8.0f;
+    renderer_->fillRect(r.x, r.y, r.w, r.h, uiTheme_.sidebarBg);
+    const float pad = metrics_.sidebarPad();
     const float rowH = metrics_.rowH();
-    float y = r.y + 6.0f;
+    const float th = metrics_.cellH;
+    const float tDY = (rowH - th) * 0.5f;
+    float y = r.y + 10.0f;
 
     refreshFileList();
     std::wstring header = L"FILES";
@@ -128,26 +139,28 @@ void Window::drawFilesPanel(const Rect& r) {
         header += L"  " + (s == std::wstring::npos ? browsePath_
                                                    : browsePath_.substr(s + 1));
     }
-    renderer_->drawText(header, r.x + pad, y, r.w - pad, rowH, kSidebarHdr, true);
-    y += rowH + 2.0f;
+    renderer_->drawText(header, r.x + pad, y + tDY, r.w - pad, th,
+                        uiTheme_.sidebarHdr, true);
+    y += rowH + 4.0f;
 
-    const float isz = metrics_.cellH * 0.78f;
+    const float isz = th * 0.78f;
     auto iconRow = [&](IconKind k, const std::wstring& txt, const Color& tc,
                        const Color& ic) {
         renderer_->drawIcon(k, r.x + pad, y + (rowH - isz) * 0.5f, isz, ic);
-        const float tx = r.x + pad + isz + 5.0f;
-        renderer_->drawText(txt, tx, y, r.x + r.w - tx - pad, rowH, tc, false);
+        const float tx = r.x + pad + isz + 7.0f;
+        renderer_->drawText(txt, tx, y + tDY, r.x + r.w - tx - pad, th, tc,
+                            false);
     };
 
     if (!browsePath_.empty()) {
-        iconRow(IconKind::Up, L"..", kDim, kDim);
+        iconRow(IconKind::Up, L"..", uiTheme_.dim, uiTheme_.dim);
         sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::FileUp, -1, -1, L"" });
         y += rowH;
     }
     for (const FileEntry& e : fileEntries_) {
         if (y > r.bottom()) break;
         iconRow(e.isDir ? IconKind::Folder : IconKind::File, e.name,
-                e.isDir ? kText : kDim, e.isDir ? Color{ 220, 190, 110 } : kDim);
+                e.isDir ? uiTheme_.text : uiTheme_.dim, e.isDir ? Color{ 220, 190, 110 } : uiTheme_.dim);
         sidebarRows_.push_back(
             { { r.x, y, r.w, rowH },
               e.isDir ? RowKind::FileDir : RowKind::FileEntry, -1, -1, e.path });
@@ -189,7 +202,7 @@ void Window::refreshFileList() {
 
 void Window::drawTabBar(const Rect& r) {
     tabRects_.clear();
-    renderer_->fillRect(r.x, r.y, r.w, r.h, kTabBg);
+    renderer_->fillRect(r.x, r.y, r.w, r.h, uiTheme_.tabBg);
 
     const float pad = metrics_.cellW;
     float x = r.x;
@@ -203,11 +216,11 @@ void Window::drawTabBar(const Rect& r) {
         }
         const float tw = (static_cast<float>(title.size()) + 3.0f) * metrics_.cellW;
         const bool active = (i == activeTab_);
-        if (active) renderer_->fillRect(x, r.y, tw, r.h, kTabActiveBg);
+        if (active) renderer_->fillRect(x, r.y, tw, r.h, uiTheme_.tabActiveBg);
         renderer_->drawText(title, x + pad, r.y + 5.0f, tw - pad, metrics_.cellH,
-                            active ? kAccent : kDim, active);
+                            active ? uiTheme_.accent : uiTheme_.dim, active);
         if (active)
-            renderer_->fillRect(x, r.bottom() - 2.0f, tw, 2.0f, kAccent);
+            renderer_->fillRect(x, r.bottom() - 2.0f, tw, 2.0f, uiTheme_.accent);
         tabRects_.push_back({ x, r.y, tw, r.h });
         x += tw;
     }
@@ -216,7 +229,7 @@ void Window::drawTabBar(const Rect& r) {
     const float plusW = metrics_.cellW * 3.0f;
     plusRect_ = { x, r.y, plusW, r.h };
     renderer_->drawText(L"+", x + metrics_.cellW, r.y + 5.0f, plusW,
-                        metrics_.cellH, kDim, true);
+                        metrics_.cellH, uiTheme_.dim, true);
 
     // ---- top-right "☰" menu button (opens a native popup) ------------------
     const float bw = r.h;                 // square, tab-bar tall
@@ -224,10 +237,10 @@ void Window::drawTabBar(const Rect& r) {
     const float bx = r.x + r.w - bw;
     menuButtonRect_ = { bx, r.y, bw, r.h };
     // Highlight if keep-awake is on (a persistent state worth surfacing).
-    if (keepAwake_) renderer_->fillRect(bx, r.y, bw, r.h, kTabActiveBg);
+    if (keepAwake_) renderer_->fillRect(bx, r.y, bw, r.h, uiTheme_.tabActiveBg);
     renderer_->drawIcon(IconKind::Menu, bx + (bw - isz) * 0.5f,
                         r.y + (r.h - isz) * 0.5f, isz,
-                        keepAwake_ ? kAccent : kText);
+                        keepAwake_ ? uiTheme_.accent : uiTheme_.text);
 }
 
 void Window::drawPanes(const Rect& r) {
@@ -268,7 +281,7 @@ void Window::drawPanes(const Rect& r) {
         renderer_->drawGrid(leaf->session->grid(), pr.x + pad, pr.y + pad);
         renderer_->popClip();
         const bool focused = (leaf == t->active());
-        renderer_->strokeRect(pr.x, pr.y, pr.w, pr.h, focused ? kAccent : kBorder,
+        renderer_->strokeRect(pr.x, pr.y, pr.w, pr.h, focused ? uiTheme_.accent : uiTheme_.border,
                               focused ? 1.5f : 1.0f);
     }
 

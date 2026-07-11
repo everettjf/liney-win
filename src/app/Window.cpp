@@ -3,6 +3,7 @@
 #include <windowsx.h>  // GET_X_LPARAM / GET_WHEEL_DELTA_WPARAM
 #include <commdlg.h>   // ChooseFontW (the Font… picker)
 
+#include <cstdio>
 #include <memory>
 #include <string>
 
@@ -150,7 +151,11 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     projects_ = cfg.projects;
     workspaceRoot_ = cfg.workspaceRoot;
     theme_ = cfg.theme;
-    renderer_->setColors(theme_.background, theme_.background);
+    uiTheme_ = cfg.uiTheme;
+    themeName_ = cfg.themeName;
+    // Gutters/margins behind panes use the chrome's workspace color; panes
+    // fill with the terminal background themselves.
+    renderer_->setColors(uiTheme_.workspaceBg, theme_.background);
     applyFont();
 
     // Workspace root: config override, else the parent of the launch directory
@@ -609,9 +614,37 @@ std::wstring Window::keepAwakeStatus() const {
     return std::to_wstring(mins) + L"m left";
 }
 
+// "#RRGGBB" for a Color, for config persistence.
+static std::string colorToHex(const Color& c) {
+    char buf[8];
+    std::snprintf(buf, sizeof(buf), "#%02X%02X%02X", c.r, c.g, c.b);
+    return buf;
+}
+
+void Window::applyTheme(const std::wstring& presetName, const Color& accent) {
+    const auto presets = builtinThemePresets();
+    if (const ThemePreset* p = findThemePreset(presets, presetName)) {
+        themeName_ = p->name;
+        theme_ = p->terminal;
+        uiTheme_ = p->ui;
+    }
+    uiTheme_.accent = accent;  // override on top of the preset
+    renderer_->setColors(uiTheme_.workspaceBg, theme_.background);
+    // Push the terminal palette to every live session so the change is
+    // instant, not only for tabs opened afterward.
+    for (auto& tab : tabs_)
+        for (Pane* leaf : tab->leaves())
+            if (leaf->session) leaf->session->setTheme(theme_);
+    markRenderDirty();
+}
+
 void Window::openSettingsDialog() {
     SettingsValues v;
     v.shell = shell_;
+    v.fontFamily = fontFamily_;
+    v.fontSize = fontSize_;
+    v.themeName = themeName_;
+    v.accent = uiTheme_.accent;
     v.scrollback = scrollback_;
     v.copyOnSelect = copyOnSelect_;
     v.multiLinePasteWarning = multiLinePasteWarning_;
@@ -631,9 +664,27 @@ void Window::openSettingsDialog() {
         rescanWorkspace();
     }
 
-    // Persist, preserving keys the dialog doesn't edit (theme, hooks, …).
+    const bool fontChanged =
+        v.fontFamily != fontFamily_ || v.fontSize != fontSize_;
+    if (fontChanged) {
+        fontFamily_ = v.fontFamily;
+        fontSize_ = v.fontSize;
+        defaultFontSize_ = v.fontSize;
+        applyFont();
+    }
+    const bool themeChanged =
+        v.themeName != themeName_ || !(v.accent.r == uiTheme_.accent.r &&
+                                       v.accent.g == uiTheme_.accent.g &&
+                                       v.accent.b == uiTheme_.accent.b);
+    if (themeChanged) applyTheme(v.themeName, v.accent);
+
+    // Persist, preserving keys the dialog doesn't edit (hooks, sshHosts, …).
     updateConfigJson([&](Json& j) {
         j.set("shell", Json::str(wideToUtf8(shell_)));
+        j.set("fontFamily", Json::str(wideToUtf8(fontFamily_)));
+        j.set("fontSize", Json::number(fontSize_));
+        j.set("theme", Json::str(wideToUtf8(themeName_)));
+        j.set("accentColor", Json::str(colorToHex(uiTheme_.accent)));
         j.set("scrollback", Json::number(scrollback_));
         j.set("copyOnSelect", Json::boolean(copyOnSelect_));
         j.set("multiLinePasteWarning", Json::boolean(multiLinePasteWarning_));

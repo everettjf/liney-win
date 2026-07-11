@@ -85,6 +85,14 @@ std::wstring configDir() {
 
 Config loadConfig() {
     Config cfg;
+    // Seed the palette from the first built-in preset so an unset/partial
+    // theme still yields a coherent look (terminal + chrome together).
+    const std::vector<ThemePreset> presets = builtinThemePresets();
+    if (!presets.empty()) {
+        cfg.themeName = presets[0].name;
+        cfg.theme = presets[0].terminal;
+        cfg.uiTheme = presets[0].ui;
+    }
     const std::wstring dir = configDir();
     if (dir.empty()) return cfg;
     const std::wstring path = dir + L"\\config.json";
@@ -139,9 +147,18 @@ Config loadConfig() {
                     cfg.agents.push_back(d);
                 }
             }
-    // theme: { background, foreground, palette:[16] } (hex strings)
+    // theme: either a preset NAME (string, e.g. "Azure Night") that picks a
+    // coordinated terminal + chrome look, or the legacy { background,
+    // foreground, palette } OBJECT of terminal-only overrides.
     const Json& t = j["theme"];
-    if (t.isObject()) {
+    if (t.type() == Json::Type::String) {
+        if (const ThemePreset* p =
+                findThemePreset(presets, utf8ToWide(t.asString()))) {
+            cfg.themeName = p->name;
+            cfg.theme = p->terminal;
+            cfg.uiTheme = p->ui;
+        }
+    } else if (t.isObject()) {
         cfg.theme.background =
             hexToColor(t["background"].asString(), cfg.theme.background);
         cfg.theme.foreground =
@@ -151,6 +168,12 @@ Config loadConfig() {
             for (int k = 0; k < 16 && k < static_cast<int>(pal.size()); ++k)
                 cfg.theme.ansi[k] =
                     hexToColor(pal.items()[k].asString(), cfg.theme.ansi[k]);
+    }
+    // accentColor: "#RRGGBB" override for the chrome accent (active-pane
+    // divider / active tab / icons) on top of whatever preset is active.
+    if (j.contains("accentColor")) {
+        cfg.uiTheme.accent =
+            hexToColor(j["accentColor"].asString(), cfg.uiTheme.accent);
     }
 
     if (j.contains("unixTools")) cfg.unixTools = j["unixTools"].asBool(true);

@@ -5,6 +5,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/Themes.h"
 #include "render/Cell.h"
 #include "util/Json.h"
 
@@ -31,7 +32,9 @@ struct Config {
     std::wstring appExitHook;               // command run on app quit
     std::vector<std::wstring> sshHosts;     // e.g. "user@host"; sidebar SSH list
     std::vector<AgentDef> agents;           // sidebar AGENTS list
-    Theme theme;                            // colors (defaults = built-in palette)
+    std::wstring themeName;                  // active preset name (see Themes.h)
+    Theme theme;                            // terminal palette (preset + overrides)
+    UiTheme uiTheme;                        // chrome palette (preset + accent override)
     bool unixTools = true;                  // append Git's usr/bin to PATH (ls/cat/…)
     bool copyOnSelect = false;              // copy to clipboard as soon as a drag ends
     bool multiLinePasteWarning = true;      // confirm before pasting multiple lines
