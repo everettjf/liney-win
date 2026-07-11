@@ -106,7 +106,9 @@ std::wstring inputBox(HWND owner, const std::wstring& title,
 
     // Modal message loop. IsDialogMessage gives us Tab/Enter/Esc handling.
     MSG msg{};
-    while (!st.done && GetMessageW(&msg, nullptr, 0, 0)) {
+    BOOL gm;
+    while (!st.done && (gm = GetMessageW(&msg, nullptr, 0, 0)) != 0) {
+        if (gm == -1) break;  // GetMessage error: bail rather than dispatch junk
         if (!IsDialogMessageW(dlg, &msg)) {
             TranslateMessage(&msg);
             DispatchMessageW(&msg);

@@ -16,6 +16,8 @@ struct SettingsValues {
     float fontSize = 16.0f;          // logical point size
     std::wstring themeName;          // active theme preset (see Themes.h)
     Color accent{ 120, 200, 160 };   // chrome accent (divider / active tab)
+    bool accentExplicit = false;     // OUT: user picked a custom accent color
+    bool themePicked = false;        // OUT: user actively chose a preset
     int scrollback = 10000;          // history lines per session
     bool copyOnSelect = false;       // copy as soon as a selection ends
     bool multiLinePasteWarning = true;  // confirm multi-line pastes

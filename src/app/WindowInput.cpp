@@ -21,7 +21,10 @@ void Window::scrollActive(int lines) {
 int Window::activePaneRows() const {
     Tab* t = activeTab();
     if (!t || !t->active()) return 24;
-    int r = static_cast<int>(t->active()->rect.h / metrics_.cellH);
+    // Match the grid sizing (Tab::layoutRec): the terminal fills the pane
+    // minus its inner padding, so page scrolling stays a true page.
+    const float usable = t->active()->rect.h - metrics_.panePad() * 2.0f;
+    int r = static_cast<int>(usable / metrics_.cellH);
     return r < 1 ? 1 : r;
 }
 

@@ -38,6 +38,8 @@ struct State {
     HWND unixTools = nullptr;
     HWND root = nullptr;
     Color accent{ 120, 200, 160 };
+    bool accentChanged = false;   // user used the color picker
+    int themeInitialSel = 0;      // selection when the dialog opened
     bool done = false;
     bool accepted = false;
 };
@@ -136,6 +138,7 @@ LRESULT CALLBACK proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 st->accent = { static_cast<uint8_t>(GetRValue(cc.rgbResult)),
                                static_cast<uint8_t>(GetGValue(cc.rgbResult)),
                                static_cast<uint8_t>(GetBValue(cc.rgbResult)) };
+                st->accentChanged = true;
                 setAccentSwatch(st->accentSwatch, st->accent);
             }
             return 0;
@@ -230,6 +233,7 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
         cx + cw - 80, cy, 44, 24, dlg,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdFontSize)), inst,
         nullptr);
+    SendMessageW(st.fontSize, EM_LIMITTEXT, 3, 0);  // <= 3 digits (no overflow)
     CreateWindowExW(0, L"STATIC", L"pt", WS_CHILD | WS_VISIBLE, cx + cw - 30,
                     cy + 4, 24, 18, dlg, nullptr, inst, nullptr);
     cy += 34;
@@ -250,6 +254,7 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
             ++idx;
         }
         SendMessageW(st.theme, CB_SETCURSEL, sel, 0);
+        st.themeInitialSel = sel;
     }
     cy += 34;
 
@@ -272,6 +277,7 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
         100, 24, dlg,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdScrollback)), inst,
         nullptr);
+    SendMessageW(st.scrollback, EM_LIMITTEXT, 7, 0);  // <= 1,000,000 cap fits
     cy += 34;
 
     label(L"Workspace root");
@@ -334,7 +340,9 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
     if (owner) EnableWindow(owner, FALSE);
 
     MSG msg{};
-    while (!st.done && GetMessageW(&msg, nullptr, 0, 0)) {
+    BOOL gm;
+    while (!st.done && (gm = GetMessageW(&msg, nullptr, 0, 0)) != 0) {
+        if (gm == -1) break;  // GetMessage error: bail rather than dispatch junk
         if (!IsDialogMessageW(dlg, &msg)) {
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
@@ -359,12 +367,14 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
             v.fontSize = static_cast<float>(pt);
         }
         const int ti = static_cast<int>(SendMessageW(st.theme, CB_GETCURSEL, 0, 0));
+        v.themePicked = (ti != st.themeInitialSel);  // did the user switch?
         if (ti >= 0) {
             const auto presets = builtinThemePresets();
             if (ti < static_cast<int>(presets.size()))
                 v.themeName = presets[ti].name;
         }
         v.accent = st.accent;
+        v.accentExplicit = st.accentChanged;
         const std::wstring sb = windowText(st.scrollback);
         int lines = v.scrollback;
         if (!sb.empty()) {

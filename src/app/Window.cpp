@@ -105,8 +105,14 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     int w = waW * 7 / 10, h = waH * 7 / 10;
     if (w < width) w = width;
     if (h < height) h = height;
-    const int x = wa.left + (waW - w) / 2;
-    const int y = wa.top + (waH - h) / 2;
+    // Never exceed the work area (a tiny screen would otherwise push the
+    // centered origin negative and open the title bar off the top/left edge).
+    if (w > waW) w = waW;
+    if (h > waH) h = waH;
+    int x = wa.left + (waW - w) / 2;
+    int y = wa.top + (waH - h) / 2;
+    if (x < wa.left) x = wa.left;
+    if (y < wa.top) y = wa.top;
 
     hwnd_ = CreateWindowExW(0, kClassName, title, WS_OVERLAPPEDWINDOW,
                             x, y, w, h, nullptr, nullptr, hInstance, this);
@@ -333,9 +339,9 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
     case WM_TIMER:
         if (wParam == kKeepAwakeTimerId) {
+            // setKeepAwake(0) already shows a "Keep awake: off" balloon; don't
+            // add a second one for the same event.
             setKeepAwake(0);
-            showBalloon(L"liney-win",
-                        L"Keep awake ended — normal sleep resumed");
             return 0;
         }
         return DefWindowProcW(hwnd_, msg, wParam, lParam);
@@ -672,18 +678,31 @@ void Window::openSettingsDialog() {
         defaultFontSize_ = v.fontSize;
         applyFont();
     }
-    const bool themeChanged =
-        v.themeName != themeName_ || !(v.accent.r == uiTheme_.accent.r &&
-                                       v.accent.g == uiTheme_.accent.g &&
-                                       v.accent.b == uiTheme_.accent.b);
-    if (themeChanged) applyTheme(v.themeName, v.accent);
+
+    // Theme: only switch preset when the user actively picked one (so opening
+    // Settings on a legacy overrides-object theme and clicking OK doesn't
+    // force a preset). Accent: an explicit color pick wins; otherwise a newly
+    // picked preset brings its own designed accent instead of the old one.
+    const std::wstring targetTheme = v.themePicked ? v.themeName : themeName_;
+    Color accent = uiTheme_.accent;
+    if (v.accentExplicit) {
+        accent = v.accent;
+    } else if (v.themePicked) {
+        const auto presets = builtinThemePresets();
+        if (const ThemePreset* p = findThemePreset(presets, targetTheme))
+            accent = p->ui.accent;
+    }
+    const bool themeChanged = v.themePicked || v.accentExplicit;
+    if (themeChanged) applyTheme(targetTheme, accent);
 
     // Persist, preserving keys the dialog doesn't edit (hooks, sshHosts, …).
     updateConfigJson([&](Json& j) {
         j.set("shell", Json::str(wideToUtf8(shell_)));
         j.set("fontFamily", Json::str(wideToUtf8(fontFamily_)));
         j.set("fontSize", Json::number(fontSize_));
-        j.set("theme", Json::str(wideToUtf8(themeName_)));
+        // Only rewrite `theme` when a preset was chosen — leave a hand-authored
+        // overrides object untouched otherwise.
+        if (v.themePicked) j.set("theme", Json::str(wideToUtf8(themeName_)));
         j.set("accentColor", Json::str(colorToHex(uiTheme_.accent)));
         j.set("scrollback", Json::number(scrollback_));
         j.set("copyOnSelect", Json::boolean(copyOnSelect_));

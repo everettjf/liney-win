@@ -31,7 +31,7 @@ void Window::drawLeftSidebar(const Rect& r) {
 
     // A section header ("WORKSPACE" / "SSH" / "AGENTS"), vertically centered.
     auto header = [&](const wchar_t* txt) {
-        renderer_->drawText(txt, r.x + pad, y + tDY, r.w - pad, th,
+        renderer_->drawText(txt, r.x + pad, y + tDY, r.w - pad * 2.0f, th,
                             uiTheme_.sidebarHdr, true);
     };
     // Draw a small vector icon at ix, then the label after it — both centered
@@ -89,6 +89,7 @@ void Window::drawLeftSidebar(const Rect& r) {
 
         if (repo.expanded) {
             for (int w = 0; w < static_cast<int>(repo.worktrees.size()); ++w) {
+                if (y > r.bottom()) break;  // don't emit rows past the panel
                 iconRow(IconKind::Branch, r.x + pad + metrics_.cellW * 2.0f, y,
                         repo.worktrees[w].label, uiTheme_.dim, uiTheme_.accent);
                 sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::Worktree, i, w, L"" });
@@ -139,7 +140,7 @@ void Window::drawFilesPanel(const Rect& r) {
         header += L"  " + (s == std::wstring::npos ? browsePath_
                                                    : browsePath_.substr(s + 1));
     }
-    renderer_->drawText(header, r.x + pad, y + tDY, r.w - pad, th,
+    renderer_->drawText(header, r.x + pad, y + tDY, r.w - pad * 2.0f, th,
                         uiTheme_.sidebarHdr, true);
     y += rowH + 4.0f;
 

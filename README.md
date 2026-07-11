@@ -56,9 +56,12 @@ nothing but the OS.
 - **Find** (`Ctrl+F`) — highlights every match in view and **searches the whole
   scrollback**: `Enter`/`F3` jump match-to-match up through history,
   `Shift+Enter` walks back down
-- **Fonts** — a native **Font… picker** (☰ menu, monospace-filtered), zoom via
-  `Ctrl +/-/0` or **`Ctrl+Wheel`**, both remembered across launches; configurable
-  **color theme** (fg/bg + full 16-color ANSI palette)
+- **Fonts** — pick any monospace family + size in **Settings**, or zoom via
+  `Ctrl +/-/0` / **`Ctrl+Wheel`**; all remembered across launches
+- **Themes** — **7 built-in presets** (Emerald / Azure / Violet Night, Amber
+  Dark, Rose Dark, Slate Frost, Paper Light), a live-preview theme dropdown,
+  and a **custom accent color** picker for the active-pane divider / tab —
+  plus full fg/bg + 16-color ANSI overrides for power users
 - **Unix tools** — with Git for Windows installed, `ls` / `cat` / `grep` / `rm` /
   `sed` / `awk` / … work in any shell
 
@@ -74,8 +77,10 @@ nothing but the OS.
 
 **⚡ Built-in tooling**
 - A top-right **☰ menu**: keep-awake · settings · check-for-updates · report-an-issue
-- **Settings… dialog** — click-to-configure shell, scrollback, workspace root,
-  copy-on-select, paste warning, Unix tools (config.json stays hand-editable)
+- **Settings… dialog** — click-to-configure shell, font & size, theme &
+  accent, scrollback, workspace root, copy-on-select, paste warning, Unix
+  tools; applied live and saved without disturbing hand-edited keys
+  (config.json stays fully editable too)
 - **Keep awake** (`Ctrl+Shift+K`) — block system/display sleep for **1 / 2 / 3 /
   6 / 24 hours or until turned off**, with the remaining time in the menu
 - **Git**: `Ctrl+Shift+L/G` open `git log` / `git diff` in a new tab
