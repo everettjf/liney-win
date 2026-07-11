@@ -23,6 +23,10 @@ struct Metrics {
     float tabBarH() const { return cellH + 10.0f; }
     float rowH() const { return cellH + 4.0f; }         // sidebar row height
     float gutter() const { return 1.0f; }               // gap between split panes
+    // Inner padding between a pane's border and its terminal grid, so text
+    // doesn't press against the frame (the norm in Windows Terminal/Ghostty).
+    // Derived from the cell so it scales with font size and DPI.
+    float panePad() const { return cellH * 0.35f; }
 };
 
 } // namespace liney

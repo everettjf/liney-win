@@ -339,8 +339,9 @@ bool Window::paneCellAt(const Pane* p, int px, int py, int& cx, int& cy) const {
     if (!p || !p->session) return false;
     const Grid& g = p->session->grid();
     if (g.cols < 1 || g.rows < 1) return false;
-    int x = static_cast<int>((px - p->rect.x) / metrics_.cellW);
-    int y = static_cast<int>((py - p->rect.y) / metrics_.cellH);
+    const float pad = metrics_.panePad();
+    int x = static_cast<int>((px - p->rect.x - pad) / metrics_.cellW);
+    int y = static_cast<int>((py - p->rect.y - pad) / metrics_.cellH);
     cx = x < 0 ? 0 : (x >= g.cols ? g.cols - 1 : x);
     cy = y < 0 ? 0 : (y >= g.rows ? g.rows - 1 : y);
     return true;
@@ -487,13 +488,15 @@ bool Window::forwardMouse(int action, int button, int xi, int yi) {
         return false;
     }
     const Rect& pr = leaf->rect;
+    const float pad = metrics_.panePad();
     const std::string seq = s->encodeMouse(
-        action, button, static_cast<float>(xi) - pr.x,
-        static_cast<float>(yi) - pr.y, false, keyDown(VK_CONTROL),
+        action, button, static_cast<float>(xi) - pr.x - pad,
+        static_cast<float>(yi) - pr.y - pad, false, keyDown(VK_CONTROL),
         keyDown(VK_MENU), mouseButtonsDown_ != 0,
         static_cast<unsigned>(metrics_.cellW),
-        static_cast<unsigned>(metrics_.cellH), static_cast<unsigned>(pr.w),
-        static_cast<unsigned>(pr.h));
+        static_cast<unsigned>(metrics_.cellH),
+        static_cast<unsigned>(pr.w - pad * 2.0f),
+        static_cast<unsigned>(pr.h - pad * 2.0f));
     if (action == 0 && button >= 1 && button <= 3)
         mouseButtonsDown_ |= 1 << button;
     else if (action == 1)

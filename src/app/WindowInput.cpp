@@ -70,8 +70,9 @@ void Window::cursorPixelPos(int& px, int& py) const {
     if (t && t->active() && t->active()->session) {
         const Grid& g = t->active()->session->grid();
         const Rect r = t->active()->rect;
-        px = static_cast<int>(r.x + g.cursorX * metrics_.cellW);
-        py = static_cast<int>(r.y + g.cursorY * metrics_.cellH);
+        const float pad = metrics_.panePad();
+        px = static_cast<int>(r.x + pad + g.cursorX * metrics_.cellW);
+        py = static_cast<int>(r.y + pad + g.cursorY * metrics_.cellH);
     } else {
         px = 0;
         py = 0;

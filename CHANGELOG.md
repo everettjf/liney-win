@@ -6,7 +6,27 @@ All notable changes to liney-win. Versioning follows [SemVer](https://semver.org
 ## [Unreleased]
 
 Hardening pass from a full-codebase review + on-Windows verification: crash
-and data-loss fixes, terminal correctness, and rendering resilience.
+and data-loss fixes, terminal correctness, and rendering resilience. Plus a
+feature-alignment pass with macOS liney: GUI settings, keep-awake durations,
+and UI polish.
+
+### Added
+- **Settings… dialog** — a click-to-configure window (shell for new tabs with
+  a detected-shells dropdown, scrollback, workspace root with Browse…,
+  copy-on-select, multi-line paste warning, Unix tools), applied live and
+  persisted to config.json without touching keys it doesn't edit. Editing
+  config.json by hand still works ("Open config file" in the menu).
+- **Keep awake durations** — the ☰ menu entry is now a submenu: 1 / 2 / 3 /
+  6 / 24 hours or "Until turned off" (the PowerToys-Awake/Amphetamine
+  pattern), with the remaining time shown in the menu, a tray balloon when
+  the timer ends, and `Ctrl+Shift+K` still toggling on/off.
+- **Report an issue…** menu item opening the GitHub issue tracker.
+
+### Changed
+- **Terminal panes have inner padding** — the grid no longer presses against
+  the pane border (matches Windows Terminal / Ghostty defaults; scales with
+  font size and DPI). Mouse hit-testing, IME placement, and mouse reporting
+  account for it.
 
 ### Fixed
 - **Stack buffer overflow on long grapheme clusters** — a cell whose cluster

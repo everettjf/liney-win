@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 
+#include "app/SettingsDialog.h"
 #include "app/WindowInternal.h"
 #include "core/Config.h"
 #include "core/RenderSignal.h"
@@ -21,6 +22,9 @@ static const wchar_t* kClassName = L"LineyWinMainWindow";
 // notifications / title / update / pane reaping — still run), instead of the old
 // unconditional 60fps. Real input / PTY output repaints immediately.
 static constexpr UINT kIdleRenderMs = 100;
+
+// One-shot timer id for keep-awake auto-expiry (see setKeepAwake).
+static constexpr UINT_PTR kKeepAwakeTimerId = 0x4B41;  // 'KA'
 
 // Monitor DPI as a 96-relative scale. GetDpiForWindow is Win10 1607+, so load it
 // dynamically and fall back to the device caps.
@@ -115,6 +119,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     copyOnSelect_ = cfg.copyOnSelect;
     multiLinePasteWarning_ = cfg.multiLinePasteWarning;
     scrollback_ = cfg.scrollback;
+    unixToolsEnabled_ = cfg.unixTools;
     if (cfg.unixTools) addGitUnixToolsToPath();  // ls/cat/grep/… in spawned shells
     // cmd shell integration: prepend an OSC 7 cwd report to PROMPT so the files
     // panel can follow `cd` (cmd.exe doesn't emit OSC 7 on its own). $e=ESC,
@@ -309,6 +314,14 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
         // Posted by off-thread producers to pop the message wait; the repaint
         // decision happens back in runMessageLoop. Nothing to do here.
         return 0;
+    case WM_TIMER:
+        if (wParam == kKeepAwakeTimerId) {
+            setKeepAwake(0);
+            showBalloon(L"liney-win",
+                        L"Keep awake ended — normal sleep resumed");
+            return 0;
+        }
+        break;
     case WM_DESTROY:
         removeTray();
         PostQuitMessage(0);
@@ -419,8 +432,9 @@ TerminalSession* Window::activeSession() const {
 }
 
 void Window::cellsForRect(const Rect& r, int& cols, int& rows) const {
-    cols = static_cast<int>(r.w / metrics_.cellW);
-    rows = static_cast<int>(r.h / metrics_.cellH);
+    const float pad2 = metrics_.panePad() * 2.0f;
+    cols = static_cast<int>((r.w - pad2) / metrics_.cellW);
+    rows = static_cast<int>((r.h - pad2) / metrics_.cellH);
     if (cols < 1) cols = 1;
     if (rows < 1) rows = 1;
 }
@@ -545,15 +559,75 @@ void Window::chooseFontDialog() {
     saveFontSize(fontSize_);
 }
 
-void Window::toggleKeepAwake() {
-    keepAwake_ = !keepAwake_;
+void Window::setKeepAwake(int hours) {
+    KillTimer(hwnd_, kKeepAwakeTimerId);
+    keepAwakeHours_ = hours;
+    keepAwake_ = hours != 0;
+    keepAwakeUntil_ = 0;
     // ES_CONTINUOUS persists the request; SYSTEM/DISPLAY keep both awake.
     SetThreadExecutionState(keepAwake_
         ? (ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED)
         : ES_CONTINUOUS);
-    showBalloon(L"liney-win",
-                keepAwake_ ? L"Keep awake: on — sleep is blocked"
-                           : L"Keep awake: off");
+    if (hours > 0) {
+        const ULONGLONG ms = static_cast<ULONGLONG>(hours) * 3600ull * 1000ull;
+        keepAwakeUntil_ = GetTickCount64() + ms;
+        // USER_TIMER_MAXIMUM is ~24.8 days, so a single shot covers 24h.
+        SetTimer(hwnd_, kKeepAwakeTimerId, static_cast<UINT>(ms), nullptr);
+        showBalloon(L"liney-win",
+                    L"Keep awake: on for " + std::to_wstring(hours) +
+                        (hours == 1 ? L" hour" : L" hours"));
+    } else if (hours < 0) {
+        showBalloon(L"liney-win", L"Keep awake: on until turned off");
+    } else {
+        showBalloon(L"liney-win", L"Keep awake: off");
+    }
+}
+
+void Window::toggleKeepAwake() { setKeepAwake(keepAwake_ ? 0 : -1); }
+
+std::wstring Window::keepAwakeStatus() const {
+    if (!keepAwake_) return L"";
+    if (keepAwakeUntil_ == 0) return L"until turned off";
+    const ULONGLONG now = GetTickCount64();
+    if (now >= keepAwakeUntil_) return L"ending…";
+    const ULONGLONG mins = (keepAwakeUntil_ - now + 59999) / 60000;
+    if (mins >= 60)
+        return std::to_wstring(mins / 60) + L"h " + std::to_wstring(mins % 60) +
+               L"m left";
+    return std::to_wstring(mins) + L"m left";
+}
+
+void Window::openSettingsDialog() {
+    SettingsValues v;
+    v.shell = shell_;
+    v.scrollback = scrollback_;
+    v.copyOnSelect = copyOnSelect_;
+    v.multiLinePasteWarning = multiLinePasteWarning_;
+    v.unixTools = unixToolsEnabled_;
+    v.workspaceRoot = workspaceRoot_;
+    if (!showSettingsDialog(hwnd_, v)) return;
+
+    // Apply live. Shell/scrollback affect sessions started from now on.
+    shell_ = v.shell;
+    scrollback_ = v.scrollback;
+    copyOnSelect_ = v.copyOnSelect;
+    multiLinePasteWarning_ = v.multiLinePasteWarning;
+    if (v.unixTools && !unixToolsEnabled_) addGitUnixToolsToPath();
+    unixToolsEnabled_ = v.unixTools;
+    if (v.workspaceRoot != workspaceRoot_) {
+        workspaceRoot_ = v.workspaceRoot;
+        rescanWorkspace();
+    }
+
+    // Persist, preserving keys the dialog doesn't edit (theme, hooks, …).
+    updateConfigJson([&](Json& j) {
+        j.set("shell", Json::str(wideToUtf8(shell_)));
+        j.set("scrollback", Json::number(scrollback_));
+        j.set("copyOnSelect", Json::boolean(copyOnSelect_));
+        j.set("multiLinePasteWarning", Json::boolean(multiLinePasteWarning_));
+        j.set("unixTools", Json::boolean(unixToolsEnabled_));
+        j.set("workspaceRoot", Json::str(wideToUtf8(workspaceRoot_)));
+    });
 }
 
 void Window::openConfigFile() {
@@ -571,7 +645,29 @@ void Window::openMainMenu() {
     auto item = [&](UINT id, const wchar_t* text, bool checked = false) {
         AppendMenuW(m, MF_STRING | (checked ? MF_CHECKED : 0), id, text);
     };
-    item(1, L"Keep awake\tCtrl+Shift+K", keepAwake_);
+
+    // Keep awake ▸ duration presets (Amphetamine / PowerToys Awake pattern).
+    // Command ids 20..26; the active preset carries a radio check.
+    HMENU awake = CreatePopupMenu();
+    struct AwakeOpt { UINT id; int hours; const wchar_t* label; };
+    static const AwakeOpt kAwake[] = {
+        { 20, 0, L"Off" },        { 21, 1, L"For 1 hour" },
+        { 22, 2, L"For 2 hours" },{ 23, 3, L"For 3 hours" },
+        { 24, 6, L"For 6 hours" },{ 25, 24, L"For 24 hours" },
+        { 26, -1, L"Until turned off" },
+    };
+    for (const AwakeOpt& o : kAwake) {
+        AppendMenuW(awake, MF_STRING, o.id, o.label);
+        if (o.hours == keepAwakeHours_)
+            CheckMenuRadioItem(awake, 20, 26, o.id, MF_BYCOMMAND);
+    }
+    std::wstring awakeLabel = L"Keep awake";
+    const std::wstring status = keepAwakeStatus();
+    if (!status.empty()) awakeLabel += L" (" + status + L")";
+    awakeLabel += L"\tCtrl+Shift+K";
+    AppendMenuW(m, MF_POPUP | (keepAwake_ ? MF_CHECKED : 0),
+                reinterpret_cast<UINT_PTR>(awake), awakeLabel.c_str());
+
     item(2, L"Show sidebar\tCtrl+Shift+B", sidebarVisible_);
     item(3, L"Show files panel\tCtrl+Shift+F", filesPanelVisible_);
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
@@ -580,15 +676,17 @@ void Window::openMainMenu() {
     item(6, L"Split stacked\tShift+Alt+D");
     item(9, L"Find on screen…\tCtrl+F");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    item(11, L"Settings…");
     item(10, L"Font…");
-    item(7, L"Settings (config.json)…");
+    item(7, L"Open config file (config.json)");
+    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    item(12, L"Report an issue…");
     item(8, L"Check for updates\tCtrl+Shift+U");
 
     const int cmd = TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTALIGN, pt.x, pt.y,
                                    0, hwnd_, nullptr);
-    DestroyMenu(m);
+    DestroyMenu(m);  // also frees the submenu
     switch (cmd) {
-    case 1: toggleKeepAwake(); break;
     case 2: sidebarVisible_ = !sidebarVisible_; break;
     case 3: filesPanelVisible_ = !filesPanelVisible_; break;
     case 4: newTab(activeSession() ? activeSession()->cwd() : workspace_.root()); break;
@@ -598,6 +696,16 @@ void Window::openMainMenu() {
     case 8: checkForUpdates(); break;
     case 9: openFind(); break;
     case 10: chooseFontDialog(); break;
+    case 11: openSettingsDialog(); break;
+    case 12:
+        ShellExecuteW(hwnd_, L"open",
+                      L"https://github.com/everettjf/liney-win/issues/new",
+                      nullptr, nullptr, SW_SHOWNORMAL);
+        break;
+    case 20: case 21: case 22: case 23: case 24: case 25: case 26:
+        for (const AwakeOpt& o : kAwake)
+            if (o.id == static_cast<UINT>(cmd)) { setKeepAwake(o.hours); break; }
+        break;
     default: break;
     }
 }

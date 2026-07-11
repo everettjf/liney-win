@@ -71,8 +71,14 @@ private:
     void chooseFontDialog(); // native font picker (fixed-pitch); persists config
 
     // Top-right menu + quick actions.
-    void toggleKeepAwake();  // prevent/allow system+display sleep (caffeine)
+    // Keep awake (caffeine): block system+display sleep for a fixed duration
+    // or until turned off. hours: 0 = off, -1 = until turned off (forever).
+    // Mirrors the duration-preset pattern of PowerToys Awake / Amphetamine.
+    void setKeepAwake(int hours);
+    void toggleKeepAwake();  // Ctrl+Shift+K: forever <-> off
+    std::wstring keepAwakeStatus() const;  // e.g. "on — 1h 12m left" for menus
     void openConfigFile();   // open %USERPROFILE%\.liney\config.json in the editor
+    void openSettingsDialog();  // GUI settings; applies + persists on OK
     void openMainMenu();     // native popup menu for the top-right "☰" button
     void openTabMenu(int x, int y);  // right-click a tab: close / open in explorer…
     void closeTab(size_t idx);       // close an entire tab (all its panes)
@@ -158,6 +164,8 @@ private:
     bool sidebarVisible_ = true;      // left WORKSPACE/SSH/AGENTS panel
     bool filesPanelVisible_ = false;  // right FILES (folder tree) panel (Ctrl+Shift+F)
     bool keepAwake_ = false;          // SetThreadExecutionState keep-awake state
+    int keepAwakeHours_ = 0;          // active preset (-1 forever, 0 off, else hours)
+    ULONGLONG keepAwakeUntil_ = 0;    // GetTickCount64 deadline (0 = no deadline)
     bool pendingMaximize_ = false;    // restore a maximized window on first show
 
     std::wstring shell_ = L"cmd.exe";
@@ -228,6 +236,7 @@ private:
     bool selDragged_ = false;      // the drag left its press cell at least once
     bool copyOnSelect_ = false;    // copy to clipboard as soon as a selection ends
     bool multiLinePasteWarning_ = true;  // confirm before pasting multiple lines
+    bool unixToolsEnabled_ = true; // Git's usr/bin appended to shells' PATH
     int mouseButtonsDown_ = 0;     // forwarded-to-app buttons, bitmask by number
 
     // Double / triple-click tracking (for word / line selection).

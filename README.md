@@ -73,8 +73,11 @@ nothing but the OS.
 - **Layout persistence** — tabs + split tree + per-pane cwd restored next launch
 
 **⚡ Built-in tooling**
-- A top-right **quick-access toolbar**: keep-awake · settings · check-for-updates
-- **Keep awake** (`Ctrl+Shift+K`) — block system/display sleep for long-running jobs
+- A top-right **☰ menu**: keep-awake · settings · check-for-updates · report-an-issue
+- **Settings… dialog** — click-to-configure shell, scrollback, workspace root,
+  copy-on-select, paste warning, Unix tools (config.json stays hand-editable)
+- **Keep awake** (`Ctrl+Shift+K`) — block system/display sleep for **1 / 2 / 3 /
+  6 / 24 hours or until turned off**, with the remaining time in the menu
 - **Git**: `Ctrl+Shift+L/G` open `git log` / `git diff` in a new tab
 - **Notifications**: a `liney notify` CLI + OSC `9`/`777` → Windows tray balloons
 - **Lifecycle hooks** on session start/exit and app exit

@@ -31,8 +31,11 @@ void layoutRec(Pane* p, const Rect& area, const Metrics& m) {
     p->rect = area;
     if (p->leaf()) {
         if (p->session) {
-            int cols = static_cast<int>(area.w / m.cellW);
-            int rows = static_cast<int>(area.h / m.cellH);
+            // The grid sits inside the pane's inner padding (see
+            // Metrics::panePad); size the terminal to the padded area.
+            const float pad2 = m.panePad() * 2.0f;
+            int cols = static_cast<int>((area.w - pad2) / m.cellW);
+            int rows = static_cast<int>((area.h - pad2) / m.cellH);
             if (cols < 1) cols = 1;
             if (rows < 1) rows = 1;
             p->session->resize(cols, rows, static_cast<int>(m.cellW),

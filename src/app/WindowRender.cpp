@@ -264,7 +264,8 @@ void Window::drawPanes(const Rect& r) {
         // bleed into the sidebar or the right files panel.
         renderer_->fillRect(pr.x, pr.y, pr.w, pr.h, theme_.background);
         renderer_->pushClip(pr.x, pr.y, pr.w, pr.h);
-        renderer_->drawGrid(leaf->session->grid(), pr.x, pr.y);
+        const float pad = metrics_.panePad();
+        renderer_->drawGrid(leaf->session->grid(), pr.x + pad, pr.y + pad);
         renderer_->popClip();
         const bool focused = (leaf == t->active());
         renderer_->strokeRect(pr.x, pr.y, pr.w, pr.h, focused ? kAccent : kBorder,
