@@ -3,6 +3,38 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
+## [0.4.0] — 2026-07-11
+
+Customization + polish, aligning further with macOS liney.
+
+### Added
+- **Theme presets** — 7 built-in coordinated looks (Emerald / Azure / Violet
+  Night, Amber Dark, Rose Dark, Slate Frost, Paper Light), each pairing a
+  terminal palette with matching chrome. Pick one in Settings and it applies
+  live across every open pane.
+- **Custom accent color** — the active-pane divider / active tab / icon color
+  is now user-configurable via a color picker in Settings (or `accentColor`
+  in config.json). Overrides the preset's accent when set.
+- **Font in Settings** — choose any installed monospace family and size from
+  the Settings dialog (the ☰ Font… picker still works too).
+
+### Changed
+- **Chrome is fully themeable** — sidebar, tab strip, borders, accent and
+  gutters are runtime values driven by the active theme, not hardcoded.
+- **Roomier sidebar** — taller rows, real section gaps, larger inset, and text
+  vertically centered in each row, so the WORKSPACE / SSH / AGENTS list reads
+  less cramped. The files panel matches.
+- `config.json` `theme` now accepts a **preset name** (e.g. `"Azure Night"`)
+  in addition to the legacy `{ background, foreground, palette }` object.
+
+### Fixed
+- Switching theme presets brings that preset's own accent instead of pinning
+  the previous one; opening Settings on a legacy overrides-object theme no
+  longer force-rewrites it to a preset.
+- The default window is clamped to the monitor work area (no off-screen title
+  bar on small screens); page-scroll and find account for pane padding;
+  numeric Settings fields can't overflow; keep-awake expiry shows one balloon.
+
 ## [0.3.0] — 2026-07-11
 
 Hardening pass from a full-codebase review + on-Windows verification: crash
