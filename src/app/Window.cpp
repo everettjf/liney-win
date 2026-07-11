@@ -741,6 +741,11 @@ void Window::openMainMenu() {
         AppendMenuW(m, MF_STRING | (checked ? MF_CHECKED : 0), id, text);
     };
 
+    // A grayed app/version header, then the actions grouped by purpose.
+    AppendMenuW(m, MF_STRING | MF_DISABLED | MF_GRAYED, 0,
+                (std::wstring(L"liney-win ") + kAppVersion).c_str());
+    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+
     // Keep awake ▸ duration presets (Amphetamine / PowerToys Awake pattern).
     // Command ids 20..26; the active preset carries a radio check.
     HMENU awake = CreatePopupMenu();
@@ -771,7 +776,7 @@ void Window::openMainMenu() {
     item(6, L"Split stacked\tShift+Alt+D");
     item(9, L"Find on screen…\tCtrl+F");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    item(11, L"Settings…");
+    item(11, L"Settings…\tCtrl+,");
     item(10, L"Font…");
     item(7, L"Open config file (config.json)");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);

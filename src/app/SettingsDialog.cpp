@@ -37,6 +37,8 @@ struct State {
     HWND pasteWarn = nullptr;
     HWND unixTools = nullptr;
     HWND root = nullptr;
+    HWND accentHex = nullptr;     // "#RRGGBB" caption next to the swatch
+    HBRUSH accentBrush = nullptr; // fills the swatch via WM_CTLCOLORSTATIC
     Color accent{ 120, 200, 160 };
     bool accentChanged = false;   // user used the color picker
     int themeInitialSel = 0;      // selection when the dialog opened
@@ -68,10 +70,17 @@ std::vector<std::wstring> monospaceFonts() {
     return out;
 }
 
-void setAccentSwatch(HWND swatch, const Color& c) {
-    wchar_t buf[16];
-    swprintf_s(buf, L"#%02X%02X%02X", c.r, c.g, c.b);
-    SetWindowTextW(swatch, buf);
+// Refresh the accent swatch: rebuild its fill brush and repaint, and update
+// the hex caption beside it.
+void setAccentSwatch(State* st) {
+    if (st->accentBrush) DeleteObject(st->accentBrush);
+    st->accentBrush = CreateSolidBrush(RGB(st->accent.r, st->accent.g, st->accent.b));
+    if (st->accentSwatch) InvalidateRect(st->accentSwatch, nullptr, TRUE);
+    if (st->accentHex) {
+        wchar_t buf[16];
+        swprintf_s(buf, L"#%02X%02X%02X", st->accent.r, st->accent.g, st->accent.b);
+        SetWindowTextW(st->accentHex, buf);
+    }
 }
 
 std::wstring windowText(HWND h) {
@@ -139,13 +148,19 @@ LRESULT CALLBACK proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                                static_cast<uint8_t>(GetGValue(cc.rgbResult)),
                                static_cast<uint8_t>(GetBValue(cc.rgbResult)) };
                 st->accentChanged = true;
-                setAccentSwatch(st->accentSwatch, st->accent);
+                setAccentSwatch(st);
             }
             return 0;
         }
         default:
             break;
         }
+        break;
+    case WM_CTLCOLORSTATIC:
+        // Paint the accent swatch as a solid color chip.
+        if (st && reinterpret_cast<HWND>(lParam) == st->accentSwatch &&
+            st->accentBrush)
+            return reinterpret_cast<LRESULT>(st->accentBrush);
         break;
     case WM_CLOSE:
         if (st) st->done = true;
@@ -174,77 +189,84 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
         registered = true;
     }
 
-    const int w = 460, h = 470;
+    // Per-monitor DPI: lay the dialog out in logical (96-dpi) units and scale.
+    const UINT dpi = owner ? GetDpiForWindow(owner) : 96;
+    auto S = [dpi](int px) { return MulDiv(px, static_cast<int>(dpi), 96); };
+
+    // Logical layout grid.
+    const int W = 500;                 // client width
+    const int M = 16;                  // outer margin
+    const int labelX = M + 14;         // label column inside a group
+    const int ctrlX = M + 104;         // control column
+    const int ctrlR = W - M - 14;      // control right edge
+    const int ctrlW = ctrlR - ctrlX;
+    const int ch = 24;                 // control height
+
+    State st;
+    st.accent = v.accent;
+
+    // Size the window so the *client* area is exactly W × contentH.
+    const int contentH = 470;
+    RECT wr{ 0, 0, S(W), S(contentH) };
+    const DWORD style = WS_POPUP | WS_CAPTION | WS_SYSMENU;
+    AdjustWindowRectExForDpi(&wr, style, FALSE, WS_EX_DLGMODALFRAME, dpi);
+    const int winW = wr.right - wr.left, winH = wr.bottom - wr.top;
+
     RECT orc{};
     if (owner) GetWindowRect(owner, &orc);
     else { orc.left = 200; orc.top = 200; orc.right = 900; orc.bottom = 700; }
-    const int x = orc.left + ((orc.right - orc.left) - w) / 2;
-    const int y = orc.top + ((orc.bottom - orc.top) - h) / 2;
+    const int x = orc.left + ((orc.right - orc.left) - winW) / 2;
+    const int y = orc.top + ((orc.bottom - orc.top) - winH) / 2;
 
-    HWND dlg = CreateWindowExW(
-        WS_EX_DLGMODALFRAME, kClass, L"liney-win Settings",
-        WS_POPUP | WS_CAPTION | WS_SYSMENU, x, y, w, h, owner, nullptr, inst,
-        nullptr);
+    HWND dlg = CreateWindowExW(WS_EX_DLGMODALFRAME, kClass, L"Settings", style,
+                               x, y, winW, winH, owner, nullptr, inst, nullptr);
     if (!dlg) return false;
-
-    State st;
     SetWindowLongPtrW(dlg, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&st));
 
-    const int lx = 14;         // label column
-    const int cx = 150;        // control column
-    const int cw = w - cx - 30;  // control width
-    int cy = 14;
-    auto label = [&](const wchar_t* text) {
-        CreateWindowExW(0, L"STATIC", text, WS_CHILD | WS_VISIBLE, lx, cy + 4,
-                        cx - lx - 6, 18, dlg, nullptr, inst, nullptr);
+    // Scaled control factory + a couple of shorthands.
+    auto mk = [&](DWORD ex, const wchar_t* cls, const wchar_t* txt, DWORD s,
+                  int lx, int ly, int lw, int lh, int id) -> HWND {
+        return CreateWindowExW(ex, cls, txt, s, S(lx), S(ly), S(lw), S(lh), dlg,
+                               reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
+                               inst, nullptr);
+    };
+    auto group = [&](const wchar_t* title, int gy, int gh) {
+        mk(0, L"BUTTON", title, WS_CHILD | WS_VISIBLE | BS_GROUPBOX, M, gy,
+           W - 2 * M, gh, -1);
+    };
+    auto label = [&](const wchar_t* text, int ly) {
+        // Right-aligned in the column between the group's left edge and the
+        // control column (ends ~10px before the controls start).
+        mk(0, L"STATIC", text, WS_CHILD | WS_VISIBLE | SS_RIGHT, M, ly + 4,
+           ctrlX - M - 12, 18, -1);
     };
 
-    // Shell: editable dropdown seeded with the shells found on PATH.
-    label(L"Shell for new tabs");
-    st.shell = CreateWindowExW(
-        0, L"COMBOBOX", L"",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWN | CBS_AUTOHSCROLL,
-        cx, cy, cw, 200, dlg,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdShell)), inst, nullptr);
-    for (const std::wstring& s : detectShells())
-        SendMessageW(st.shell, CB_ADDSTRING, 0,
-                     reinterpret_cast<LPARAM>(s.c_str()));
-    SetWindowTextW(st.shell, v.shell.c_str());
-    cy += 34;
-
-    // Font family: dropdown of installed monospace faces (editable so an
-    // unlisted family can still be typed).
-    label(L"Font");
-    st.font = CreateWindowExW(
-        0, L"COMBOBOX", L"",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWN | CBS_AUTOHSCROLL |
-            WS_VSCROLL,
-        cx, cy, cw - 90, 260, dlg,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdFont)), inst, nullptr);
+    // ---- Appearance -------------------------------------------------------
+    group(L"Appearance", 10, 132);
+    int r = 32;
+    // Font family (editable monospace dropdown) + size.
+    label(L"Font", r);
+    st.font = mk(0, L"COMBOBOX", L"",
+                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWN |
+                     CBS_AUTOHSCROLL | WS_VSCROLL,
+                 ctrlX, r, ctrlW - 66, 260, kIdFont);
     for (const std::wstring& f : monospaceFonts())
         SendMessageW(st.font, CB_ADDSTRING, 0,
                      reinterpret_cast<LPARAM>(f.c_str()));
     SetWindowTextW(st.font, v.fontFamily.c_str());
-    // Font size (points), just to the right of the family box.
-    st.fontSize = CreateWindowExW(
-        WS_EX_CLIENTEDGE, L"EDIT", std::to_wstring(static_cast<int>(v.fontSize))
-                                       .c_str(),
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_NUMBER | ES_CENTER,
-        cx + cw - 80, cy, 44, 24, dlg,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdFontSize)), inst,
-        nullptr);
-    SendMessageW(st.fontSize, EM_LIMITTEXT, 3, 0);  // <= 3 digits (no overflow)
-    CreateWindowExW(0, L"STATIC", L"pt", WS_CHILD | WS_VISIBLE, cx + cw - 30,
-                    cy + 4, 24, 18, dlg, nullptr, inst, nullptr);
-    cy += 34;
-
-    // Theme preset dropdown + accent color.
-    label(L"Theme");
-    st.theme = CreateWindowExW(
-        0, L"COMBOBOX", L"",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL, cx,
-        cy, cw, 240, dlg,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdTheme)), inst, nullptr);
+    st.fontSize = mk(WS_EX_CLIENTEDGE, L"EDIT",
+                     std::to_wstring(static_cast<int>(v.fontSize)).c_str(),
+                     WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_NUMBER | ES_CENTER,
+                     ctrlR - 46, r, 30, ch, kIdFontSize);
+    SendMessageW(st.fontSize, EM_LIMITTEXT, 3, 0);
+    mk(0, L"STATIC", L"pt", WS_CHILD | WS_VISIBLE, ctrlR - 12, r + 4, 16, 18, -1);
+    r += 32;
+    // Theme preset.
+    label(L"Theme", r);
+    st.theme = mk(0, L"COMBOBOX", L"",
+                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST |
+                      WS_VSCROLL,
+                  ctrlX, r, ctrlW, 260, kIdTheme);
     {
         int sel = 0, idx = 0;
         for (const ThemePreset& p : builtinThemePresets()) {
@@ -256,87 +278,94 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
         SendMessageW(st.theme, CB_SETCURSEL, sel, 0);
         st.themeInitialSel = sel;
     }
-    cy += 34;
+    r += 32;
+    // Accent color: a color chip + Choose… + hex caption.
+    label(L"Accent", r);
+    st.accentSwatch = mk(WS_EX_STATICEDGE, L"STATIC", L"",
+                         WS_CHILD | WS_VISIBLE, ctrlX, r, 34, ch, -1);
+    mk(0, L"BUTTON", L"Choose…", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+       ctrlX + 44, r, 84, ch, kIdAccent);
+    st.accentHex = mk(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE, ctrlX + 138,
+                      r + 4, 90, 18, -1);
+    setAccentSwatch(&st);
 
-    label(L"Accent color");
-    st.accent = v.accent;
-    CreateWindowExW(0, L"BUTTON", L"Choose…",
-                    WS_CHILD | WS_VISIBLE | WS_TABSTOP, cx, cy, 84, 24, dlg,
-                    reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdAccent)),
-                    inst, nullptr);
-    st.accentSwatch = CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE,
-                                      cx + 94, cy + 4, 90, 18, dlg, nullptr,
-                                      inst, nullptr);
-    setAccentSwatch(st.accentSwatch, st.accent);
-    cy += 34;
-
-    label(L"Scrollback lines");
-    st.scrollback = CreateWindowExW(
-        WS_EX_CLIENTEDGE, L"EDIT", std::to_wstring(v.scrollback).c_str(),
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL | ES_NUMBER, cx, cy,
-        100, 24, dlg,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdScrollback)), inst,
-        nullptr);
-    SendMessageW(st.scrollback, EM_LIMITTEXT, 7, 0);  // <= 1,000,000 cap fits
-    cy += 34;
-
-    label(L"Workspace root");
-    st.root = CreateWindowExW(
-        WS_EX_CLIENTEDGE, L"EDIT", v.workspaceRoot.c_str(),
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, cx, cy, cw - 80,
-        24, dlg, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdRoot)), inst,
-        nullptr);
-    CreateWindowExW(0, L"BUTTON", L"Browse…",
-                    WS_CHILD | WS_VISIBLE | WS_TABSTOP, cx + cw - 74, cy, 74,
-                    24, dlg,
-                    reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdBrowse)),
-                    inst, nullptr);
-    cy += 30;
-    CreateWindowExW(0, L"STATIC", L"(empty = the parent of the launch folder)",
-                    WS_CHILD | WS_VISIBLE, cx, cy, cw, 16, dlg, nullptr, inst,
-                    nullptr);
-    cy += 28;
-
-    auto checkbox = [&](int id, const wchar_t* text, bool checked) {
-        HWND c = CreateWindowExW(
-            0, L"BUTTON", text,
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, lx, cy,
-            w - lx * 2, 22, dlg,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), inst, nullptr);
+    // ---- Terminal ---------------------------------------------------------
+    group(L"Terminal", 152, 172);
+    r = 174;
+    label(L"Shell", r);
+    st.shell = mk(0, L"COMBOBOX", L"",
+                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWN |
+                      CBS_AUTOHSCROLL,
+                  ctrlX, r, ctrlW, 200, kIdShell);
+    for (const std::wstring& s : detectShells())
+        SendMessageW(st.shell, CB_ADDSTRING, 0,
+                     reinterpret_cast<LPARAM>(s.c_str()));
+    SetWindowTextW(st.shell, v.shell.c_str());
+    r += 32;
+    label(L"Scrollback", r);
+    st.scrollback = mk(WS_EX_CLIENTEDGE, L"EDIT",
+                       std::to_wstring(v.scrollback).c_str(),
+                       WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL |
+                           ES_NUMBER,
+                       ctrlX, r, 90, ch, kIdScrollback);
+    SendMessageW(st.scrollback, EM_LIMITTEXT, 7, 0);
+    mk(0, L"STATIC", L"lines of history per pane", WS_CHILD | WS_VISIBLE,
+       ctrlX + 100, r + 4, ctrlR - ctrlX - 100, 18, -1);
+    r += 32;
+    auto checkbox = [&](int id, const wchar_t* text, bool checked, int cyRow) {
+        HWND c = mk(0, L"BUTTON", text,
+                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, labelX,
+                    cyRow, ctrlR - labelX, 20, id);
         SendMessageW(c, BM_SETCHECK, checked ? BST_CHECKED : BST_UNCHECKED, 0);
-        cy += 26;
         return c;
     };
     st.copyOnSelect = checkbox(kIdCopyOnSelect,
                                L"Copy to clipboard when a selection ends",
-                               v.copyOnSelect);
+                               v.copyOnSelect, r);
+    r += 26;
     st.pasteWarn = checkbox(kIdPasteWarn,
                             L"Warn before pasting multiple lines",
-                            v.multiLinePasteWarning);
+                            v.multiLinePasteWarning, r);
+    r += 26;
     st.unixTools = checkbox(
-        kIdUnixTools,
-        L"Unix tools: add Git's ls / grep / sed … to shells' PATH",
-        v.unixTools);
-    cy += 8;
+        kIdUnixTools, L"Unix tools — add Git's ls / grep / sed … to PATH",
+        v.unixTools, r);
 
-    CreateWindowExW(0, L"BUTTON", L"OK",
-                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
-                    w - 190, cy, 80, 27, dlg,
-                    reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDOK)), inst,
-                    nullptr);
-    CreateWindowExW(0, L"BUTTON", L"Cancel",
-                    WS_CHILD | WS_VISIBLE | WS_TABSTOP, w - 102, cy, 80, 27,
-                    dlg, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDCANCEL)),
-                    inst, nullptr);
+    // ---- Workspace --------------------------------------------------------
+    group(L"Workspace", 334, 84);
+    r = 356;
+    label(L"Root", r);
+    st.root = mk(WS_EX_CLIENTEDGE, L"EDIT", v.workspaceRoot.c_str(),
+                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, ctrlX, r,
+                 ctrlW - 80, ch, kIdRoot);
+    mk(0, L"BUTTON", L"Browse…", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+       ctrlR - 74, r, 74, ch, kIdBrowse);
+    r += 30;
+    mk(0, L"STATIC", L"Empty = the parent of the launch folder.",
+       WS_CHILD | WS_VISIBLE, ctrlX, r, ctrlW, 16, -1);
 
-    HFONT font = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+    // ---- OK / Cancel ------------------------------------------------------
+    mk(0, L"BUTTON", L"OK",
+       WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, ctrlR - 178, 430,
+       84, 28, IDOK);
+    mk(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE | WS_TABSTOP, ctrlR - 84,
+       430, 84, 28, IDCANCEL);
+
+    // A real Segoe UI font at the monitor's DPI — the biggest single upgrade
+    // over the legacy bitmap DEFAULT_GUI_FONT.
+    HFONT uiFont = CreateFontW(-MulDiv(9, static_cast<int>(dpi), 72), 0, 0, 0,
+                               FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                               OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                               CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
+                               L"Segoe UI");
+    if (!uiFont) uiFont = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
     EnumChildWindows(dlg, [](HWND child, LPARAM f) -> BOOL {
         SendMessageW(child, WM_SETFONT, static_cast<WPARAM>(f), TRUE);
         return TRUE;
-    }, reinterpret_cast<LPARAM>(font));
+    }, reinterpret_cast<LPARAM>(uiFont));
 
     ShowWindow(dlg, SW_SHOW);
-    SetFocus(st.shell);
+    SetFocus(st.font);
     if (owner) EnableWindow(owner, FALSE);
 
     MSG msg{};
@@ -397,6 +426,11 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
     if (owner) EnableWindow(owner, TRUE);
     DestroyWindow(dlg);
     if (owner) SetForegroundWindow(owner);
+    // Release the GDI objects we created for the dialog.
+    if (uiFont &&
+        uiFont != reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT)))
+        DeleteObject(uiFont);
+    if (st.accentBrush) DeleteObject(st.accentBrush);
     return st.accepted;
 }
 

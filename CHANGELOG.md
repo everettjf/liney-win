@@ -3,6 +3,21 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
+## [0.5.0] — 2026-07-12
+
+A polish pass on the Settings dialog and the ☰ menu.
+
+### Changed
+- **Redesigned Settings dialog** — the flat, cramped list is now three labelled
+  sections (**Appearance** / **Terminal** / **Workspace**) drawn in **Segoe UI**
+  and **scaled to the monitor's DPI** (crisp on HiDPI instead of the old bitmap
+  font). The accent picker shows a real **color chip** next to its hex value,
+  and controls are aligned in a clean two-column grid.
+- **☰ menu** gains an app/version header and clearer grouping.
+
+### Added
+- **`Ctrl+,`** opens Settings (the usual shortcut; also shown in the menu).
+
 ## [0.4.1] — 2026-07-11
 
 ### Added
