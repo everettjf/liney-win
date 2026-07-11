@@ -3,7 +3,7 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
-## [Unreleased]
+## [0.4.1] — 2026-07-11
 
 ### Added
 - **Tab close button** — each tab shows an **×** (on the active tab and on

@@ -5,8 +5,8 @@
 1 ICON "liney.ico"
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,4,0,0
- PRODUCTVERSION 0,4,0,0
+ FILEVERSION 0,4,1,0
+ PRODUCTVERSION 0,4,1,0
  FILEFLAGSMASK 0x3fL
  FILEFLAGS 0x0L
  FILEOS 0x40004L
@@ -19,12 +19,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "everettjf"
             VALUE "FileDescription", "liney-win terminal workspace"
-            VALUE "FileVersion", "0.4.0.0"
+            VALUE "FileVersion", "0.4.1.0"
             VALUE "InternalName", "liney_win"
             VALUE "LegalCopyright", "Apache-2.0 License"
             VALUE "OriginalFilename", "liney_win.exe"
             VALUE "ProductName", "liney-win"
-            VALUE "ProductVersion", "0.4.0.0"
+            VALUE "ProductVersion", "0.4.1.0"
         END
     END
     BLOCK "VarFileInfo"
