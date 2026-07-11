@@ -102,7 +102,7 @@ void Window::pollNotifications() {
 void Window::checkForUpdates() {
     showBalloon(L"liney-win", L"Checking for updates…");
     // Query GitHub off the UI thread; renderFrame shows the result + prompt.
-    std::thread([this]() {
+    updateThreads_.emplace_back([this]() {
         const std::string body = httpsGet(
             L"api.github.com", L"/repos/everettjf/liney-win/releases/latest");
         std::wstring msg, url;
@@ -144,7 +144,7 @@ void Window::checkForUpdates() {
             pendingUpdate_ = pending;
         }
         updateReady_ = true;
-    }).detach();
+    });
 }
 
 void Window::startDownloadAndInstall(const std::wstring& url) {
@@ -162,7 +162,7 @@ void Window::startDownloadAndInstall(const std::wstring& url) {
     const std::wstring out = std::wstring(tmp) + L"liney-win-setup.exe";
 
     showBalloon(L"liney-win", L"Downloading update…");
-    std::thread([this, host, path, out]() {
+    updateThreads_.emplace_back([this, host, path, out]() {
         const bool dl = httpsDownload(host, path, out);
         {
             std::lock_guard<std::mutex> lk(updateMutex_);
@@ -171,7 +171,7 @@ void Window::startDownloadAndInstall(const std::wstring& url) {
         }
         if (dl) installerReady_ = true;
         else updateReady_ = true;
-    }).detach();
+    });
 }
 
 void Window::pollUpdateResult() {
@@ -238,11 +238,7 @@ void Window::saveLayout() const {
         root.set("window", std::move(w));
     }
 
-    std::ofstream f((dir + L"\\layout.json").c_str(), std::ios::binary);
-    if (f) {
-        const std::string s = root.dump(2);
-        f.write(s.data(), static_cast<std::streamsize>(s.size()));
-    }
+    writeFileAtomic(dir + L"\\layout.json", root.dump(2));
 }
 
 std::unique_ptr<Pane> Window::paneFromJson(const Json& j, int cols, int rows) {
@@ -292,11 +288,28 @@ bool Window::restoreLayout() {
     // rect (MoveWindow fires WM_SIZE synchronously). Done before show().
     const Json& w = root["window"];
     if (w.isObject()) {
-        const int x = static_cast<int>(w["x"].asNumber(0));
-        const int y = static_cast<int>(w["y"].asNumber(0));
+        int x = static_cast<int>(w["x"].asNumber(0));
+        int y = static_cast<int>(w["y"].asNumber(0));
         const int ww = static_cast<int>(w["w"].asNumber(0));
         const int hh = static_cast<int>(w["h"].asNumber(0));
-        if (ww >= 200 && hh >= 150) MoveWindow(hwnd_, x, y, ww, hh, FALSE);
+        if (ww >= 200 && hh >= 150) {
+            // The saved position may be on a monitor that's gone (undocked
+            // laptop, unplugged display) — restoring it verbatim leaves the
+            // window fully off-screen and the app looks like it didn't start.
+            // Snap the rect into the work area of the nearest live monitor.
+            RECT r{ x, y, x + ww, y + hh };
+            HMONITOR mon = MonitorFromRect(&r, MONITOR_DEFAULTTONEAREST);
+            MONITORINFO mi{};
+            mi.cbSize = sizeof(mi);
+            if (GetMonitorInfoW(mon, &mi)) {
+                const RECT& wa = mi.rcWork;
+                if (x + ww > wa.right) x = wa.right - ww;
+                if (y + hh > wa.bottom) y = wa.bottom - hh;
+                if (x < wa.left) x = wa.left;
+                if (y < wa.top) y = wa.top;
+            }
+            MoveWindow(hwnd_, x, y, ww, hh, FALSE);
+        }
         pendingMaximize_ = w["maximized"].asBool(false);
     }
 
@@ -365,36 +378,19 @@ void Window::setProjectIcon(const Repo& repo) {
 }
 
 void Window::persistWorkspaceConfig() {
-    const std::wstring dir = configDir();
-    if (dir.empty()) return;
-    const std::wstring path = dir + L"\\config.json";
+    // updateConfigJson preserves other keys, writes atomically, and refuses
+    // to clobber a config.json that no longer parses.
+    updateConfigJson([this](Json& root) {
+        Json projs = Json::array();
+        for (const std::wstring& p : projects_)
+            projs.push(Json::str(wideToUtf8(p)));
+        root.set("projects", std::move(projs));
 
-    // Load the existing config so other fields (theme/hooks/…) are preserved.
-    Json root = Json::object();
-    {
-        std::ifstream f(path.c_str(), std::ios::binary);
-        if (f) {
-            std::ostringstream ss;
-            ss << f.rdbuf();
-            bool ok = false;
-            Json parsed = Json::parse(ss.str(), &ok);
-            if (ok && parsed.isObject()) root = std::move(parsed);
-        }
-    }
-    Json projs = Json::array();
-    for (const std::wstring& p : projects_) projs.push(Json::str(wideToUtf8(p)));
-    root.set("projects", std::move(projs));
-
-    Json icons = Json::object();
-    for (const auto& pi : projectIcons_)
-        icons.set(wideToUtf8(pi.first), Json::str(wideToUtf8(pi.second)));
-    root.set("projectIcons", std::move(icons));
-
-    std::ofstream o(path.c_str(), std::ios::binary);
-    if (o) {
-        const std::string s = root.dump(2);
-        o.write(s.data(), static_cast<std::streamsize>(s.size()));
-    }
+        Json icons = Json::object();
+        for (const auto& pi : projectIcons_)
+            icons.set(wideToUtf8(pi.first), Json::str(wideToUtf8(pi.second)));
+        root.set("projectIcons", std::move(icons));
+    });
 }
 
 } // namespace liney

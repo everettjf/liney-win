@@ -54,10 +54,7 @@ std::string readFile(const std::wstring& path) {
 }
 
 bool writeFile(const std::wstring& path, const std::string& content) {
-    std::ofstream f(path.c_str(), std::ios::binary);
-    if (!f) return false;
-    f.write(content.data(), static_cast<std::streamsize>(content.size()));
-    return f.good();
+    return writeFileAtomic(path, content);
 }
 
 std::string defaultJson(const Config& c) {
@@ -100,7 +97,16 @@ Config loadConfig() {
 
     bool ok = false;
     Json j = Json::parse(text, &ok);
-    if (!ok || !j.isObject()) return cfg;  // malformed: fall back to defaults
+    if (!ok || !j.isObject()) {
+        // Malformed config: warn once instead of silently acting as if the
+        // user's settings vanished, then run with defaults. The file is left
+        // untouched so it can be fixed (saves also refuse to clobber it).
+        MessageBoxW(nullptr,
+                    (L"config.json could not be parsed; using default "
+                     L"settings.\n\nFix or delete:\n" + path).c_str(),
+                    L"liney — invalid config", MB_OK | MB_ICONWARNING);
+        return cfg;
+    }
 
     if (j.contains("shell")) cfg.shell = utf8ToWide(j["shell"].asString());
     if (j.contains("fontFamily"))
@@ -182,9 +188,15 @@ void updateConfigFile(Fn mutate) {
     if (dir.empty()) return;
     const std::wstring path = dir + L"\\config.json";
     const std::string text = readFile(path);
-    bool ok = false;
-    Json j = text.empty() ? Json::object() : Json::parse(text, &ok);
-    if (!j.isObject()) j = Json::object();
+    Json j = Json::object();
+    if (!text.empty()) {
+        bool ok = false;
+        j = Json::parse(text, &ok);
+        // The file exists but doesn't parse (hand-edit typo, corruption).
+        // Skip the save: dropping one setting update is recoverable, silently
+        // rewriting the file with a near-empty object is not.
+        if (!ok || !j.isObject()) return;
+    }
     mutate(j);
     writeFile(path, j.dump(2));
 }
@@ -197,6 +209,29 @@ void saveFontSize(float size) {
 void saveFontFamily(const std::wstring& family) {
     updateConfigFile(
         [&](Json& j) { j.set("fontFamily", Json::str(wideToUtf8(family))); });
+}
+
+// Write via a temp file + atomic rename so a crash/power loss mid-write can't
+// leave a truncated JSON file behind.
+bool writeFileAtomic(const std::wstring& path, const std::string& content) {
+    const std::wstring tmp = path + L".tmp";
+    {
+        std::ofstream f(tmp.c_str(), std::ios::binary | std::ios::trunc);
+        if (!f) return false;
+        f.write(content.data(), static_cast<std::streamsize>(content.size()));
+        f.flush();
+        if (!f.good()) return false;
+    }
+    if (!MoveFileExW(tmp.c_str(), path.c_str(),
+                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        DeleteFileW(tmp.c_str());
+        return false;
+    }
+    return true;
+}
+
+void updateConfigJson(const std::function<void(Json&)>& mutate) {
+    updateConfigFile([&](Json& j) { mutate(j); });
 }
 
 } // namespace liney

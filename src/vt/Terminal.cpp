@@ -51,7 +51,27 @@ bool Terminal::create(int cols, int rows, int scrollback) {
         return false;
     if (ghostty_render_state_row_cells_new(nullptr, &rowCells_) != GHOSTTY_SUCCESS)
         return false;
+
+    // Route query responses (DSR/CPR, DA1/DA2, DECRQM, XTWINOPS…) back to the
+    // PTY. Without this callback the core silently drops them and programs
+    // that probe the terminal (vim, ncurses apps) stall waiting for a reply.
+    ghostty_terminal_set(terminal_, GHOSTTY_TERMINAL_OPT_USERDATA, this);
+    ghostty_terminal_set(
+        terminal_, GHOSTTY_TERMINAL_OPT_WRITE_PTY,
+        reinterpret_cast<const void*>(+[](GhosttyTerminal, void* userdata,
+                                          const uint8_t* data, size_t len) {
+            auto* self = static_cast<Terminal*>(userdata);
+            // Fires inside ghostty_terminal_vt_write, i.e. with mutex_ held on
+            // the PTY reader thread — don't touch terminal state here.
+            if (self->ptyWriter_)
+                self->ptyWriter_(reinterpret_cast<const char*>(data), len);
+        }));
     return true;
+}
+
+void Terminal::setPtyWriter(PtyWriter writer) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    ptyWriter_ = std::move(writer);
 }
 
 void Terminal::write(const char* data, size_t len) {
@@ -157,15 +177,20 @@ bool Terminal::snapshotInto(Grid& grid) {
                     rowCells_, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_LEN,
                     &glen);
                 if (glen > 0) {
-                    if (glen > 16) glen = 16;
-                    uint32_t cps[16];
+                    // GRAPHEMES_BUF writes the cell's FULL cluster (glen
+                    // elements, unbounded — think Zalgo text), so the buffer
+                    // must really be glen long; a fixed stack array would be
+                    // an overflow driven by whatever the child process prints.
+                    graphemeBuf_.resize(glen);
                     // GRAPHEMES_BUF takes the buffer pointer directly (see
                     // Ghostling main.c), not its address.
                     ghostty_render_state_row_cells_get(
                         rowCells_,
-                        GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF, cps);
+                        GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF,
+                        graphemeBuf_.data());
                     cell.ch.clear();
-                    for (uint32_t i = 0; i < glen; ++i) appendUtf16(cps[i], cell.ch);
+                    for (uint32_t i = 0; i < glen; ++i)
+                        appendUtf16(graphemeBuf_[i], cell.ch);
                 }
                 ++x;
             }
@@ -527,6 +552,31 @@ std::wstring Terminal::oscTitle() {
     return utf8ToWide(s.ptr, s.len);
 }
 
+// Decode %XX escapes in a file:// URI path. Operates on UTF-8 bytes so
+// multi-byte sequences (%E4%B8%AD for CJK) reassemble correctly.
+static std::string percentDecode(const std::string& in) {
+    auto hex = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    std::string out;
+    out.reserve(in.size());
+    for (size_t i = 0; i < in.size(); ++i) {
+        if (in[i] == '%' && i + 2 < in.size()) {
+            int hi = hex(in[i + 1]), lo = hex(in[i + 2]);
+            if (hi >= 0 && lo >= 0) {
+                out.push_back(static_cast<char>(hi * 16 + lo));
+                i += 2;
+                continue;
+            }
+        }
+        out.push_back(in[i]);
+    }
+    return out;
+}
+
 bool Terminal::takeCwd(std::wstring& out) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!terminal_) return false;
@@ -534,14 +584,17 @@ bool Terminal::takeCwd(std::wstring& out) {
     if (ghostty_terminal_get(terminal_, GHOSTTY_TERMINAL_DATA_PWD, &s) !=
             GHOSTTY_SUCCESS || s.len == 0)
         return false;
-    std::wstring cwd = utf8ToWide(s.ptr, s.len);
-    // OSC 7 reports file://host/C:/path — strip the scheme + host to a path.
-    if (cwd.rfind(L"file://", 0) == 0) {
-        size_t slash = cwd.find(L'/', 7);  // end of host
-        cwd = (slash == std::wstring::npos) ? L"" : cwd.substr(slash + 1);
-        if (cwd.size() >= 2 && cwd[1] == L':') {}  // keep "C:/..."
-        for (wchar_t& ch : cwd) if (ch == L'/') ch = L'\\';
+    std::string raw(reinterpret_cast<const char*>(s.ptr), s.len);
+    // OSC 7 reports file://host/C:/path with %XX-escaped specials (spaces,
+    // CJK) — strip the scheme + host, then percent-decode the UTF-8 bytes.
+    if (raw.rfind("file://", 0) == 0) {
+        size_t slash = raw.find('/', 7);  // end of host
+        raw = (slash == std::string::npos) ? "" : raw.substr(slash + 1);
+        raw = percentDecode(raw);
     }
+    std::wstring cwd = utf8ToWide(
+        reinterpret_cast<const uint8_t*>(raw.data()), raw.size());
+    for (wchar_t& ch : cwd) if (ch == L'/') ch = L'\\';
     if (cwd.empty() || cwd == lastCwd_) return false;
     lastCwd_ = cwd;
     out = cwd;

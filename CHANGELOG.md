@@ -3,6 +3,55 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
+## [Unreleased]
+
+Hardening pass from a full-codebase review + on-Windows verification: crash
+and data-loss fixes, terminal correctness, and rendering resilience.
+
+### Fixed
+- **Stack buffer overflow on long grapheme clusters** — a cell whose cluster
+  holds more than 16 codepoints (Zalgo-style combining marks in program
+  output) overflowed a fixed stack buffer in the render snapshot; the buffer
+  now sizes to the real cluster length.
+- **Terminal query responses are now answered** — the core's `WRITE_PTY`
+  callback was never installed, so DSR/CPR (`CSI 6n`), DA1/DA2, DECRQM and
+  XTWINOPS queries were silently dropped and probing TUI apps could stall.
+- **config.json can no longer be wiped** — a hand-edit typo used to make the
+  next font-size save rewrite the whole file as a near-empty object. Saves now
+  refuse to clobber an unparseable config, load warns once instead of
+  silently using defaults, and all config/layout writes are atomic
+  (temp file + rename).
+- **JSON parser hardening** — a nesting-depth cap (corrupted config/layout
+  files crashed the app at startup via stack overflow), and lone/mismatched
+  `\u` surrogates now decode to U+FFFD instead of invalid UTF-8.
+- **Device-lost recovery + WARP fallback** — a GPU driver update / TDR reset
+  used to freeze the window permanently (`EndDraw`/`Present` results were
+  ignored); the renderer now rebuilds the device, and machines with no usable
+  GPU fall back to software rendering instead of failing to launch.
+- **Mouse hit-testing matched to the drawn grid** — the renderer drew at a
+  fractional cell pitch while hit-testing used a rounded size, drifting up to
+  several columns on wide windows; the cell is now pixel-snapped so clicks,
+  selection, and the IME caret land exactly.
+- **Large pastes no longer freeze the window** — PTY input writes moved off
+  the UI thread onto a queued writer.
+- **Color emoji** — 🚀✅ and friends render in color (the atlas tinted them as
+  monochrome silhouettes before).
+- **Exited shells are reaped everywhere** — a shell that dies in a background
+  tab now closes its pane immediately (previously it lingered until the tab
+  was focused), and child exit wakes the UI loop.
+- **OSC 7 cwd is percent-decoded** — directories with spaces or CJK in the
+  path now track correctly in the files panel and new-tab cwd.
+- **Window restore is clamped to a live monitor** — quitting on a
+  since-disconnected display no longer restores the window fully off-screen.
+- The update-check/download threads are joined at exit (previously a
+  use-after-free race), WinHTTP calls carry timeouts, atlas overflow no
+  longer corrupts glyphs mid-frame, the window repaints during interactive
+  resize and while menus/dialogs are open, worktree names are validated and
+  git's real error text is shown on failure, `liney notify` payloads are
+  sanitized (control bytes/`;`) and stdout is binary, tab titles no longer
+  split surrogate pairs, and Ctrl+zoom honors the full configured font-size
+  range.
+
 ## [0.2.0] — 2026-07-07
 
 The "daily-driver terminal" release: everything the VT core already parsed is

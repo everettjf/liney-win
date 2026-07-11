@@ -1,10 +1,12 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "render/Cell.h"
+#include "util/Json.h"
 
 namespace liney {
 
@@ -53,5 +55,14 @@ void saveFontSize(float size);
 // Persist just the fontFamily, same parse → set → dump approach as
 // saveFontSize. Used by the in-app font picker.
 void saveFontFamily(const std::wstring& family);
+
+// Write `content` via temp file + atomic rename, so a crash mid-write can't
+// leave a truncated file. Returns false on failure (target left untouched).
+bool writeFileAtomic(const std::wstring& path, const std::string& content);
+
+// Re-parse config.json, apply `mutate`, write it back atomically. Preserves
+// every other key; refuses to overwrite a config.json that no longer parses
+// (so a hand-edit typo can't cost the user their whole file).
+void updateConfigJson(const std::function<void(Json&)>& mutate);
 
 } // namespace liney

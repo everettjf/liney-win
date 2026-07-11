@@ -1,5 +1,6 @@
 #include "pty/ConPty.h"
 
+#include <utility>
 #include <vector>
 
 namespace liney {
@@ -7,14 +8,18 @@ namespace liney {
 ConPty::~ConPty() { stop(); }
 
 bool ConPty::start(const std::wstring& command, short cols, short rows,
-                   const std::wstring& cwd, OutputHandler onOutput) {
+                   const std::wstring& cwd, OutputHandler onOutput,
+                   ExitHandler onExit) {
     onOutput_ = std::move(onOutput);
+    onExit_ = std::move(onExit);
 
     HANDLE inputRead = nullptr;
     HANDLE outputWrite = nullptr;
     if (!CreatePipe(&inputRead, &inputWrite_, nullptr, 0)) return false;
     if (!CreatePipe(&outputRead_, &outputWrite, nullptr, 0)) {
         CloseHandle(inputRead);
+        CloseHandle(inputWrite_);
+        inputWrite_ = nullptr;
         return false;
     }
 
@@ -23,7 +28,10 @@ bool ConPty::start(const std::wstring& command, short cols, short rows,
     // The pseudo console now owns these ends.
     CloseHandle(inputRead);
     CloseHandle(outputWrite);
-    if (FAILED(hr)) return false;
+    if (FAILED(hr)) {
+        hpc_ = nullptr;
+        return false;
+    }
 
     // Build a STARTUPINFOEX that carries the pseudo-console attribute.
     STARTUPINFOEXW si{};
@@ -36,7 +44,9 @@ bool ConPty::start(const std::wstring& command, short cols, short rows,
     if (!attrList) return false;
     si.lpAttributeList = attrList;
 
-    bool ok = InitializeProcThreadAttributeList(attrList, 1, 0, &attrBytes) &&
+    const bool attrInit =
+        InitializeProcThreadAttributeList(attrList, 1, 0, &attrBytes) != FALSE;
+    bool ok = attrInit &&
               UpdateProcThreadAttribute(
                   attrList, 0, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, hpc_,
                   sizeof(hpc_), nullptr, nullptr);
@@ -49,7 +59,7 @@ bool ConPty::start(const std::wstring& command, short cols, short rows,
                             &si.StartupInfo, &procInfo_) != FALSE;
     }
 
-    DeleteProcThreadAttributeList(attrList);
+    if (attrInit) DeleteProcThreadAttributeList(attrList);
     HeapFree(GetProcessHeap(), 0, attrList);
     if (!ok) return false;
 
@@ -66,6 +76,33 @@ bool ConPty::start(const std::wstring& command, short cols, short rows,
             if (onOutput_) onOutput_(buf.data(), read);
         }
         exited_ = true;
+        // Wake the UI so a dead shell is reaped promptly (the message loop
+        // sleeps until something marks the frame dirty).
+        if (onExit_) onExit_();
+    });
+
+    writeThread_ = std::thread([this]() {
+        std::string pending;
+        for (;;) {
+            {
+                std::unique_lock<std::mutex> lock(writeMutex_);
+                writeCv_.wait(lock,
+                              [this] { return writeStop_ || !writeQueue_.empty(); });
+                if (writeStop_ && writeQueue_.empty()) return;
+                pending.clear();
+                pending.swap(writeQueue_);
+            }
+            size_t off = 0;
+            while (off < pending.size()) {
+                DWORD written = 0;
+                if (!WriteFile(inputWrite_, pending.data() + off,
+                               static_cast<DWORD>(pending.size() - off),
+                               &written, nullptr) ||
+                    written == 0)
+                    return;  // pipe broken (child gone) — drop remaining input
+                off += written;
+            }
+        }
     });
     return true;
 }
@@ -79,9 +116,13 @@ bool ConPty::hasExited() const {
 }
 
 void ConPty::write(const char* data, size_t len) {
-    if (!inputWrite_) return;
-    DWORD written = 0;
-    WriteFile(inputWrite_, data, static_cast<DWORD>(len), &written, nullptr);
+    if (!inputWrite_ || len == 0) return;
+    {
+        std::lock_guard<std::mutex> lock(writeMutex_);
+        if (writeStop_) return;
+        writeQueue_.append(data, len);
+    }
+    writeCv_.notify_one();
 }
 
 void ConPty::resize(short cols, short rows) {
@@ -96,6 +137,14 @@ void ConPty::stop() {
         hpc_ = nullptr;
     }
     if (readThread_.joinable()) readThread_.join();
+    // Stop the writer before closing its pipe handle.
+    {
+        std::lock_guard<std::mutex> lock(writeMutex_);
+        writeStop_ = true;
+        writeQueue_.clear();
+    }
+    writeCv_.notify_one();
+    if (writeThread_.joinable()) writeThread_.join();
     if (inputWrite_) {
         CloseHandle(inputWrite_);
         inputWrite_ = nullptr;

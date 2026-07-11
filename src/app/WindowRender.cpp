@@ -195,7 +195,12 @@ void Window::drawTabBar(const Rect& r) {
     float x = r.x;
     for (size_t i = 0; i < tabs_.size(); ++i) {
         std::wstring title = tabs_[i]->title();
-        if (title.size() > 18) title = title.substr(0, 17) + L"…";
+        if (title.size() > 18) {
+            size_t cut = 17;
+            // Don't split a surrogate pair (emoji / non-BMP CJK in titles).
+            if (title[cut - 1] >= 0xD800 && title[cut - 1] <= 0xDBFF) --cut;
+            title = title.substr(0, cut) + L"…";
+        }
         const float tw = (static_cast<float>(title.size()) + 3.0f) * metrics_.cellW;
         const bool active = (i == activeTab_);
         if (active) renderer_->fillRect(x, r.y, tw, r.h, kTabActiveBg);

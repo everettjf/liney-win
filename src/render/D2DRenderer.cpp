@@ -1,5 +1,6 @@
 #include "render/D2DRenderer.h"
 
+#include <cmath>
 #include <utility>
 
 namespace liney {
@@ -20,6 +21,15 @@ bool D2DRenderer::createDeviceResources() {
         nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags,
         nullptr, 0, D3D11_SDK_VERSION,
         d3dDevice_.GetAddressOf(), &featureLevel, d3dContext_.GetAddressOf());
+    if (FAILED(hr)) {
+        // No usable GPU (VM, RDP session, broken driver): fall back to the
+        // WARP software rasterizer instead of failing to start at all.
+        hr = D3D11CreateDevice(
+            nullptr, D3D_DRIVER_TYPE_WARP, nullptr, flags,
+            nullptr, 0, D3D11_SDK_VERSION,
+            d3dDevice_.ReleaseAndGetAddressOf(), &featureLevel,
+            d3dContext_.ReleaseAndGetAddressOf());
+    }
     if (FAILED(hr)) return false;
 
     ComPtr<IDXGIDevice> dxgiDevice;
@@ -113,6 +123,14 @@ bool D2DRenderer::buildTextFormats() {
         cellW_ = fontSize_ * 0.6f;
         cellH_ = fontSize_ * 1.2f;
     }
+    // Snap the cell to whole pixels. Drawing at a fractional pitch makes
+    // column N sit at a different subpixel phase than the atlas rasterized
+    // (blurry glyphs) and — worse — diverges from the rounded size handed to
+    // cellSize(), which the app uses for mouse hit-testing: at column 100 the
+    // drift is several columns. One integral pitch keeps draw + hit-test
+    // + atlas in exact agreement.
+    cellW_ = std::ceil(cellW_);
+    cellH_ = std::ceil(cellH_);
     return true;
 }
 
@@ -190,7 +208,13 @@ void D2DRenderer::resize(unsigned widthPx, unsigned heightPx) {
         return;
     }
     releaseSwapChainResources();
-    swapChain_->ResizeBuffers(0, widthPx, heightPx, DXGI_FORMAT_UNKNOWN, 0);
+    HRESULT hr = swapChain_->ResizeBuffers(0, widthPx, heightPx,
+                                           DXGI_FORMAT_UNKNOWN, 0);
+    if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
+        deviceLost_ = true;
+        return;
+    }
+    if (FAILED(hr)) return;  // leave target unbound; beginFrame skips the frame
     bindTarget();
 }
 
@@ -205,15 +229,60 @@ void D2DRenderer::setColors(const Color& workspaceBg, const Color& termBg) {
 }
 
 void D2DRenderer::beginFrame() {
+    if (deviceLost_ && !recreateDevice()) return;
+    if (atlasNeedsReset_ && atlasRT_) {
+        // Deferred from atlasSlot: safe to wipe between frames.
+        glyphCache_.clear();
+        atlasX_ = atlasY_ = 0.0f;
+        atlasRT_->BeginDraw();
+        atlasRT_->Clear(D2D1::ColorF(0, 0, 0, 0.0f));
+        if (FAILED(atlasRT_->EndDraw())) atlasBroken_ = true;
+        atlasNeedsReset_ = false;
+    }
     if (!d2dContext_ || !targetBitmap_ || !brush_) return;
     d2dContext_->BeginDraw();
+    frameOpen_ = true;
     d2dContext_->Clear(toColorF(workspaceBg_));  // workspace bg (gutters/margins)
 }
 
 void D2DRenderer::endFrame() {
-    if (!d2dContext_ || !swapChain_) return;
-    d2dContext_->EndDraw();
-    swapChain_->Present(1, 0);
+    if (!d2dContext_ || !swapChain_ || !frameOpen_) return;
+    frameOpen_ = false;
+    const HRESULT hrDraw = d2dContext_->EndDraw();
+    const HRESULT hrPresent = swapChain_->Present(1, 0);
+    // A GPU driver update / TDR reset / RDP GPU switch removes the device;
+    // without recovery every later Present fails silently and the window
+    // freezes forever. Flag it and rebuild everything next frame.
+    if (hrDraw == D2DERR_RECREATE_TARGET ||
+        hrPresent == DXGI_ERROR_DEVICE_REMOVED ||
+        hrPresent == DXGI_ERROR_DEVICE_RESET) {
+        deviceLost_ = true;
+    }
+}
+
+bool D2DRenderer::recreateDevice() {
+    // Drop every device-bound object, then rebuild the device, swap chain and
+    // (via buildTextFormats inside createDeviceResources) the glyph atlas.
+    releaseSwapChainResources();
+    swapChain_.Reset();
+    brush_.Reset();
+    imageCache_.clear();
+    glyphCache_.clear();
+    atlasBrush_.Reset();
+    atlasBitmap_.Reset();
+    atlasRT_.Reset();
+    atlasX_ = atlasY_ = 0.0f;
+    atlasBroken_ = false;
+    d2dContext_.Reset();
+    d2dDevice_.Reset();
+    d2dFactory_.Reset();
+    d3dContext_.Reset();
+    d3dDevice_.Reset();
+
+    if (!createDeviceResources()) return false;
+    deviceLost_ = false;
+    if (widthPx_ && heightPx_) createSwapChainResources();
+    return d2dContext_ && targetBitmap_ && brush_;
 }
 
 void D2DRenderer::pushClip(float x, float y, float w, float h) {
@@ -426,16 +495,13 @@ bool D2DRenderer::atlasSlot(const std::wstring& ch, uint32_t flags,
         atlasY_ += h;
     }
     if (atlasY_ + h > kAtlasSize) {
-        // Atlas full (enormous glyph variety): wipe and start over — far
-        // simpler than eviction and rare enough not to matter.
-        glyphCache_.clear();
-        atlasX_ = atlasY_ = 0.0f;
-        atlasRT_->BeginDraw();
-        atlasRT_->Clear(D2D1::ColorF(0, 0, 0, 0.0f));
-        if (FAILED(atlasRT_->EndDraw())) {
-            atlasBroken_ = true;
-            return false;
-        }
+        // Atlas full (enormous glyph variety). Don't wipe mid-frame: the
+        // FillOpacityMask commands already batched on d2dContext_ this frame
+        // still sample the existing slots, so clearing now would corrupt
+        // cells drawn earlier in the pass. Fall back to DrawText for this
+        // glyph and rebuild the atlas before the next frame begins.
+        atlasNeedsReset_ = true;
+        return false;
     }
 
     const D2D1_RECT_F rect =
@@ -457,34 +523,56 @@ bool D2DRenderer::atlasSlot(const std::wstring& ch, uint32_t flags,
     return true;
 }
 
+// True for grapheme clusters that may carry a color (emoji) glyph: anything
+// non-BMP (surrogate pairs — most emoji), a VS16 emoji-presentation selector,
+// or the BMP symbol/dingbat blocks. These bypass the atlas (which tints a
+// monochrome mask) and render via DrawText with color-font support. Non-emoji
+// non-BMP text (e.g. CJK extension B) also lands here — it just takes the
+// slower per-cell path, which is rare enough not to matter.
+static bool isColorGlyph(const std::wstring& ch) {
+    for (wchar_t u : ch) {
+        if (u >= 0xD800 && u <= 0xDFFF) return true;  // non-BMP
+        if (u == 0xFE0F) return true;                 // VS16: emoji presentation
+        if (u >= 0x2600 && u <= 0x27BF) return true;  // misc symbols / dingbats
+        if (u == 0x2B50 || u == 0x2B55) return true;  // ⭐ ⭕
+    }
+    return false;
+}
+
 // Effective fg/bg of one cell after inverse video and the selection / find
 // highlights. Shared by both drawGrid passes so backgrounds and glyphs agree.
-static void cellColors(const Grid& grid, int x, int y, Color& fg, Color& bg) {
+// `findHit` comes from the per-frame overlay (0 none, 1 match, 2 active) —
+// pre-stamped once per drawGrid so this isn't O(matches) per cell.
+static void cellColors(const Grid& grid, int x, int y, uint8_t findHit,
+                       Color& fg, Color& bg) {
     const Cell& cell = grid.at(x, y);
     fg = cell.fg;
     bg = cell.bg;
     if (cell.flags & kFlagInverse) std::swap(fg, bg);
 
     // Selection highlight (stamped per cell from the terminal's selection).
-    const bool selected = (cell.flags & kFlagSelected) != 0;
-    // Find-on-screen highlight: 0 = none, 1 = match, 2 = active match.
-    int findHit = 0;
-    if (!selected && !grid.findMatches.empty()) {
-        for (size_t i = 0; i < grid.findMatches.size(); ++i) {
-            const Grid::FindSpan& m = grid.findMatches[i];
-            if (y == m.y && x >= m.x && x < m.x + m.len) {
-                findHit = (static_cast<int>(i) == grid.findCurrent) ? 2 : 1;
-                break;
-            }
-        }
-    }
-    if (selected) bg = Color{ 50, 78, 124 };
+    if (cell.flags & kFlagSelected) bg = Color{ 50, 78, 124 };
     else if (findHit == 2) bg = Color{ 190, 145, 40 };   // active match
     else if (findHit == 1) bg = Color{ 95, 80, 30 };     // other matches
 }
 
 void D2DRenderer::drawGrid(const Grid& grid, float originX, float originY) {
     if (!d2dContext_ || !brush_) return;
+
+    // Stamp find matches into a per-cell overlay once (searching a common
+    // character in a maximized window used to rescan the whole match list for
+    // every cell, twice per frame).
+    findOverlay_.assign(static_cast<size_t>(grid.cols) * grid.rows, 0);
+    for (size_t i = 0; i < grid.findMatches.size(); ++i) {
+        const Grid::FindSpan& m = grid.findMatches[i];
+        if (m.y < 0 || m.y >= grid.rows) continue;
+        const uint8_t v = (static_cast<int>(i) == grid.findCurrent) ? 2 : 1;
+        for (int x = m.x; x < m.x + m.len && x < grid.cols; ++x)
+            if (x >= 0) findOverlay_[static_cast<size_t>(m.y) * grid.cols + x] = v;
+    }
+    const auto findHitAt = [&](int x, int y) -> uint8_t {
+        return findOverlay_[static_cast<size_t>(y) * grid.cols + x];
+    };
 
     const D2D1_RECT_F clip = D2D1::RectF(
         originX, originY, originX + grid.cols * cellW_,
@@ -501,7 +589,7 @@ void D2DRenderer::drawGrid(const Grid& grid, float originX, float originY) {
     for (int y = 0; y < grid.rows; ++y) {
         for (int x = 0; x < grid.cols; ++x) {
             Color fg, bg;
-            cellColors(grid, x, y, fg, bg);
+            cellColors(grid, x, y, findHitAt(x, y), fg, bg);
             if (bg.r == termBg_.r && bg.g == termBg_.g && bg.b == termBg_.b)
                 continue;  // already painted by the clear above
             const float px = originX + x * cellW_;
@@ -527,7 +615,7 @@ void D2DRenderer::drawGrid(const Grid& grid, float originX, float originY) {
             if (!hasGlyph && !deco) continue;
 
             Color fg, bg;
-            cellColors(grid, x, y, fg, bg);
+            cellColors(grid, x, y, findHitAt(x, y), fg, bg);
             // Faint (SGR 2): draw at half intensity toward the background.
             if (cell.flags & kFlagFaint)
                 fg = Color{ static_cast<uint8_t>((fg.r + bg.r) / 2),
@@ -542,7 +630,11 @@ void D2DRenderer::drawGrid(const Grid& grid, float originX, float originY) {
                 brush_->SetColor(toColorF(fg));
                 const D2D1_RECT_F dst = D2D1::RectF(px, py, px + w, py + cellH_);
                 D2D1_RECT_F srcRect{};
-                if (atlasSlot(cell.ch, cell.flags, srcRect)) {
+                // Color glyphs (emoji) can't go through the atlas: the mask
+                // path tints a monochrome silhouette with the fg brush. Draw
+                // them directly with color-font support instead.
+                if (!isColorGlyph(cell.ch) &&
+                    atlasSlot(cell.ch, cell.flags, srcRect)) {
                     d2dContext_->FillOpacityMask(
                         atlasBitmap_.Get(), brush_.Get(),
                         D2D1_OPACITY_MASK_CONTENT_TEXT_NATURAL, &dst, &srcRect);
@@ -550,7 +642,8 @@ void D2DRenderer::drawGrid(const Grid& grid, float originX, float originY) {
                     d2dContext_->DrawText(
                         cell.ch.c_str(), static_cast<UINT32>(cell.ch.size()),
                         cellFormat(cell.flags), dst, brush_.Get(),
-                        D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                        D2D1_DRAW_TEXT_OPTIONS_CLIP |
+                            D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
                 }
             }
             if (deco) {

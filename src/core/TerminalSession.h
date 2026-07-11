@@ -97,6 +97,7 @@ private:
     std::wstring title_;
     std::wstring shell_;
     int cols_ = 0, rows_ = 0;
+    int cellW_ = 0, cellH_ = 0;
     bool active_ = false;
 };
 

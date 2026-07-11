@@ -112,6 +112,10 @@ std::wstring inputBox(HWND owner, const std::wstring& title,
             DispatchMessageW(&msg);
         }
     }
+    // An app-quit that arrived while this modal loop ran must not be
+    // swallowed — re-post it so the outer message loop still terminates.
+    if (!st.done && msg.message == WM_QUIT)
+        PostQuitMessage(static_cast<int>(msg.wParam));
 
     if (owner) EnableWindow(owner, TRUE);
     DestroyWindow(dlg);

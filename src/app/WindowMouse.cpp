@@ -229,10 +229,15 @@ void Window::onMouseDownRight(int xi, int yi) {
                 std::wstring name = inputBox(hwnd_, L"New worktree",
                                              L"New branch / worktree name:", L"");
                 if (name.empty()) return;
-                std::wstring path = workspace_.addWorktree(repo, name);
+                std::wstring err;
+                std::wstring path = workspace_.addWorktree(repo, name, &err);
                 if (!path.empty()) newTab(path);
-                else MessageBoxW(hwnd_, L"git worktree add failed.", L"liney-win",
-                                 MB_OK | MB_ICONERROR);
+                else {
+                    std::wstring msg = L"git worktree add failed.";
+                    if (!err.empty()) msg += L"\n\n" + err;
+                    MessageBoxW(hwnd_, msg.c_str(), L"liney-win",
+                                MB_OK | MB_ICONERROR);
+                }
             } else if (cmd == 2) {
                 setProjectIcon(repo);
             } else if (cmd == 3) {
@@ -244,11 +249,13 @@ void Window::onMouseDownRight(int xi, int yi) {
             std::wstring msg = L"Remove worktree?\n\n" + wt.path;
             if (MessageBoxW(hwnd_, msg.c_str(), L"Remove worktree",
                             MB_YESNO | MB_ICONWARNING) == IDYES) {
-                if (!workspace_.removeWorktree(repo, wt.path))
-                    MessageBoxW(hwnd_,
-                                L"git worktree remove failed (the main worktree "
-                                L"can't be removed).",
-                                L"liney-win", MB_OK | MB_ICONERROR);
+                std::wstring err;
+                if (!workspace_.removeWorktree(repo, wt.path, &err)) {
+                    std::wstring m = L"git worktree remove failed.";
+                    if (!err.empty()) m += L"\n\n" + err;  // e.g. "use --force"
+                    MessageBoxW(hwnd_, m.c_str(), L"liney-win",
+                                MB_OK | MB_ICONERROR);
+                }
             }
         }
         return;

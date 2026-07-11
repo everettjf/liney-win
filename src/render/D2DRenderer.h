@@ -9,17 +9,20 @@
 #include <wincodec.h>
 #include <wrl/client.h>
 
+#include <cstdint>
 #include <unordered_map>
+#include <vector>
 
 #include "render/IRenderer.h"
 
 namespace liney {
 
-// Stage-1 renderer: per-cell direct draw using Direct2D for background fills
-// and DirectWrite for glyphs, presented through a DXGI / Direct3D 11 swap
-// chain. Correct and GPU-backed, but re-rasterizes glyphs every frame. The
-// glyph-atlas upgrade (Stage 2, see RENDERING.md) will replace the body of
-// render() while reusing this class's device / swap-chain plumbing.
+// Direct2D/DirectWrite renderer presented through a DXGI / D3D11 swap chain
+// (WARP fallback when no hardware device is available; device-lost recovery
+// rebuilds everything). Monochrome glyphs are rasterized once into a glyph
+// atlas and drawn via FillOpacityMask tinted with the cell fg; color glyphs
+// (emoji) and atlas misses fall back to per-cell DrawText with color-font
+// support. See RENDERING.md for the design background.
 class D2DRenderer final : public IRenderer {
 public:
     bool initialize(void* hwnd) override;
@@ -52,6 +55,9 @@ private:
     bool createSwapChainResources();
     bool bindTarget();
     void releaseSwapChainResources();
+    // Tear down and rebuild all device-bound state after device loss (driver
+    // update, TDR, RDP GPU switch). Returns true when rendering can resume.
+    bool recreateDevice();
 
     HWND hwnd_ = nullptr;
     unsigned widthPx_ = 0, heightPx_ = 0;
@@ -103,6 +109,12 @@ private:
     std::unordered_map<std::wstring, D2D1_RECT_F> glyphCache_;
     float atlasX_ = 0.0f, atlasY_ = 0.0f;      // next free slot position
     bool atlasBroken_ = false;                 // creation failed: use DrawText
+    bool deviceLost_ = false;   // EndDraw/Present reported device removal
+    bool frameOpen_ = false;    // BeginDraw issued; endFrame may EndDraw
+    bool atlasNeedsReset_ = false;  // atlas overflowed mid-frame; wipe between frames
+    // Per-cell find-highlight overlay, rebuilt at the top of drawGrid
+    // (0 none, 1 match, 2 active match). Member to avoid per-frame realloc.
+    std::vector<uint8_t> findOverlay_;
 };
 
 } // namespace liney

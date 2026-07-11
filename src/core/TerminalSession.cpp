@@ -26,12 +26,17 @@ bool TerminalSession::start(const std::wstring& shell, const std::wstring& cwd,
     rows_ = rows;
 
     if (!terminal_.create(cols, rows, scrollback)) return false;
+    // Query responses the core emits (DSR/CPR, DA, DECRQM…) go back to the
+    // child via the PTY, like a real terminal.
+    terminal_.setPtyWriter(
+        [this](const char* data, size_t len) { pty_.write(data, len); });
     const bool ok = pty_.start(
         shell, static_cast<short>(cols), static_cast<short>(rows), cwd,
         [this](const char* data, size_t len) {
             terminal_.write(data, len);
             markRenderDirty();  // wake the UI thread to repaint the new output
-        });
+        },
+        [] { markRenderDirty(); });  // exited: wake the UI so it reaps the pane
     active_ = ok;
     return ok;
 }
@@ -43,9 +48,15 @@ void TerminalSession::sendBytes(const char* data, size_t len) {
 void TerminalSession::resize(int cols, int rows, int cellWidthPx,
                              int cellHeightPx) {
     if (!active_ || cols <= 0 || rows <= 0) return;
-    if (cols == cols_ && rows == rows_) return;
+    // Same grid but a new cell pixel size (font/DPI change) still needs to
+    // reach the core: pixel metrics feed mouse reporting and size reports.
+    if (cols == cols_ && rows == rows_ && cellWidthPx == cellW_ &&
+        cellHeightPx == cellH_)
+        return;
     cols_ = cols;
     rows_ = rows;
+    cellW_ = cellWidthPx;
+    cellH_ = cellHeightPx;
     terminal_.resize(cols, rows, cellWidthPx, cellHeightPx);
     pty_.resize(static_cast<short>(cols), static_cast<short>(rows));
 }

@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -37,6 +38,11 @@ public:
     // is not compiled in or initialization fails. `scrollback` is the max number
     // of history lines to retain.
     bool create(int cols, int rows, int scrollback);
+
+    // Sink for bytes the core writes back to the PTY (query responses like
+    // DSR/CPR or DA). Invoked from inside write() on the PTY reader thread.
+    using PtyWriter = std::function<void(const char* data, size_t len)>;
+    void setPtyWriter(PtyWriter writer);
 
     // Feed raw bytes coming from the PTY.
     void write(const char* data, size_t len);
@@ -112,6 +118,11 @@ private:
     // Mouse-reporting encoder + reusable event (created on first use).
     GhosttyMouseEncoder mouseEnc_ = nullptr;
     GhosttyMouseEvent mouseEvt_ = nullptr;
+    // Reusable buffer for per-cell grapheme codepoints; sized to the cell's
+    // real cluster length (unbounded) before GRAPHEMES_BUF writes into it.
+    std::vector<uint32_t> graphemeBuf_;
+    // Query-response sink; the WRITE_PTY trampoline reads this member.
+    PtyWriter ptyWriter_;
 };
 
 } // namespace liney

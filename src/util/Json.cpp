@@ -10,9 +10,14 @@ namespace {
 
 // Recursive-descent parser over a UTF-8 string.
 struct Parser {
+    // Nesting cap so hostile/corrupted input can't overflow the C++ stack;
+    // real config/layout files nest a handful of levels deep.
+    static constexpr int kMaxDepth = 128;
+
     const std::string& s;
     size_t i = 0;
     bool ok = true;
+    int depth = 0;
 
     explicit Parser(const std::string& text) : s(text) {}
 
@@ -27,10 +32,11 @@ struct Parser {
     Json parseValue() {
         skipWs();
         if (i >= s.size()) { ok = false; return Json(); }
+        if (depth >= kMaxDepth) { ok = false; return Json(); }
         char c = s[i];
         switch (c) {
-        case '{': return parseObject();
-        case '[': return parseArray();
+        case '{': { ++depth; Json v = parseObject(); --depth; return v; }
+        case '[': { ++depth; Json v = parseArray(); --depth; return v; }
         case '"': return Json::str(parseString());
         case 't': case 'f': return parseBool();
         case 'n': return parseNull();
@@ -131,7 +137,11 @@ struct Parser {
                         s[i] == '\\' && s[i + 1] == 'u') {
                         i += 2;
                         uint32_t lo = parseHex4();
-                        cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+                        cp = (lo >= 0xDC00 && lo <= 0xDFFF)
+                                 ? 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00)
+                                 : 0xFFFD;
+                    } else if (cp >= 0xD800 && cp <= 0xDFFF) {
+                        cp = 0xFFFD;  // lone surrogate: don't emit invalid UTF-8
                     }
                     appendUtf8(cp, out);
                     break;

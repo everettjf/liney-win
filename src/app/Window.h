@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "app/Layout.h"
@@ -181,6 +182,11 @@ private:
     std::atomic<bool> updateReady_{ false };
     std::atomic<bool> installerReady_{ false };
     std::mutex updateMutex_;
+    // Update-check / download workers. Joined in ~Window — a detached thread
+    // capturing `this` would write into a freed Window if the app exits while
+    // a check is in flight (the HTTP layer carries timeouts, so the join is
+    // bounded).
+    std::vector<std::thread> updateThreads_;
     std::wstring updateMsg_;
     std::wstring downloadUrl_;     // installer asset URL when an update is found
     std::wstring installerPath_;   // downloaded installer path

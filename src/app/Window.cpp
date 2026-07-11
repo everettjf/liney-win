@@ -70,7 +70,12 @@ void addGitUnixToolsToPath() {
 }  // namespace
 
 Window::Window() : renderer_(std::make_unique<D2DRenderer>()) {}
-Window::~Window() = default;
+Window::~Window() {
+    // Wait for update-check/download workers: they capture `this` and would
+    // otherwise write into a destroyed Window (bounded by the HTTP timeouts).
+    for (std::thread& t : updateThreads_)
+        if (t.joinable()) t.join();
+}
 
 bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
                     int height) {
@@ -216,9 +221,23 @@ LRESULT CALLBACK Window::wndProcThunk(HWND hwnd, UINT msg, WPARAM wParam,
 LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
     case WM_SIZE:
-        if (LOWORD(lParam) && HIWORD(lParam))
+        if (LOWORD(lParam) && HIWORD(lParam)) {
             renderer_->resize(LOWORD(lParam), HIWORD(lParam));
+            // Interactive resize runs a modal loop that starves our render
+            // loop; paint here so the window tracks the drag instead of
+            // showing undefined flip-model buffer contents.
+            renderFrame();
+        }
         return 0;
+    case WM_PAINT: {
+        // Modal loops (menus, dialogs, move/size) bypass runMessageLoop —
+        // honor paint requests so the window isn't frozen/black meanwhile.
+        PAINTSTRUCT ps;
+        BeginPaint(hwnd_, &ps);
+        EndPaint(hwnd_, &ps);
+        renderFrame();
+        return 0;
+    }
     case WM_DPICHANGED: {
         // Moved to a monitor with different scaling: rebuild the font + cell
         // metrics at the new DPI and take the OS-suggested window rectangle.
@@ -357,12 +376,28 @@ void Window::renderFrame() {
 
 
 void Window::reapExitedPanes() {
-    Tab* t = activeTab();
-    if (!t) return;
-    for (Pane* leaf : t->leaves()) {
-        if (leaf->session && leaf->session->exited()) {
+    // Scan every tab, not just the active one — a shell that exits in a
+    // background tab should be reaped too, not linger until it's focused.
+    for (size_t ti = 0; ti < tabs_.size(); ++ti) {
+        Tab* t = tabs_[ti].get();
+        for (Pane* leaf : t->leaves()) {
+            if (!leaf->session || !leaf->session->exited()) continue;
+            Tab* prevActive =
+                (activeTab_ < tabs_.size()) ? tabs_[activeTab_].get() : nullptr;
+            activeTab_ = ti;
             t->setActive(leaf);
-            closeActivePane();
+            closeActivePane();  // may erase the tab and shift indices
+            // Put focus back on the tab the user was on (found by identity —
+            // the erase above may have shifted indices).
+            if (prevActive && prevActive != t) {
+                for (size_t k = 0; k < tabs_.size(); ++k) {
+                    if (tabs_[k].get() == prevActive) {
+                        activeTab_ = k;
+                        break;
+                    }
+                }
+                updateTitle();
+            }
             return;  // tree changed; revisit next frame
         }
     }
@@ -476,8 +511,10 @@ void Window::applyFont() {
 
 void Window::zoomFont(int step) {
     fontSize_ = (step == 0) ? defaultFontSize_ : fontSize_ + step;
+    // Same range loadConfig accepts, so a configured size never snaps smaller
+    // on the first zoom.
     if (fontSize_ < 6.0f) fontSize_ = 6.0f;
-    if (fontSize_ > 72.0f) fontSize_ = 72.0f;
+    if (fontSize_ > 96.0f) fontSize_ = 96.0f;
     applyFont();
     saveFontSize(fontSize_);  // remember the zoom level across launches
 }

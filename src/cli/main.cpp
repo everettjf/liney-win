@@ -12,6 +12,9 @@
 
 #include <windows.h>
 
+#include <fcntl.h>
+#include <io.h>
+
 #include <cstdio>
 #include <string>
 
@@ -28,19 +31,38 @@ std::string wideToUtf8(const std::wstring& w) {
 }
 
 void emitRaw(const std::string& seq) {
+    // Binary mode: text mode would expand any \n in the payload to \r\n
+    // inside the OSC sequence.
+    _setmode(_fileno(stdout), _O_BINARY);
     fwrite(seq.data(), 1, seq.size(), stdout);
     fflush(stdout);
 }
 
+// Strip bytes that would terminate or corrupt an OSC payload: C0 controls
+// (BEL ends the sequence, ESC starts a new one — anything after would be
+// interpreted as raw terminal input) and, when the field is one of several
+// `;`-separated parts, the separator itself.
+std::string sanitizeOsc(const std::wstring& in, bool stripSemicolon) {
+    std::string s = wideToUtf8(in);
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        if (static_cast<unsigned char>(c) < 0x20) continue;
+        if (stripSemicolon && c == ';') { out.push_back(','); continue; }
+        out.push_back(c);
+    }
+    return out;
+}
+
 void emitNotify(const std::wstring& title, const std::wstring& body) {
     // ESC ] 777 ; notify ; <title> ; <body> BEL
-    emitRaw("\x1b]777;notify;" + wideToUtf8(title) + ";" + wideToUtf8(body) +
-            "\x07");
+    emitRaw("\x1b]777;notify;" + sanitizeOsc(title, true) + ";" +
+            sanitizeOsc(body, false) + "\x07");
 }
 
 void emitTitle(const std::wstring& text) {
     // ESC ] 2 ; <text> BEL
-    emitRaw("\x1b]2;" + wideToUtf8(text) + "\x07");
+    emitRaw("\x1b]2;" + sanitizeOsc(text, false) + "\x07");
 }
 
 } // namespace

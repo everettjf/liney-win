@@ -116,28 +116,49 @@ void Workspace::loadWorktrees(Repo& repo) {
         repo.worktrees.push_back(Worktree{ repo.path, basename(repo.path) });
 }
 
-std::wstring Workspace::addWorktree(Repo& repo, const std::wstring& name) {
+std::wstring Workspace::addWorktree(Repo& repo, const std::wstring& name,
+                                    std::wstring* err) {
     if (name.empty()) return L"";
+    // The name lands inside a quoted command line and becomes a branch name +
+    // path component — restrict it to characters that are safe as both. This
+    // blocks quote-escape injection (`"` or a trailing `\`) and the
+    // characters git refuses in branch names anyway.
+    for (wchar_t c : name) {
+        const bool okChar = (c >= L'a' && c <= L'z') || (c >= L'A' && c <= L'Z') ||
+                            (c >= L'0' && c <= L'9') || c == L'-' || c == L'_' ||
+                            c == L'.' || c == L'/';
+        if (!okChar) {
+            if (err)
+                *err = L"Invalid worktree name (use letters, digits, - _ . /): " +
+                       name;
+            return L"";
+        }
+    }
     const std::wstring path =
         parentDir(repo.path) + L"\\" + basename(repo.path) + L"-" + name;
 
     bool ok = false;
-    runCapture(L"git worktree add \"" + path + L"\" -b \"" + name + L"\"",
-               repo.path, &ok);
+    std::wstring out =
+        runCapture(L"git worktree add \"" + path + L"\" -b \"" + name + L"\"",
+                   repo.path, &ok);
     if (!ok) {
         // Branch may already exist; check it out into the worktree instead.
-        runCapture(L"git worktree add \"" + path + L"\" \"" + name + L"\"",
-                   repo.path, &ok);
+        out = runCapture(L"git worktree add \"" + path + L"\" \"" + name + L"\"",
+                         repo.path, &ok);
     }
+    if (!ok && err) *err = out;
     repo.loaded = false;
     loadWorktrees(repo);
     repo.expanded = true;
     return ok ? path : L"";
 }
 
-bool Workspace::removeWorktree(Repo& repo, const std::wstring& path) {
+bool Workspace::removeWorktree(Repo& repo, const std::wstring& path,
+                               std::wstring* err) {
     bool ok = false;
-    runCapture(L"git worktree remove \"" + path + L"\"", repo.path, &ok);
+    const std::wstring out =
+        runCapture(L"git worktree remove \"" + path + L"\"", repo.path, &ok);
+    if (!ok && err) *err = out;  // e.g. "contains modified files, use --force"
     repo.loaded = false;
     loadWorktrees(repo);
     return ok;

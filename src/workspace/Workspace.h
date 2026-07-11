@@ -43,10 +43,14 @@ public:
 
     // Create a worktree + branch `name` for `repo` as a sibling directory.
     // Returns the new path on success (empty on failure); refreshes the list.
-    std::wstring addWorktree(Repo& repo, const std::wstring& name);
+    // On failure `err` (when non-null) receives git's message.
+    std::wstring addWorktree(Repo& repo, const std::wstring& name,
+                             std::wstring* err = nullptr);
 
     // Remove the worktree at `path` (git refuses the main one). Refreshes list.
-    bool removeWorktree(Repo& repo, const std::wstring& path);
+    // On failure `err` (when non-null) receives git's message.
+    bool removeWorktree(Repo& repo, const std::wstring& path,
+                        std::wstring* err = nullptr);
 
 private:
     std::wstring root_;

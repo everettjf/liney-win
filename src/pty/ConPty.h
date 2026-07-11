@@ -3,7 +3,9 @@
 #include <windows.h>
 
 #include <atomic>
+#include <condition_variable>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -16,6 +18,7 @@ namespace liney {
 class ConPty {
 public:
     using OutputHandler = std::function<void(const char* data, size_t len)>;
+    using ExitHandler = std::function<void()>;
 
     ConPty() = default;
     ~ConPty();
@@ -25,10 +28,15 @@ public:
 
     // Spawn `command` (e.g. L"cmd.exe") attached to a pseudo console of the
     // given size, starting in `cwd` (empty = inherit). `onOutput` is invoked
-    // from a reader thread.
+    // from a reader thread. `onExit` (optional) is invoked once from the
+    // reader thread when the child's output stream ends.
     bool start(const std::wstring& command, short cols, short rows,
-               const std::wstring& cwd, OutputHandler onOutput);
+               const std::wstring& cwd, OutputHandler onOutput,
+               ExitHandler onExit = nullptr);
 
+    // Queue bytes for the child's stdin. Non-blocking: a dedicated writer
+    // thread drains the queue, so a full pipe (child not reading during a
+    // large paste) can't freeze the caller (the UI thread).
     void write(const char* data, size_t len);
     void resize(short cols, short rows);
     void stop();
@@ -47,6 +55,14 @@ private:
     std::atomic<bool> running_{ false };
     std::atomic<bool> exited_{ false };
     OutputHandler onOutput_;
+    ExitHandler onExit_;
+
+    // Writer queue: write() appends under writeMutex_, writeThread_ drains.
+    std::thread writeThread_;
+    std::mutex writeMutex_;
+    std::condition_variable writeCv_;
+    std::string writeQueue_;
+    bool writeStop_ = false;
 };
 
 } // namespace liney

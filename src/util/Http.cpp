@@ -15,6 +15,9 @@ std::string httpsGet(const std::wstring& host, const std::wstring& path) {
                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS,
                                     0);
     if (!session) return result;
+    // Bound every phase; the defaults allow minute-long stalls that keep the
+    // worker thread (joined at exit) alive far too long on a flaky network.
+    WinHttpSetTimeouts(session, 5000, 5000, 10000, 15000);
 
     HINTERNET connect =
         WinHttpConnect(session, host.c_str(), INTERNET_DEFAULT_HTTPS_PORT, 0);
@@ -59,6 +62,9 @@ bool httpsDownload(const std::wstring& host, const std::wstring& path,
                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS,
                                     0);
     if (!session) return false;
+    // Generous receive window: installer downloads are large but should still
+    // fail eventually rather than hang a joined-at-exit worker forever.
+    WinHttpSetTimeouts(session, 5000, 5000, 15000, 60000);
     HINTERNET connect =
         WinHttpConnect(session, host.c_str(), INTERNET_DEFAULT_HTTPS_PORT, 0);
     HINTERNET request = connect
