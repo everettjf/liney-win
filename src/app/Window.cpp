@@ -9,6 +9,8 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "app/SettingsDialog.h"
 #include "app/WindowInternal.h"
@@ -251,6 +253,16 @@ LRESULT CALLBACK Window::wndProcThunk(HWND hwnd, UINT msg, WPARAM wParam,
 
 LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
+    case WM_CLOSE: {
+        // Quitting the app: one consolidated warning that lists every tab still
+        // running a command, instead of a dialog per tab.
+        std::vector<size_t> all(tabs_.size());
+        for (size_t i = 0; i < tabs_.size(); ++i) all[i] = i;
+        if (!confirmCloseRunning(runningTabTitles(all), L"Quit liney?"))
+            return 0;  // user cancelled
+        DestroyWindow(hwnd_);
+        return 0;
+    }
     case WM_SIZE:
         if (LOWORD(lParam) && HIWORD(lParam)) {
             renderer_->resize(LOWORD(lParam), HIWORD(lParam));
@@ -949,16 +961,57 @@ bool Window::tabHasRunningProcess(size_t idx) const {
     return running;
 }
 
+std::vector<std::wstring> Window::runningTabTitles(
+    const std::vector<size_t>& idxs) const {
+    // Map every candidate pane's shell PID to its tab, then take ONE system
+    // process snapshot for the whole set (not one per tab) and mark any tab
+    // that has a child process — i.e. is running a command.
+    std::unordered_map<DWORD, size_t> pidToTab;
+    for (size_t i : idxs)
+        if (i < tabs_.size())
+            for (Pane* leaf : tabs_[i]->leaves())
+                if (leaf->session && leaf->session->shellPid() != 0)
+                    pidToTab[leaf->session->shellPid()] = i;
+    std::vector<std::wstring> out;
+    if (pidToTab.empty()) return out;
+
+    std::unordered_set<size_t> runningTabs;
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32W pe{};
+        pe.dwSize = sizeof(pe);
+        if (Process32FirstW(snap, &pe)) {
+            do {
+                auto it = pidToTab.find(pe.th32ParentProcessID);
+                if (it != pidToTab.end()) runningTabs.insert(it->second);
+            } while (Process32NextW(snap, &pe));
+        }
+        CloseHandle(snap);
+    }
+    for (size_t i : idxs)  // preserve the caller's order
+        if (runningTabs.count(i)) out.push_back(tabs_[i]->title());
+    return out;
+}
+
+bool Window::confirmCloseRunning(const std::vector<std::wstring>& titles,
+                                 const std::wstring& prompt) {
+    if (titles.empty()) return true;  // nothing running — no prompt at all
+    std::wstring msg = prompt + L"\n\nThese tabs are still running a command:\n";
+    constexpr size_t kMax = 12;
+    for (size_t i = 0; i < titles.size() && i < kMax; ++i)
+        msg += L"    •  " + titles[i] + L"\n";
+    if (titles.size() > kMax)
+        msg += L"    …  and " + std::to_wstring(titles.size() - kMax) +
+               L" more\n";
+    msg += L"\nClose anyway?";
+    return MessageBoxW(hwnd_, msg.c_str(), L"liney",
+                       MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES;
+}
+
 void Window::closeTabConfirming(size_t idx) {
     if (idx >= tabs_.size()) return;
-    if (tabHasRunningProcess(idx)) {
-        const std::wstring name = tabs_[idx]->title();
-        const std::wstring msg =
-            L"“" + name + L"” is still running a command.\n\nClose it anyway?";
-        if (MessageBoxW(hwnd_, msg.c_str(), L"liney-win — close tab",
-                        MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
-            return;
-    }
+    if (!confirmCloseRunning(runningTabTitles({ idx }), L"Close this tab?"))
+        return;
     closeTab(idx);
 }
 
@@ -975,17 +1028,9 @@ void Window::closeTab(size_t idx) {
 
 void Window::closeTabSet(const std::vector<size_t>& victims, Tab* keep) {
     if (victims.empty()) return;
-    // One confirmation covering the whole batch if any of them is busy.
-    int running = 0;
-    for (size_t i : victims) if (tabHasRunningProcess(i)) ++running;
-    if (running > 0) {
-        const std::wstring msg =
-            std::to_wstring(running) +
-            L" of these tabs are still running commands.\n\nClose them anyway?";
-        if (MessageBoxW(hwnd_, msg.c_str(), L"liney — close tabs",
-                        MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
-            return;
-    }
+    // One consolidated confirmation listing the running tabs.
+    if (!confirmCloseRunning(runningTabTitles(victims), L"Close these tabs?"))
+        return;
     clearSelection();
     hoverTab_ = -1;
     // Erase high-index-first so the lower indices stay valid.

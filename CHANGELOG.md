@@ -3,6 +3,16 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
+## [0.5.2] — 2026-07-12
+
+### Changed
+- **One consolidated "still running" dialog when closing** — closing the app
+  (or several tabs at once) now shows a single confirmation that **lists** the
+  tabs still running a command, instead of one dialog per tab. Quitting the
+  window (title-bar ✕ / Alt+F4) with a busy tab now warns first (it didn't
+  before). Nothing running → no prompt. The whole check uses one process
+  snapshot instead of one per tab.
+
 ## [0.5.1] — 2026-07-12
 
 ### Added

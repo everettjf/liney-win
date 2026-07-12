@@ -96,6 +96,13 @@ private:
     // closing everything. Confirms once if any of them is running a command.
     void closeTabSet(const std::vector<size_t>& victims, Tab* keep);
     bool tabHasRunningProcess(size_t idx) const;
+    // Titles of the given tabs that are running a command, and a single
+    // consolidated Yes/No dialog listing them (returns true to proceed / when
+    // nothing is running). Used by every multi-tab and app-quit close path so
+    // there's one dialog with a list instead of one dialog per tab.
+    std::vector<std::wstring> runningTabTitles(const std::vector<size_t>& idxs) const;
+    bool confirmCloseRunning(const std::vector<std::wstring>& titles,
+                             const std::wstring& prompt);
 
     // Layout persistence (%USERPROFILE%\.liney\layout.json).
     void saveLayout() const;
