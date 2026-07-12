@@ -3,6 +3,37 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
+## [0.5.1] — 2026-07-12
+
+### Added
+- **Pane zoom** (`Ctrl+Shift+Z`, or the ☰ menu) — temporarily maximize the
+  focused pane to fill the whole tab, then toggle back. The standard way to
+  work in a deeply-split layout (tmux/iTerm2); a **ZOOM** badge shows while
+  active. Moving focus, splitting, or closing a pane restores the layout.
+- **Equalize panes** (`Ctrl+Shift+E`, or the ☰ menu) — reset every split to
+  50/50 so panes are evenly distributed.
+- **Close multiple tabs** — right-click a tab for **Close tabs to the right /
+  to the left / other tabs / all tabs** (one confirmation if any is running a
+  command).
+
+### Changed
+- **Splitting refuses to make unreadable panes** — a split that would leave a
+  half narrower than ~24 columns or shorter than ~6 rows is declined with a
+  hint to zoom or equalize instead, so repeated splitting can't shrink panes
+  into illegibility.
+- **Installer / shortcuts are named "liney"** — the desktop and Start-Menu
+  shortcuts, the install folder (`%LOCALAPPDATA%\Programs\liney`), and the
+  Add/Remove-Programs entry drop the `-win` suffix; the release assets are now
+  `liney-setup.exe` and `liney-portable.zip`. Upgrading cleans up the old
+  `liney-win` shortcuts.
+
+### Fixed
+- **Closing a tab no longer risks freezing the UI** — reordered the ConPTY
+  teardown so `ClosePseudoConsole` runs while the reader is still draining
+  (a latent deadlock), and the running-command check now takes one process
+  snapshot for the whole tab instead of one per pane (which could stall a
+  heavily-split tab on close).
+
 ## [0.5.0] — 2026-07-12
 
 A polish pass on the Settings dialog and the ☰ menu.

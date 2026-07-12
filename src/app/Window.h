@@ -60,6 +60,8 @@ private:
     void newTab(const std::wstring& cwd);
     void newTabShell(const std::wstring& shellCmd, const std::wstring& cwd);
     void splitActive(SplitDir dir);
+    void toggleZoom();     // Ctrl+Shift+Z: maximize/restore the active pane
+    void equalizePanes();  // reset all split ratios evenly
     void runStartHook(TerminalSession* s);  // send sessionStart hook to a shell
     void closeActivePane();
     void closeActivePaneConfirming();  // Ctrl+Shift+W: prompt if pane is busy
@@ -89,6 +91,10 @@ private:
     // Close a tab, but confirm first if any of its shells is running a command
     // (a child process is alive). Used by the tab × button and the tab menu.
     void closeTabConfirming(size_t idx);
+    // Close a set of tabs at once (right-click menu: right / left / others /
+    // all). `keep` is the tab to re-focus afterward, or nullptr to allow
+    // closing everything. Confirms once if any of them is running a command.
+    void closeTabSet(const std::vector<size_t>& victims, Tab* keep);
     bool tabHasRunningProcess(size_t idx) const;
 
     // Layout persistence (%USERPROFILE%\.liney\layout.json).

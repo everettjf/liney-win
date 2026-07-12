@@ -82,6 +82,7 @@ void Tab::setActive(Pane* leaf) {
 void Tab::splitActive(SplitDir dir, std::unique_ptr<TerminalSession> incoming) {
     Pane* p = active_;
     if (!p || !p->leaf()) return;
+    zoom_ = nullptr;  // the layout is changing; drop any zoom
 
     auto childA = std::make_unique<Pane>();
     childA->session = std::move(p->session);
@@ -102,6 +103,7 @@ void Tab::splitActive(SplitDir dir, std::unique_ptr<TerminalSession> incoming) {
 bool Tab::closeActive() {
     Pane* p = active_;
     if (!p || !p->leaf()) return true;
+    zoom_ = nullptr;  // the closed pane may be the zoomed one; drop zoom
 
     Pane* parent = p->parent;
     if (!parent) {
@@ -127,8 +129,45 @@ bool Tab::closeActive() {
 }
 
 void Tab::layout(const Rect& area, const Metrics& m) {
-    if (root_) layoutRec(root_.get(), area, m);
+    if (!root_) return;
+    // If a pane is zoomed, give it the whole area and collapse the rest to
+    // zero-size rects (invisible + never hit-tested). Validate the target
+    // still exists first (it may have been closed).
+    if (zoom_) {
+        bool ok = false;
+        for (Pane* leaf : leaves())
+            if (leaf == zoom_) { ok = true; break; }
+        if (!ok) zoom_ = nullptr;
+    }
+    if (zoom_) {
+        for (Pane* leaf : leaves()) leaf->rect = { 0, 0, 0, 0 };
+        zoom_->rect = area;
+        if (zoom_->session) {
+            const float pad2 = m.panePad() * 2.0f;
+            int cols = static_cast<int>((area.w - pad2) / m.cellW);
+            int rows = static_cast<int>((area.h - pad2) / m.cellH);
+            if (cols < 1) cols = 1;
+            if (rows < 1) rows = 1;
+            zoom_->session->resize(cols, rows, static_cast<int>(m.cellW),
+                                   static_cast<int>(m.cellH));
+        }
+        return;
+    }
+    layoutRec(root_.get(), area, m);
 }
+
+namespace {
+void equalizeRec(Pane* p) {
+    if (!p || !p->isSplit) return;
+    p->ratio = 0.5f;
+    equalizeRec(p->a.get());
+    equalizeRec(p->b.get());
+}
+}  // namespace
+
+void Tab::equalize() { equalizeRec(root_.get()); }
+
+void Tab::setZoom(Pane* p) { zoom_ = (p && p->leaf()) ? p : nullptr; }
 
 Pane* Tab::hitTest(float x, float y) const {
     std::vector<Pane*> ls;
@@ -158,11 +197,13 @@ Pane* findDivider(Pane* p, float x, float y, float tol) {
 }  // namespace
 
 Pane* Tab::splitDividerAt(float x, float y, float tol) const {
+    if (zoom_) return nullptr;  // no dividers while a pane is zoomed
     return findDivider(root_.get(), x, y, tol);
 }
 
 void Tab::focusDir(SplitDir axis, bool positive) {
     if (!active_) return;
+    zoom_ = nullptr;  // moving focus reveals all panes again
     std::vector<Pane*> ls;
     collect(root_.get(), ls);
 

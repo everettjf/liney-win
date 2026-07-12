@@ -301,6 +301,20 @@ void Window::drawPanes(const Rect& r) {
                               focused ? 1.5f : 1.0f);
     }
 
+    // A solid accent "ZOOM" pill in the zoomed pane's top-right corner so it's
+    // clear the other panes are hidden, not gone.
+    if (Pane* z = t->zoom()) {
+        const Rect& pr = z->rect;
+        const float bw = metrics_.cellW * 6.5f, bh = metrics_.cellH + 6.0f;
+        // Top-right of the pane, clamped so it stays on-screen at any width.
+        float bx = pr.x + pr.w - bw - 14.0f;
+        if (bx < pr.x + 8.0f) bx = pr.x + 8.0f;
+        const float by = pr.y + 12.0f;
+        renderer_->fillRect(bx, by, bw, bh, uiTheme_.accent);
+        renderer_->drawText(L"ZOOM", bx + metrics_.cellW, by + 3.0f, bw,
+                            metrics_.cellH, uiTheme_.workspaceBg, true);
+    }
+
     // The find bar floats over the focused pane's top-right corner.
     if (findActive_ && t->active()) drawFindBar(t->active()->rect);
 }

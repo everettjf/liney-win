@@ -2,8 +2,11 @@
 
 #include <windowsx.h>  // GET_X_LPARAM / GET_WHEEL_DELTA_WPARAM
 #include <commdlg.h>   // ChooseFontW (the Font… picker)
+#include <tlhelp32.h>  // process snapshot for the running-command check
 
+#include <algorithm>
 #include <cstdio>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -495,13 +498,42 @@ void Window::splitActive(SplitDir dir) {
     const Pane* a = t->active();
     int cols = 80, rows = 24;
     cellsForRect(a->rect, cols, rows);
-    const std::wstring cwd = a->session->cwd();
 
+    // Refuse a split that would make either half unusably small — the "panes
+    // get too tiny to read" problem. The user can equalize / zoom / close
+    // instead. Minimums are generous enough to keep a prompt legible.
+    constexpr int kMinCols = 24, kMinRows = 6;
+    const bool tooSmall = (dir == SplitDir::Cols) ? (cols / 2 < kMinCols)
+                                                  : (rows / 2 < kMinRows);
+    if (tooSmall) {
+        MessageBeep(MB_ICONWARNING);
+        showBalloon(L"liney",
+                    L"Pane too small to split — try Zoom (Ctrl+Shift+Z) or "
+                    L"Equalize instead.");
+        return;
+    }
+
+    const std::wstring cwd = a->session->cwd();
     auto session = std::make_unique<TerminalSession>();
     if (!session->start(shell_, cwd, cols, rows, scrollback_)) return;
     session->setTheme(theme_);
     runStartHook(session.get());
     t->splitActive(dir, std::move(session));
+}
+
+void Window::toggleZoom() {
+    if (Tab* t = activeTab()) {
+        t->setZoom(t->zoom() ? nullptr : t->active());
+        markRenderDirty();
+    }
+}
+
+void Window::equalizePanes() {
+    if (Tab* t = activeTab()) {
+        t->setZoom(nullptr);  // equalizing implies showing all panes
+        t->equalize();
+        markRenderDirty();
+    }
 }
 
 void Window::closeActivePaneConfirming() {
@@ -774,6 +806,12 @@ void Window::openMainMenu() {
     item(4, L"New tab\tCtrl+Shift+T");
     item(5, L"Split side by side\tAlt+D");
     item(6, L"Split stacked\tShift+Alt+D");
+    // Pane management for deep split layouts.
+    Tab* at = activeTab();
+    const bool zoomed = at && at->zoom();
+    item(13, zoomed ? L"Restore pane\tCtrl+Shift+Z" : L"Zoom pane\tCtrl+Shift+Z",
+         zoomed);
+    item(14, L"Equalize panes\tCtrl+Shift+E");
     item(9, L"Find on screen…\tCtrl+F");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     item(11, L"Settings…\tCtrl+,");
@@ -797,6 +835,8 @@ void Window::openMainMenu() {
     case 9: openFind(); break;
     case 10: chooseFontDialog(); break;
     case 11: openSettingsDialog(); break;
+    case 13: toggleZoom(); break;
+    case 14: equalizePanes(); break;
     case 12:
         ShellExecuteW(hwnd_, L"open",
                       L"https://github.com/everettjf/liney-win/issues/new",
@@ -811,6 +851,8 @@ void Window::openMainMenu() {
 }
 
 void Window::openTabMenu(int xi, int yi) {
+    const size_t idx = activeTab_;           // the right-clicked tab
+    const size_t n = tabs_.size();
     POINT pt{ xi, yi };
     ClientToScreen(hwnd_, &pt);
     HMENU m = CreatePopupMenu();
@@ -819,6 +861,14 @@ void Window::openTabMenu(int xi, int yi) {
     AppendMenuW(m, MF_STRING, 3, L"Copy path");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING, 4, L"Close tab\tCtrl+Shift+W");
+    // Close-multiple, each disabled when it would be a no-op.
+    const UINT dR = (idx + 1 < n) ? 0u : MF_GRAYED;
+    const UINT dL = (idx > 0) ? 0u : MF_GRAYED;
+    const UINT dO = (n > 1) ? 0u : MF_GRAYED;
+    AppendMenuW(m, MF_STRING | dR, 5, L"Close tabs to the right");
+    AppendMenuW(m, MF_STRING | dL, 6, L"Close tabs to the left");
+    AppendMenuW(m, MF_STRING | dO, 7, L"Close other tabs");
+    AppendMenuW(m, MF_STRING, 8, L"Close all tabs");
     const int cmd = TrackPopupMenu(m, TPM_RETURNCMD, pt.x, pt.y, 0, hwnd_, nullptr);
     DestroyMenu(m);
 
@@ -843,16 +893,60 @@ void Window::openTabMenu(int xi, int yi) {
             CloseClipboard();
         }
         break;
-    case 4: closeTabConfirming(activeTab_); break;
+    case 4: closeTabConfirming(idx); break;
+    case 5: {  // tabs to the right
+        std::vector<size_t> v;
+        for (size_t i = idx + 1; i < n; ++i) v.push_back(i);
+        closeTabSet(v, tabs_[idx].get());
+        break;
+    }
+    case 6: {  // tabs to the left
+        std::vector<size_t> v;
+        for (size_t i = 0; i < idx; ++i) v.push_back(i);
+        closeTabSet(v, tabs_[idx].get());
+        break;
+    }
+    case 7: {  // all other tabs
+        std::vector<size_t> v;
+        for (size_t i = 0; i < n; ++i) if (i != idx) v.push_back(i);
+        closeTabSet(v, tabs_[idx].get());
+        break;
+    }
+    case 8: {  // every tab
+        std::vector<size_t> v;
+        for (size_t i = 0; i < n; ++i) v.push_back(i);
+        closeTabSet(v, nullptr);
+        break;
+    }
     default: break;
     }
 }
 
 bool Window::tabHasRunningProcess(size_t idx) const {
     if (idx >= tabs_.size()) return false;
+    // Collect the shell PIDs of every pane, then take ONE system process
+    // snapshot and see if any process is a child of one of them. Snapshotting
+    // per pane (as hasRunningChild does) would freeze the UI for a moment on a
+    // heavily-split tab, which reads as a hang.
+    std::vector<DWORD> shellPids;
     for (Pane* leaf : tabs_[idx]->leaves())
-        if (leaf->session && leaf->session->hasRunningChild()) return true;
-    return false;
+        if (leaf->session && leaf->session->shellPid() != 0)
+            shellPids.push_back(leaf->session->shellPid());
+    if (shellPids.empty()) return false;
+
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return false;
+    PROCESSENTRY32W pe{};
+    pe.dwSize = sizeof(pe);
+    bool running = false;
+    if (Process32FirstW(snap, &pe)) {
+        do {
+            for (DWORD pid : shellPids)
+                if (pe.th32ParentProcessID == pid) { running = true; break; }
+        } while (!running && Process32NextW(snap, &pe));
+    }
+    CloseHandle(snap);
+    return running;
 }
 
 void Window::closeTabConfirming(size_t idx) {
@@ -876,6 +970,39 @@ void Window::closeTab(size_t idx) {
     tabs_.erase(tabs_.begin() + idx);
     if (tabs_.empty()) { PostQuitMessage(0); return; }
     if (activeTab_ >= tabs_.size()) activeTab_ = tabs_.size() - 1;
+    updateTitle();
+}
+
+void Window::closeTabSet(const std::vector<size_t>& victims, Tab* keep) {
+    if (victims.empty()) return;
+    // One confirmation covering the whole batch if any of them is busy.
+    int running = 0;
+    for (size_t i : victims) if (tabHasRunningProcess(i)) ++running;
+    if (running > 0) {
+        const std::wstring msg =
+            std::to_wstring(running) +
+            L" of these tabs are still running commands.\n\nClose them anyway?";
+        if (MessageBoxW(hwnd_, msg.c_str(), L"liney — close tabs",
+                        MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
+            return;
+    }
+    clearSelection();
+    hoverTab_ = -1;
+    // Erase high-index-first so the lower indices stay valid.
+    std::vector<size_t> sorted = victims;
+    std::sort(sorted.begin(), sorted.end(), std::greater<size_t>());
+    for (size_t i : sorted) {
+        if (i >= tabs_.size()) continue;
+        runDetached(sessionExitHook_, L"");  // hooks.sessionExit (per tab)
+        tabs_.erase(tabs_.begin() + i);
+    }
+    if (tabs_.empty()) { PostQuitMessage(0); return; }
+    // Re-focus the anchor tab (found by identity — indices have shifted).
+    size_t newActive = 0;
+    if (keep)
+        for (size_t k = 0; k < tabs_.size(); ++k)
+            if (tabs_[k].get() == keep) { newActive = k; break; }
+    activeTab_ = newActive;
     updateTitle();
 }
 

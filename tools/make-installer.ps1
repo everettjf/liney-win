@@ -1,4 +1,4 @@
-# make-installer.ps1 — build Release and produce dist\liney-win-Setup.exe (NSIS).
+# make-installer.ps1 — build Release and produce dist\liney-setup.exe (NSIS).
 #
 # Requires NSIS (makensis.exe). Install: winget install NSIS.NSIS
 # Usage (VS dev shell): powershell -ExecutionPolicy Bypass -File tools\make-installer.ps1
@@ -40,7 +40,7 @@ if (-not $makensis) {
 if (-not $makensis) { throw "makensis not found. Install NSIS: winget install NSIS.NSIS" }
 
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
-$out = Join-Path $dist 'liney-win-setup.exe'
+$out = Join-Path $dist 'liney-setup.exe'
 
 & $makensis `
     "/DAPPVERSION=$ver" `

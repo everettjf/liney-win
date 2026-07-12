@@ -33,6 +33,15 @@ public:
     // Assign pixel rects to every pane within `area` and resize sessions to fit.
     void layout(const Rect& area, const Metrics& m);
 
+    // Reset every split ratio to 0.5 so panes are evenly distributed.
+    void equalize();
+
+    // Pane zoom: when a leaf is zoomed it temporarily fills the whole tab
+    // (industry-standard for working in a deeply-split layout — tmux/iTerm2).
+    // setZoom(nullptr) or setting a non-leaf clears it.
+    void setZoom(Pane* p);
+    Pane* zoom() const { return zoom_; }
+
     Pane* hitTest(float x, float y) const;          // leaf at point, or nullptr
     // Split node whose divider is within `tol` px of the point, or nullptr.
     Pane* splitDividerAt(float x, float y, float tol) const;
@@ -43,6 +52,7 @@ public:
 private:
     std::unique_ptr<Pane> root_;
     Pane* active_ = nullptr;
+    Pane* zoom_ = nullptr;  // zoomed leaf (fills the tab), or nullptr
 };
 
 } // namespace liney

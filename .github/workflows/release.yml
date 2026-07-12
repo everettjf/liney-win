@@ -62,9 +62,9 @@ jobs:
 
             | File | Description |
             |---|---|
-            | `liney-win-setup.exe` | Installer — per-user, no admin, Start Menu + uninstall |
-            | `liney-win-portable.zip` | Portable — unzip and run `liney_win.exe` |
+            | `liney-setup.exe` | Installer — per-user, no admin, Start Menu + uninstall |
+            | `liney-portable.zip` | Portable — unzip and run `liney_win.exe` |
           generate_release_notes: true
           files: |
-            dist/liney-win-setup.exe
-            dist/liney-win-portable.zip
+            dist/liney-setup.exe
+            dist/liney-portable.zip

@@ -78,6 +78,7 @@ public:
     // True while the shell is running a command (has a child process), so the
     // UI can warn before closing a tab/pane that's doing work.
     bool hasRunningChild() const { return pty_.hasRunningChild(); }
+    unsigned long shellPid() const { return pty_.processId(); }
     const std::wstring& cwd() const { return cwd_; }
     const std::wstring& title() const { return title_; }
     const std::wstring& shellCommand() const { return shell_; }

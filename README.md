@@ -66,8 +66,11 @@ nothing but the OS.
   `sed` / `awk` / … work in any shell
 
 **🗂️ Workspace** — liney's differentiator
-- Tabs + binary **splits** (drag dividers to resize, drag tabs to reorder),
-  `Alt+Arrows` to move focus
+- Tabs (with a **× close button** and right-click **close to the right / left /
+  others / all**) + binary **splits** (drag dividers to resize, drag tabs to
+  reorder), `Alt+Arrows` to move focus
+- **Pane zoom** (`Ctrl+Shift+Z`) maximizes the focused pane; **Equalize**
+  (`Ctrl+Shift+E`) evens them out — so a deep split layout stays workable
 - A **repository** sidebar with **per-project icons**, expandable to **worktrees**
 - **Manage projects**: the WORKSPACE **+** adds a project folder; right-click a
   project for **New worktree… / Set icon… / Remove from workspace** (persisted)

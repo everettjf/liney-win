@@ -201,6 +201,8 @@ bool Window::onKeyDown(WPARAM vk) {
             case 'A': selectAllActive(); swallowNextChar_ = true; return true;
             case 'C': copySelection(); swallowNextChar_ = true; return true;
             case 'V': paste(); swallowNextChar_ = true; return true;
+            case 'Z': toggleZoom(); swallowNextChar_ = true; return true;
+            case 'E': equalizePanes(); swallowNextChar_ = true; return true;
             case 'L':  // git history for the active pane's repo (pager view)
                 if (auto* s = activeSession()) {
                     const std::wstring cwd = s->cwd();

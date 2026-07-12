@@ -51,6 +51,11 @@ public:
     // closing a tab/pane that's doing work. Best-effort (a process snapshot).
     bool hasRunningChild() const;
 
+    // The shell's process id (0 before start / after stop). Lets callers batch
+    // the "is anything running?" check into a single system snapshot instead of
+    // one snapshot per pane.
+    unsigned long processId() const { return procInfo_.dwProcessId; }
+
 private:
     HPCON hpc_ = nullptr;
     HANDLE inputWrite_ = nullptr;  // we write -> child stdin

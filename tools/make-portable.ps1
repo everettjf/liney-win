@@ -1,6 +1,6 @@
 # make-portable.ps1 — build a Release and produce a portable .zip distributable.
 #
-# Output: dist\liney-win-portable.zip containing liney_win.exe, liney.exe,
+# Output: dist\liney-portable.zip containing liney_win.exe, liney.exe,
 # README.md and LICENSE. No install needed — unzip and run liney_win.exe.
 #
 # Usage (from the repo root, in a shell where CMake/MSVC are available, e.g. the
@@ -40,7 +40,7 @@ $winExe = Find-Exe 'liney_win.exe'
 $cliExe = Find-Exe 'liney.exe'
 
 # Stage and zip.
-$stage = Join-Path $dist 'liney-win'
+$stage = Join-Path $dist 'liney'
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 Copy-Item $winExe $stage
@@ -52,7 +52,7 @@ Copy-Item $dll $stage
 Copy-Item (Join-Path $root 'README.md') $stage
 Copy-Item (Join-Path $root 'LICENSE') $stage
 
-$zip = Join-Path $dist 'liney-win-portable.zip'
+$zip = Join-Path $dist 'liney-portable.zip'
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip
 Write-Host "Portable package: $zip"

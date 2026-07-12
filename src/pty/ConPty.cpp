@@ -152,12 +152,17 @@ void ConPty::resize(short cols, short rows) {
 }
 
 void ConPty::stop() {
-    running_ = false;
-    // Closing the pseudo console unblocks the reader's ReadFile.
+    // Close the pseudoconsole FIRST, while the reader thread is still draining
+    // its output pipe. ClosePseudoConsole waits for the client (conhost) to
+    // flush its pending output; if we had already stopped reading, that flush
+    // would block on a full pipe forever — a classic ConPTY teardown deadlock
+    // that freezes the whole UI when a tab is closed. Closing it here makes the
+    // reader see EOF and exit on its own.
     if (hpc_) {
         ClosePseudoConsole(hpc_);
         hpc_ = nullptr;
     }
+    running_ = false;
     if (readThread_.joinable()) readThread_.join();
     // Stop the writer before closing its pipe handle.
     {
