@@ -244,7 +244,7 @@ void Window::onMouseDownRight(int xi, int yi) {
                 else {
                     std::wstring msg = L"git worktree add failed.";
                     if (!err.empty()) msg += L"\n\n" + err;
-                    MessageBoxW(hwnd_, msg.c_str(), L"liney-win",
+                    MessageBoxW(hwnd_, msg.c_str(), L"Liney",
                                 MB_OK | MB_ICONERROR);
                 }
             } else if (cmd == 2) {
@@ -262,7 +262,7 @@ void Window::onMouseDownRight(int xi, int yi) {
                 if (!workspace_.removeWorktree(repo, wt.path, &err)) {
                     std::wstring m = L"git worktree remove failed.";
                     if (!err.empty()) m += L"\n\n" + err;  // e.g. "use --force"
-                    MessageBoxW(hwnd_, m.c_str(), L"liney-win",
+                    MessageBoxW(hwnd_, m.c_str(), L"Liney",
                                 MB_OK | MB_ICONERROR);
                 }
             }
@@ -445,7 +445,7 @@ void Window::paste() {
         const std::wstring msg =
             L"The clipboard contains " + std::to_wstring(newlines + 1) +
             L" lines; each line break runs as Enter.\n\nPaste anyway?";
-        if (MessageBoxW(hwnd_, msg.c_str(), L"liney-win — paste",
+        if (MessageBoxW(hwnd_, msg.c_str(), L"Liney — paste",
                         MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
             return;
     }

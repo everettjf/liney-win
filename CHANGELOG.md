@@ -3,6 +3,18 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
+## [0.5.5] — 2026-07-12
+
+### Changed
+- **Renamed to "Liney"** — the executable is now `Liney.exe`, the window title
+  and shortcuts read **Liney** (capital L). The companion CLI is merged into
+  the same binary, so `liney notify …` / `liney title …` still work (they run
+  `Liney.exe` and write the OSC to the pane); no separate `liney.exe` ships.
+- **Split-pane starting directory is configurable** — by default a new split
+  inherits the current pane's directory; a new Settings option makes splits
+  open in the workspace directory instead (the first sidebar project, or your
+  home directory when there's no workspace).
+
 ## [0.5.4] — 2026-07-12
 
 ### Changed

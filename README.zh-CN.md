@@ -94,7 +94,7 @@ Direct2D**。用 **MSVC + Zig** 构建。
 | 文件 | 说明 |
 |---|---|
 | `liney-win-setup.exe` | 安装包 —— 每用户安装,免管理员,带开始菜单 + 卸载 |
-| `liney-win-portable.zip` | 便携版 —— 解压双击 `liney_win.exe` |
+| `liney-win-portable.zip` | 便携版 —— 解压双击 `Liney.exe` |
 
 **从源码构建** —— Windows 10 1809+/11,需要:
 - **Visual Studio 2022** Desktop C++(自带 CMake ≥ 3.20 + Ninja)
@@ -103,7 +103,7 @@ Direct2D**。用 **MSVC + Zig** 构建。
 ```powershell
 # 在 “x64 Native Tools Command Prompt for VS 2022” 中,且 zig 在 PATH 上
 powershell -ExecutionPolicy Bypass -File tools\build.ps1
-.\build\liney_win.exe
+.\build\Liney.exe
 ```
 
 `tools\build.ps1` 会配置 + 构建,并把 Zig 缓存指到构建所在盘符(Zig 0.15.2 的一个怪癖:
@@ -175,7 +175,7 @@ powershell -ExecutionPolicy Bypass -File tools\build.ps1
 
 ## 🔔 `liney` CLI 与通知
 
-随主程序构建伴随 CLI `liney.exe`,在 pane 内运行即可通过 OSC 驱动终端(对标 macOS
+随主程序构建内置 CLI(即 `Liney.exe` 本身),在 pane 内运行即可通过 OSC 驱动终端(对标 macOS
 liney 的 `liney notify`):
 
 ```
@@ -184,7 +184,7 @@ liney notify <title> <body>
 liney title  <text>            # 设置标签/窗口标题
 ```
 
-把 `liney.exe` 加入 PATH 后,长任务结束 `liney notify "done"` 即可提醒。终端也解析
+把安装目录加入 PATH 后,长任务结束 `liney notify "done"` 即可提醒。终端也解析
 OSC `0/2`(标题)、`7`(cwd)、`9` 与 `777;notify`(通知)。
 
 ## 🏗️ 架构

@@ -143,6 +143,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     copyOnSelect_ = cfg.copyOnSelect;
     multiLinePasteWarning_ = cfg.multiLinePasteWarning;
     rememberLayout_ = cfg.rememberLayout;
+    splitUseWorkspaceDir_ = cfg.splitUseWorkspaceDir;
     scrollback_ = cfg.scrollback;
     unixToolsEnabled_ = cfg.unixTools;
     if (cfg.unixTools) addGitUnixToolsToPath();  // ls/cat/grep/… in spawned shells
@@ -195,7 +196,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
             L"  • ghostty-vt.dll is missing or incompatible (must sit next to the exe)\n"
             L"  • the configured \"shell\" in config.json doesn't exist\n\n"
             L"See %USERPROFILE%\\.liney\\config.json.",
-            L"liney-win", MB_OK | MB_ICONERROR);
+            L"Liney", MB_OK | MB_ICONERROR);
         return false;
     }
 
@@ -530,12 +531,21 @@ void Window::splitActive(SplitDir dir) {
         return;
     }
 
-    const std::wstring cwd = a->session->cwd();
+    // Where the new split pane starts: inherit the current pane's directory
+    // (default), or the workspace/home directory when the user opted for that.
+    const std::wstring cwd =
+        splitUseWorkspaceDir_ ? defaultStartDir() : a->session->cwd();
     auto session = std::make_unique<TerminalSession>();
     if (!session->start(shell_, cwd, cols, rows, scrollback_)) return;
     session->setTheme(theme_);
     runStartHook(session.get());
     t->splitActive(dir, std::move(session));
+}
+
+std::wstring Window::defaultStartDir() {
+    auto& repos = workspace_.repos();
+    if (!repos.empty()) return repos.front().path;  // first workspace project
+    return homeDir();
 }
 
 void Window::toggleZoom() {
@@ -581,7 +591,7 @@ void Window::closeActivePaneConfirming() {
     if (TerminalSession* s = activeSession(); s && s->hasRunningChild()) {
         const std::wstring msg =
             L"This pane is still running a command.\n\nClose it anyway?";
-        if (MessageBoxW(hwnd_, msg.c_str(), L"liney-win — close pane",
+        if (MessageBoxW(hwnd_, msg.c_str(), L"Liney — close pane",
                         MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
             return;
     }
@@ -611,7 +621,7 @@ void Window::switchTab(int delta) {
 
 void Window::updateTitle() {
     Tab* t = activeTab();
-    std::wstring title = L"liney-win";
+    std::wstring title = L"Liney";
     if (t) title += L" — " + t->title();
     if (title == lastTitle_) return;
     lastTitle_ = title;
@@ -680,13 +690,13 @@ void Window::setKeepAwake(int hours) {
         keepAwakeUntil_ = GetTickCount64() + ms;
         // USER_TIMER_MAXIMUM is ~24.8 days, so a single shot covers 24h.
         SetTimer(hwnd_, kKeepAwakeTimerId, static_cast<UINT>(ms), nullptr);
-        showBalloon(L"liney-win",
+        showBalloon(L"Liney",
                     L"Keep awake: on for " + std::to_wstring(hours) +
                         (hours == 1 ? L" hour" : L" hours"));
     } else if (hours < 0) {
-        showBalloon(L"liney-win", L"Keep awake: on until turned off");
+        showBalloon(L"Liney", L"Keep awake: on until turned off");
     } else {
-        showBalloon(L"liney-win", L"Keep awake: off");
+        showBalloon(L"Liney", L"Keep awake: off");
     }
 }
 
@@ -740,6 +750,7 @@ void Window::openSettingsDialog() {
     v.multiLinePasteWarning = multiLinePasteWarning_;
     v.unixTools = unixToolsEnabled_;
     v.rememberLayout = rememberLayout_;
+    v.splitUseWorkspaceDir = splitUseWorkspaceDir_;
     v.workspaceRoot = workspaceRoot_;
     if (!showSettingsDialog(hwnd_, v)) return;
 
@@ -749,6 +760,7 @@ void Window::openSettingsDialog() {
     copyOnSelect_ = v.copyOnSelect;
     multiLinePasteWarning_ = v.multiLinePasteWarning;
     rememberLayout_ = v.rememberLayout;
+    splitUseWorkspaceDir_ = v.splitUseWorkspaceDir;
     if (v.unixTools && !unixToolsEnabled_) addGitUnixToolsToPath();
     unixToolsEnabled_ = v.unixTools;
     if (v.workspaceRoot != workspaceRoot_) {
@@ -795,6 +807,7 @@ void Window::openSettingsDialog() {
         j.set("multiLinePasteWarning", Json::boolean(multiLinePasteWarning_));
         j.set("unixTools", Json::boolean(unixToolsEnabled_));
         j.set("rememberLayout", Json::boolean(rememberLayout_));
+        j.set("splitUseWorkspaceDir", Json::boolean(splitUseWorkspaceDir_));
         j.set("workspaceRoot", Json::str(wideToUtf8(workspaceRoot_)));
     });
 }

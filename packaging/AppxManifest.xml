@@ -12,7 +12,7 @@
 
   <Identity Name="everettjf.liney-win"
             Publisher="CN=liney-win"
-            Version="0.5.4.0"
+            Version="0.5.5.0"
             ProcessorArchitecture="x64" />
 
   <Properties>

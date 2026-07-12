@@ -1,7 +1,7 @@
 # make-portable.ps1 — build a Release and produce a portable .zip distributable.
 #
-# Output: dist\liney-portable.zip containing liney_win.exe, liney.exe,
-# README.md and LICENSE. No install needed — unzip and run liney_win.exe.
+# Output: dist\liney-portable.zip containing Liney.exe, ghostty-vt.dll,
+# README.md and LICENSE. No install needed — unzip and run Liney.exe.
 #
 # Usage (from the repo root, in a shell where CMake/MSVC are available, e.g. the
 # "x64 Native Tools Command Prompt for VS 2022"):
@@ -36,18 +36,16 @@ function Find-Exe($name) {
     if (Test-Path $p2) { return $p2 }
     throw "$name not found under $build"
 }
-$winExe = Find-Exe 'liney_win.exe'
-$cliExe = Find-Exe 'liney.exe'
+$winExe = Find-Exe 'Liney.exe'
 
 # Stage and zip.
 $stage = Join-Path $dist 'liney'
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 Copy-Item $winExe $stage
-Copy-Item $cliExe $stage
 # Bundle the terminal-core DLL (copied next to the exe by the build).
 $dll = Join-Path (Split-Path $winExe) 'ghostty-vt.dll'
-if (-not (Test-Path $dll)) { throw "ghostty-vt.dll not found next to liney_win.exe" }
+if (-not (Test-Path $dll)) { throw "ghostty-vt.dll not found next to Liney.exe" }
 Copy-Item $dll $stage
 Copy-Item (Join-Path $root 'README.md') $stage
 Copy-Item (Join-Path $root 'LICENSE') $stage

@@ -64,6 +64,10 @@ private:
     void equalizePanes();  // reset all split ratios evenly
     void closeOtherPanes();  // collapse the tab to just the active pane
     void runStartHook(TerminalSession* s);  // send sessionStart hook to a shell
+    // The "default" starting directory: the first workspace repo when the
+    // sidebar has one, else the user's home. Used for the split-in-workspace
+    // option.
+    std::wstring defaultStartDir();
     void closeActivePane();
     void closeActivePaneConfirming();  // Ctrl+Shift+W: prompt if pane is busy
     void switchTab(int delta);
@@ -264,6 +268,7 @@ private:
     bool copyOnSelect_ = false;    // copy to clipboard as soon as a selection ends
     bool multiLinePasteWarning_ = true;  // confirm before pasting multiple lines
     bool rememberLayout_ = false;  // restore tabs/panes on launch (opt-in)
+    bool splitUseWorkspaceDir_ = false;  // splits open in workspace/home dir vs inherit
     bool unixToolsEnabled_ = true; // Git's usr/bin appended to shells' PATH
     int mouseButtonsDown_ = 0;     // forwarded-to-app buttons, bitmask by number
 

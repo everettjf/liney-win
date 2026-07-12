@@ -50,6 +50,12 @@ add_executable(liney_win WIN32
   src/util/Http.cpp
 )
 
+# The GUI binary is Liney.exe. It also serves as the companion CLI: invoked as
+# `liney notify ...` it emits OSC sequences a Liney pane turns into
+# notifications (see src/main.cpp). One binary avoids a separate liney.exe,
+# which would collide with Liney.exe on Windows' case-insensitive filesystem.
+set_target_properties(liney_win PROPERTIES OUTPUT_NAME "Liney")
+
 target_include_directories(liney_win PRIVATE src)
 
 target_compile_definitions(liney_win PRIVATE
@@ -57,12 +63,6 @@ target_compile_definitions(liney_win PRIVATE
 
 target_link_libraries(liney_win PRIVATE
   d2d1 dwrite d3d11 dxgi imm32 winhttp windowscodecs ole32 comdlg32 shell32)
-
-# Companion CLI: liney.exe (console). `liney notify ...` emits OSC sequences a
-# liney-win pane turns into notifications.
-add_executable(liney_cli src/cli/main.cpp)
-set_target_properties(liney_cli PROPERTIES OUTPUT_NAME liney)
-target_compile_definitions(liney_cli PRIVATE UNICODE _UNICODE)
 
 # Fetch Ghostty and build its libghostty-vt (via Zig) as the terminal core.
 include(FetchContent)
@@ -75,9 +75,9 @@ FetchContent_MakeAvailable(ghostty)
 # `zig build lib-vt`); it also supplies the include directory.
 target_link_libraries(liney_win PRIVATE ghostty-vt)
 
-# ghostty-vt is a DLL; copy it next to liney_win.exe so the app runs in-place.
+# ghostty-vt is a DLL; copy it next to Liney.exe so the app runs in-place.
 add_custom_command(TARGET liney_win POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${ghostty_SOURCE_DIR}/zig-out/bin/ghostty-vt.dll"
     "$<TARGET_FILE_DIR:liney_win>"
-  COMMENT "Copying ghostty-vt.dll next to liney_win.exe")
+  COMMENT "Copying ghostty-vt.dll next to Liney.exe")

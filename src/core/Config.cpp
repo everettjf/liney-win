@@ -183,6 +183,8 @@ Config loadConfig() {
         cfg.multiLinePasteWarning = j["multiLinePasteWarning"].asBool(true);
     if (j.contains("rememberLayout"))
         cfg.rememberLayout = j["rememberLayout"].asBool(false);
+    if (j.contains("splitUseWorkspaceDir"))
+        cfg.splitUseWorkspaceDir = j["splitUseWorkspaceDir"].asBool(false);
     // projectIcons: { "<repoName>": "<icon path>" }
     const Json& pi = j["projectIcons"];
     if (pi.isObject())

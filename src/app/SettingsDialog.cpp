@@ -26,6 +26,7 @@ constexpr int kIdFontSize = 108;
 constexpr int kIdTheme = 109;
 constexpr int kIdAccent = 110;
 constexpr int kIdRemember = 111;
+constexpr int kIdSplitDir = 112;
 
 struct State {
     HWND shell = nullptr;
@@ -38,6 +39,7 @@ struct State {
     HWND pasteWarn = nullptr;
     HWND unixTools = nullptr;
     HWND rememberLayout = nullptr;
+    HWND splitWorkspaceDir = nullptr;
     HWND root = nullptr;
     HWND accentHex = nullptr;     // "#RRGGBB" caption next to the swatch
     HBRUSH accentBrush = nullptr; // fills the swatch via WM_CTLCOLORSTATIC
@@ -208,7 +210,7 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
     st.accent = v.accent;
 
     // Size the window so the *client* area is exactly W × contentH.
-    const int contentH = 470;
+    const int contentH = 524;
     RECT wr{ 0, 0, S(W), S(contentH) };
     const DWORD style = WS_POPUP | WS_CAPTION | WS_SYSMENU;
     AdjustWindowRectExForDpi(&wr, style, FALSE, WS_EX_DLGMODALFRAME, dpi);
@@ -292,7 +294,7 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
     setAccentSwatch(&st);
 
     // ---- Terminal ---------------------------------------------------------
-    group(L"Terminal", 152, 172);
+    group(L"Terminal", 152, 226);
     r = 174;
     label(L"Shell", r);
     st.shell = mk(0, L"COMBOBOX", L"",
@@ -335,10 +337,15 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
     r += 26;
     st.rememberLayout = checkbox(
         kIdRemember, L"Restore tabs & panes on launch", v.rememberLayout, r);
+    r += 26;
+    st.splitWorkspaceDir = checkbox(
+        kIdSplitDir,
+        L"New splits open in the workspace / home dir (else inherit the pane's)",
+        v.splitUseWorkspaceDir, r);
 
     // ---- Workspace --------------------------------------------------------
-    group(L"Workspace", 334, 84);
-    r = 356;
+    group(L"Workspace", 388, 84);
+    r = 410;
     label(L"Root", r);
     st.root = mk(WS_EX_CLIENTEDGE, L"EDIT", v.workspaceRoot.c_str(),
                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, ctrlX, r,
@@ -351,10 +358,10 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
 
     // ---- OK / Cancel ------------------------------------------------------
     mk(0, L"BUTTON", L"OK",
-       WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, ctrlR - 178, 430,
+       WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, ctrlR - 178, 484,
        84, 28, IDOK);
     mk(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE | WS_TABSTOP, ctrlR - 84,
-       430, 84, 28, IDCANCEL);
+       484, 84, 28, IDCANCEL);
 
     // A real Segoe UI font at the monitor's DPI — the biggest single upgrade
     // over the legacy bitmap DEFAULT_GUI_FONT.
@@ -427,6 +434,8 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
             SendMessageW(st.unixTools, BM_GETCHECK, 0, 0) == BST_CHECKED;
         v.rememberLayout =
             SendMessageW(st.rememberLayout, BM_GETCHECK, 0, 0) == BST_CHECKED;
+        v.splitUseWorkspaceDir =
+            SendMessageW(st.splitWorkspaceDir, BM_GETCHECK, 0, 0) == BST_CHECKED;
         v.workspaceRoot = windowText(st.root);
     }
 

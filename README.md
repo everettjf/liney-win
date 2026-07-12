@@ -104,7 +104,7 @@ nothing but the OS.
 | File | Description |
 |---|---|
 | `liney-win-setup.exe` | Installer — per-user, no admin, Start Menu + uninstall |
-| `liney-win-portable.zip` | Portable — unzip and run `liney_win.exe` |
+| `liney-win-portable.zip` | Portable — unzip and run `Liney.exe` |
 
 **Build from source** — Windows 10 1809+/11, with:
 - **Visual Studio 2022** Desktop C++ (bundles CMake ≥ 3.20 + Ninja)
@@ -114,7 +114,7 @@ nothing but the OS.
 ```powershell
 # in the "x64 Native Tools Command Prompt for VS 2022", with zig on PATH
 powershell -ExecutionPolicy Bypass -File tools\build.ps1
-.\build\liney_win.exe
+.\build\Liney.exe
 ```
 
 `tools\build.ps1` configures + builds and points Zig's cache at the build drive
@@ -189,7 +189,7 @@ the next launch.
 
 ## 🔔 `liney` CLI & notifications
 
-A companion CLI `liney.exe` ships with the app; run it in a pane to drive the
+A companion CLI `Liney.exe` ships with the app; run it in a pane to drive the
 terminal over OSC (mirrors macOS liney's `liney notify`):
 
 ```
@@ -198,7 +198,7 @@ liney notify <title> <body>
 liney title  <text>            # set the tab/window title
 ```
 
-Put `liney.exe` on PATH and `liney notify "done"` pings you when a long task
+Put `Liney.exe` on PATH and `liney notify "done"` pings you when a long task
 finishes. The terminal also parses OSC `0/2` (title), `7` (cwd), `9` and
 `777;notify` (notifications).
 

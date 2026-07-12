@@ -23,6 +23,7 @@ struct SettingsValues {
     bool multiLinePasteWarning = true;  // confirm multi-line pastes
     bool unixTools = true;           // add Git's usr/bin to PATH for shells
     bool rememberLayout = false;     // restore tabs/panes on launch
+    bool splitUseWorkspaceDir = false;  // splits open in workspace/home dir
     std::wstring workspaceRoot;      // sidebar scan root (empty = launch parent)
 };
 

@@ -70,7 +70,7 @@ void Window::initTray() {
     nid_.uID = 1;
     nid_.uFlags = NIF_ICON | NIF_TIP;
     nid_.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
-    wcsncpy_s(nid_.szTip, L"liney-win", _TRUNCATE);
+    wcsncpy_s(nid_.szTip, L"Liney", _TRUNCATE);
     trayAdded_ = Shell_NotifyIconW(NIM_ADD, &nid_) != FALSE;
 }
 
@@ -78,7 +78,7 @@ void Window::showBalloon(const std::wstring& title, const std::wstring& body) {
     if (!trayAdded_) return;
     nid_.uFlags = NIF_INFO;
     nid_.dwInfoFlags = NIIF_INFO;
-    wcsncpy_s(nid_.szInfoTitle, title.empty() ? L"liney-win" : title.c_str(),
+    wcsncpy_s(nid_.szInfoTitle, title.empty() ? L"Liney" : title.c_str(),
               _TRUNCATE);
     wcsncpy_s(nid_.szInfo, body.c_str(), _TRUNCATE);
     Shell_NotifyIconW(NIM_MODIFY, &nid_);
@@ -100,7 +100,7 @@ void Window::pollNotifications() {
 }
 
 void Window::checkForUpdates() {
-    showBalloon(L"liney-win", L"Checking for updates…");
+    showBalloon(L"Liney", L"Checking for updates…");
     // Query GitHub off the UI thread; renderFrame shows the result + prompt.
     updateThreads_.emplace_back([this]() {
         const std::string body = httpsGet(
@@ -153,7 +153,7 @@ void Window::startDownloadAndInstall(const std::wstring& url) {
     const std::wstring scheme = L"https://";
     if (rest.rfind(scheme, 0) == 0) rest = rest.substr(scheme.size());
     size_t slash = rest.find(L'/');
-    if (slash == std::wstring::npos) { showBalloon(L"liney-win", L"Bad update URL"); return; }
+    if (slash == std::wstring::npos) { showBalloon(L"Liney", L"Bad update URL"); return; }
     const std::wstring host = rest.substr(0, slash);
     const std::wstring path = rest.substr(slash);
 
@@ -161,7 +161,7 @@ void Window::startDownloadAndInstall(const std::wstring& url) {
     GetTempPathW(MAX_PATH, tmp);
     const std::wstring out = std::wstring(tmp) + L"liney-win-setup.exe";
 
-    showBalloon(L"liney-win", L"Downloading update…");
+    showBalloon(L"Liney", L"Downloading update…");
     updateThreads_.emplace_back([this, host, path, out]() {
         const bool dl = httpsDownload(host, path, out);
         {
@@ -198,11 +198,11 @@ void Window::pollUpdateResult() {
         url = downloadUrl_;
         pending = pendingUpdate_;
     }
-    showBalloon(L"liney-win", msg);
+    showBalloon(L"Liney", msg);
     if (pending && !url.empty()) {
         const std::wstring prompt =
-            msg + L"\n\nDownload and install now? liney-win will close.";
-        if (MessageBoxW(hwnd_, prompt.c_str(), L"liney-win update",
+            msg + L"\n\nDownload and install now? Liney will close.";
+        if (MessageBoxW(hwnd_, prompt.c_str(), L"Liney update",
                         MB_YESNO | MB_ICONQUESTION) == IDYES) {
             startDownloadAndInstall(url);
         }

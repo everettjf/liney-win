@@ -12,7 +12,7 @@
 
 namespace liney {
 
-inline constexpr const wchar_t* kAppVersion = L"0.5.4";  // sync with AppxManifest
+inline constexpr const wchar_t* kAppVersion = L"0.5.5";  // sync with AppxManifest
 
 // Chrome colors are now runtime-themeable (Window::uiTheme_, see core/Themes.h).
 // The drawing code refers to uiTheme_.sidebarBg / .accent / … directly.
