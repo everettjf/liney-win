@@ -12,7 +12,7 @@
 
 namespace liney {
 
-inline constexpr const wchar_t* kAppVersion = L"0.5.3";  // sync with AppxManifest
+inline constexpr const wchar_t* kAppVersion = L"0.5.4";  // sync with AppxManifest
 
 // Chrome colors are now runtime-themeable (Window::uiTheme_, see core/Themes.h).
 // The drawing code refers to uiTheme_.sidebarBg / .accent / … directly.
@@ -26,6 +26,16 @@ inline std::wstring parentDir(const std::wstring& path) {
 }
 
 inline bool keyDown(int vk) { return (GetKeyState(vk) & 0x8000) != 0; }
+
+// The current user's home directory (%USERPROFILE%, e.g. C:\Users\name), used
+// as the default working directory for new terminals.
+inline std::wstring homeDir() {
+    wchar_t buf[MAX_PATH]{};
+    DWORD n = GetEnvironmentVariableW(L"USERPROFILE", buf, MAX_PATH);
+    if (n > 0 && n < MAX_PATH) return buf;
+    n = GetEnvironmentVariableW(L"HOMEDRIVE", buf, MAX_PATH);  // fallback
+    return (n > 0 && n < MAX_PATH) ? std::wstring(buf) + L"\\" : L"C:\\";
+}
 
 inline std::string wideToUtf8(const std::wstring& w) {
     if (w.empty()) return "";

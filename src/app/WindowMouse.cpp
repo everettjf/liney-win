@@ -77,7 +77,7 @@ void Window::onMouseDown(int xi, int yi) {
     if (tabBar.contains(x, y)) {
         if (menuButtonRect_.contains(x, y)) { openMainMenu(); return; }
         if (plusRect_.contains(x, y)) {
-            newTab(activeSession() ? activeSession()->cwd() : workspace_.root());
+            newTab(activeSession() ? activeSession()->cwd() : homeDir());
             return;
         }
         // A hit on a tab's × closes it (with a confirm if it's running a
@@ -160,7 +160,7 @@ void Window::onMouseDoubleClick(int xi, int yi) {
         bool onTab = false;
         for (const Rect& tr : tabRects_) if (tr.contains(x, y)) { onTab = true; break; }
         if (!onTab && !plusRect_.contains(x, y) && !menuButtonRect_.contains(x, y))
-            newTab(activeSession() ? activeSession()->cwd() : workspace_.root());
+            newTab(activeSession() ? activeSession()->cwd() : homeDir());
         else
             onMouseDown(xi, yi);
         return;

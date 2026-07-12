@@ -3,6 +3,14 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
+## [0.5.4] — 2026-07-12
+
+### Changed
+- **New terminals open in your home directory by default** (`%USERPROFILE%`,
+  e.g. `C:\Users\name`) instead of wherever the app was launched from. New
+  tabs still follow the focused tab's directory when there is one; opening a
+  worktree / SSH / agent from the sidebar still uses that target's directory.
+
 ## [0.5.3] — 2026-07-12
 
 ### Fixed

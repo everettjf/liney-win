@@ -180,8 +180,10 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
 
     // Restore the saved tab/pane layout if any; otherwise open one tab.
     // Only restore the saved tab/pane layout when the user opted in (off by
-    // default — a fresh window each launch is less surprising).
-    if (!(rememberLayout_ && restoreLayout())) newTab(startCwd);
+    // default — a fresh window each launch is less surprising). A fresh window
+    // opens its first terminal in the user's home directory, not wherever the
+    // app happened to be launched from.
+    if (!(rememberLayout_ && restoreLayout())) newTab(homeDir());
     if (tabs_.empty()) {
         // No session could start — almost always the terminal core DLL is
         // missing/incompatible, or the configured shell doesn't exist. Tell the
@@ -867,7 +869,7 @@ void Window::openMainMenu() {
     switch (cmd) {
     case 2: sidebarVisible_ = !sidebarVisible_; break;
     case 3: filesPanelVisible_ = !filesPanelVisible_; break;
-    case 4: newTab(activeSession() ? activeSession()->cwd() : workspace_.root()); break;
+    case 4: newTab(activeSession() ? activeSession()->cwd() : homeDir()); break;
     case 5: splitActive(SplitDir::Cols); break;
     case 6: splitActive(SplitDir::Rows); break;
     case 7: openConfigFile(); break;
@@ -915,7 +917,7 @@ void Window::openTabMenu(int xi, int yi) {
     TerminalSession* s = activeSession();
     const std::wstring cwd = s ? s->cwd() : L"";
     switch (cmd) {
-    case 1: newTab(cwd.empty() ? workspace_.root() : cwd); break;
+    case 1: newTab(cwd.empty() ? homeDir() : cwd); break;
     case 2:
         if (!cwd.empty())
             ShellExecuteW(hwnd_, L"open", cwd.c_str(), nullptr, nullptr,
