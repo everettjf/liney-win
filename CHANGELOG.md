@@ -3,6 +3,15 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
+## [0.5.6] — 2026-07-12
+
+### Changed
+- **Readable tab & window titles** — shells report their own exe path as the
+  console title, so tabs used to read `C:\WINDOWS\SYSTEM32\cmd.exe`. Now an
+  idle shell shows the **current directory's name**, and while a command runs
+  the tab shows **the command itself** (e.g. `ping -t 127.0.0.1`). Titles set
+  by apps (vim, ssh…) still show as-is.
+
 ## [0.5.5] — 2026-07-12
 
 ### Changed

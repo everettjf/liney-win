@@ -86,14 +86,20 @@ public:
     // Pull OSC-driven updates: refresh title/cwd and append any notifications.
     // Called every frame for every session (so background panes notify too).
     void poll(std::vector<Notification>& notes) {
-        std::wstring t = terminal_.oscTitle();
-        if (!t.empty()) title_ = t;
         std::wstring c;
         if (terminal_.takeCwd(c) && !c.empty()) cwd_ = c;
+        std::wstring t = terminal_.oscTitle();
+        if (!t.empty()) title_ = prettifyTitle(t);
         terminal_.drainNotifications(notes);
     }
 
 private:
+    // Shells report their own exe path as the console title
+    // ("C:\WINDOWS\SYSTEM32\cmd.exe", or "…cmd.exe - <command>" while a
+    // command runs). Turn that into something a human wants on a tab: the
+    // running command, or the current directory's name.
+    std::wstring prettifyTitle(const std::wstring& t) const;
+
     Terminal terminal_;
     ConPty pty_;
     Grid grid_;
