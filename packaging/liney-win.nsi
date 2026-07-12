@@ -11,7 +11,7 @@
 
 Unicode true
 !ifndef APPVERSION
-  !define APPVERSION "0.5.0"
+  !define APPVERSION "0.5.1"
 !endif
 !ifndef OUTFILE
   !define OUTFILE "liney-Setup.exe"
