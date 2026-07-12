@@ -22,6 +22,7 @@ struct SettingsValues {
     bool copyOnSelect = false;       // copy as soon as a selection ends
     bool multiLinePasteWarning = true;  // confirm multi-line pastes
     bool unixTools = true;           // add Git's usr/bin to PATH for shells
+    bool rememberLayout = false;     // restore tabs/panes on launch
     std::wstring workspaceRoot;      // sidebar scan root (empty = launch parent)
 };
 

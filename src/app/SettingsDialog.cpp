@@ -25,6 +25,7 @@ constexpr int kIdFont = 107;
 constexpr int kIdFontSize = 108;
 constexpr int kIdTheme = 109;
 constexpr int kIdAccent = 110;
+constexpr int kIdRemember = 111;
 
 struct State {
     HWND shell = nullptr;
@@ -36,6 +37,7 @@ struct State {
     HWND copyOnSelect = nullptr;
     HWND pasteWarn = nullptr;
     HWND unixTools = nullptr;
+    HWND rememberLayout = nullptr;
     HWND root = nullptr;
     HWND accentHex = nullptr;     // "#RRGGBB" caption next to the swatch
     HBRUSH accentBrush = nullptr; // fills the swatch via WM_CTLCOLORSTATIC
@@ -330,6 +332,9 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
     st.unixTools = checkbox(
         kIdUnixTools, L"Unix tools — add Git's ls / grep / sed … to PATH",
         v.unixTools, r);
+    r += 26;
+    st.rememberLayout = checkbox(
+        kIdRemember, L"Restore tabs & panes on launch", v.rememberLayout, r);
 
     // ---- Workspace --------------------------------------------------------
     group(L"Workspace", 334, 84);
@@ -420,6 +425,8 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
             SendMessageW(st.pasteWarn, BM_GETCHECK, 0, 0) == BST_CHECKED;
         v.unixTools =
             SendMessageW(st.unixTools, BM_GETCHECK, 0, 0) == BST_CHECKED;
+        v.rememberLayout =
+            SendMessageW(st.rememberLayout, BM_GETCHECK, 0, 0) == BST_CHECKED;
         v.workspaceRoot = windowText(st.root);
     }
 

@@ -3,6 +3,24 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
+## [0.5.3] — 2026-07-12
+
+### Fixed
+- **Closing a pane/tab could hang and leave a zombie** — the ConPTY teardown
+  could deadlock (window closed but the process never exited), so after closing
+  a few panes further closes stopped working. The shutdown now force-unblocks
+  its worker threads (`CancelIoEx`) before closing the pseudoconsole, so a close
+  always completes. Verified: 5 panes each running a command → close all →
+  quit → clean process exit.
+
+### Changed
+- **"Restore tabs & panes on launch" is now off by default** — a fresh window
+  each launch. Re-enable it in **Settings** (the old always-restore behavior).
+
+### Added
+- **Pane right-click menu** — Split right / down, Zoom pane, Equalize panes,
+  Close pane, and **Close other panes** (collapse the tab back to one pane).
+
 ## [0.5.2] — 2026-07-12
 
 ### Changed

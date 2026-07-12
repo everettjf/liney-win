@@ -30,6 +30,11 @@ public:
     // the tab has no panes left (caller should drop the tab).
     bool closeActive();
 
+    // Close every pane except the active one, collapsing the tab back to a
+    // single pane. No-op when already a single pane.
+    void closeOthers();
+    bool isSplit() const { return root_ && root_->isSplit; }
+
     // Assign pixel rects to every pane within `area` and resize sessions to fit.
     void layout(const Rect& area, const Metrics& m);
 

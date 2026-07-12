@@ -167,6 +167,18 @@ void equalizeRec(Pane* p) {
 
 void Tab::equalize() { equalizeRec(root_.get()); }
 
+void Tab::closeOthers() {
+    if (!active_ || !active_->leaf() || !root_->isSplit) return;
+    zoom_ = nullptr;
+    // Keep the active pane's session; replacing root_ frees every other pane
+    // (and its session), so all the other split terminals are torn down.
+    auto keep = std::make_unique<Pane>();
+    keep->session = std::move(active_->session);
+    root_ = std::move(keep);
+    root_->parent = nullptr;
+    active_ = root_.get();
+}
+
 void Tab::setZoom(Pane* p) { zoom_ = (p && p->leaf()) ? p : nullptr; }
 
 Pane* Tab::hitTest(float x, float y) const {

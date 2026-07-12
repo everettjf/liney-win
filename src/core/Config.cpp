@@ -181,6 +181,8 @@ Config loadConfig() {
         cfg.copyOnSelect = j["copyOnSelect"].asBool(false);
     if (j.contains("multiLinePasteWarning"))
         cfg.multiLinePasteWarning = j["multiLinePasteWarning"].asBool(true);
+    if (j.contains("rememberLayout"))
+        cfg.rememberLayout = j["rememberLayout"].asBool(false);
     // projectIcons: { "<repoName>": "<icon path>" }
     const Json& pi = j["projectIcons"];
     if (pi.isObject())

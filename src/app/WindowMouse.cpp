@@ -567,6 +567,17 @@ void Window::openPaneMenu(int xi, int yi) {
     AppendMenuW(m, MF_STRING, 3, L"Select all\tCtrl+Shift+A");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING, 4, L"Find…\tCtrl+F");
+    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    // Split management.
+    AppendMenuW(m, MF_STRING, 7, L"Split right\tAlt+D");
+    AppendMenuW(m, MF_STRING, 8, L"Split down\tShift+Alt+D");
+    const bool split = activeTab() && activeTab()->isSplit();
+    AppendMenuW(m, MF_STRING | (split ? 0 : MF_GRAYED), 9,
+                L"Zoom pane\tCtrl+Shift+Z");
+    AppendMenuW(m, MF_STRING | (split ? 0 : MF_GRAYED), 10, L"Equalize panes");
+    AppendMenuW(m, MF_STRING, 5, L"Close pane\tCtrl+Shift+W");
+    AppendMenuW(m, MF_STRING | (split ? 0 : MF_GRAYED), 6,
+                L"Close other panes");
     const int cmd = TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y,
                                    0, hwnd_, nullptr);
     DestroyMenu(m);
@@ -575,6 +586,12 @@ void Window::openPaneMenu(int xi, int yi) {
     case 2: paste(); break;
     case 3: selectAllActive(); break;
     case 4: openFind(); break;
+    case 5: closeActivePaneConfirming(); break;
+    case 6: closeOtherPanes(); break;
+    case 7: splitActive(SplitDir::Cols); break;
+    case 8: splitActive(SplitDir::Rows); break;
+    case 9: toggleZoom(); break;
+    case 10: equalizePanes(); break;
     default: break;
     }
 }

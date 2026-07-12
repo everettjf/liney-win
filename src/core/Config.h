@@ -38,6 +38,7 @@ struct Config {
     bool unixTools = true;                  // append Git's usr/bin to PATH (ls/cat/…)
     bool copyOnSelect = false;              // copy to clipboard as soon as a drag ends
     bool multiLinePasteWarning = true;      // confirm before pasting multiple lines
+    bool rememberLayout = false;            // restore tabs/panes on launch (off by default)
     // Per-project sidebar icons: repo name -> icon file path (png/ico).
     std::vector<std::pair<std::wstring, std::wstring>> projectIcons;
     // Explicit project folders added to the sidebar (besides scanned ones).

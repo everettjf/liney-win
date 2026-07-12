@@ -142,6 +142,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     appExitHook_ = cfg.appExitHook;
     copyOnSelect_ = cfg.copyOnSelect;
     multiLinePasteWarning_ = cfg.multiLinePasteWarning;
+    rememberLayout_ = cfg.rememberLayout;
     scrollback_ = cfg.scrollback;
     unixToolsEnabled_ = cfg.unixTools;
     if (cfg.unixTools) addGitUnixToolsToPath();  // ls/cat/grep/… in spawned shells
@@ -178,7 +179,9 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     rescanWorkspace();
 
     // Restore the saved tab/pane layout if any; otherwise open one tab.
-    if (!restoreLayout()) newTab(startCwd);
+    // Only restore the saved tab/pane layout when the user opted in (off by
+    // default — a fresh window each launch is less surprising).
+    if (!(rememberLayout_ && restoreLayout())) newTab(startCwd);
     if (tabs_.empty()) {
         // No session could start — almost always the terminal core DLL is
         // missing/incompatible, or the configured shell doesn't exist. Tell the
@@ -211,7 +214,7 @@ int Window::runMessageLoop() {
         bool didMsg = false;
         while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_QUIT) {
-                saveLayout();  // persist tabs/panes for next launch
+                if (rememberLayout_) saveLayout();  // persist only if opted in
                 runDetached(appExitHook_, L"");  // hooks.appExit
                 return static_cast<int>(msg.wParam);
             }
@@ -548,6 +551,28 @@ void Window::equalizePanes() {
     }
 }
 
+void Window::closeOtherPanes() {
+    Tab* t = activeTab();
+    if (!t || !t->isSplit()) return;
+    // Warn once if any of the panes we're about to close is running a command.
+    Pane* keep = t->active();
+    int running = 0;
+    for (Pane* leaf : t->leaves())
+        if (leaf != keep && leaf->session && leaf->session->hasRunningChild())
+            ++running;
+    if (running > 0) {
+        const std::wstring msg =
+            std::to_wstring(running) +
+            L" of the other panes are running a command.\n\nClose them anyway?";
+        if (MessageBoxW(hwnd_, msg.c_str(), L"liney — close panes",
+                        MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
+            return;
+    }
+    clearSelection();
+    t->closeOthers();
+    markRenderDirty();
+}
+
 void Window::closeActivePaneConfirming() {
     // User-initiated (Ctrl+Shift+W): warn if the pane is running a command.
     // The automatic reaper calls closeActivePane() directly (no prompt).
@@ -712,6 +737,7 @@ void Window::openSettingsDialog() {
     v.copyOnSelect = copyOnSelect_;
     v.multiLinePasteWarning = multiLinePasteWarning_;
     v.unixTools = unixToolsEnabled_;
+    v.rememberLayout = rememberLayout_;
     v.workspaceRoot = workspaceRoot_;
     if (!showSettingsDialog(hwnd_, v)) return;
 
@@ -720,6 +746,7 @@ void Window::openSettingsDialog() {
     scrollback_ = v.scrollback;
     copyOnSelect_ = v.copyOnSelect;
     multiLinePasteWarning_ = v.multiLinePasteWarning;
+    rememberLayout_ = v.rememberLayout;
     if (v.unixTools && !unixToolsEnabled_) addGitUnixToolsToPath();
     unixToolsEnabled_ = v.unixTools;
     if (v.workspaceRoot != workspaceRoot_) {
@@ -765,6 +792,7 @@ void Window::openSettingsDialog() {
         j.set("copyOnSelect", Json::boolean(copyOnSelect_));
         j.set("multiLinePasteWarning", Json::boolean(multiLinePasteWarning_));
         j.set("unixTools", Json::boolean(unixToolsEnabled_));
+        j.set("rememberLayout", Json::boolean(rememberLayout_));
         j.set("workspaceRoot", Json::str(wideToUtf8(workspaceRoot_)));
     });
 }

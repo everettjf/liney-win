@@ -62,6 +62,7 @@ private:
     void splitActive(SplitDir dir);
     void toggleZoom();     // Ctrl+Shift+Z: maximize/restore the active pane
     void equalizePanes();  // reset all split ratios evenly
+    void closeOtherPanes();  // collapse the tab to just the active pane
     void runStartHook(TerminalSession* s);  // send sessionStart hook to a shell
     void closeActivePane();
     void closeActivePaneConfirming();  // Ctrl+Shift+W: prompt if pane is busy
@@ -262,6 +263,7 @@ private:
     bool selDragged_ = false;      // the drag left its press cell at least once
     bool copyOnSelect_ = false;    // copy to clipboard as soon as a selection ends
     bool multiLinePasteWarning_ = true;  // confirm before pasting multiple lines
+    bool rememberLayout_ = false;  // restore tabs/panes on launch (opt-in)
     bool unixToolsEnabled_ = true; // Git's usr/bin appended to shells' PATH
     int mouseButtonsDown_ = 0;     // forwarded-to-app buttons, bitmask by number
 

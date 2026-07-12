@@ -152,26 +152,32 @@ void ConPty::resize(short cols, short rows) {
 }
 
 void ConPty::stop() {
-    // Close the pseudoconsole FIRST, while the reader thread is still draining
-    // its output pipe. ClosePseudoConsole waits for the client (conhost) to
-    // flush its pending output; if we had already stopped reading, that flush
-    // would block on a full pipe forever — a classic ConPTY teardown deadlock
-    // that freezes the whole UI when a tab is closed. Closing it here makes the
-    // reader see EOF and exit on its own.
-    if (hpc_) {
-        ClosePseudoConsole(hpc_);
-        hpc_ = nullptr;
-    }
+    // Robust, deadlock-free teardown. The naive order (ClosePseudoConsole then
+    // join the reader) can hang forever: ClosePseudoConsole blocks until the
+    // conhost client flushes its output, but that flush blocks on a full pipe
+    // if the reader has stopped draining — the UI thread then wedges inside a
+    // thread join and the window closes but the process never exits (a zombie).
+    //
+    // Instead, force both worker threads out of their blocking I/O with
+    // CancelIoEx (so the joins can't depend on ClosePseudoConsole), join them,
+    // and only THEN close our pipe handles + the pseudoconsole. With our read
+    // end already gone, conhost's writes fail fast and ClosePseudoConsole can't
+    // block on a flush.
     running_ = false;
-    if (readThread_.joinable()) readThread_.join();
-    // Stop the writer before closing its pipe handle.
+
+    if (outputRead_) CancelIoEx(outputRead_, nullptr);  // unblock reader ReadFile
     {
         std::lock_guard<std::mutex> lock(writeMutex_);
         writeStop_ = true;
         writeQueue_.clear();
     }
     writeCv_.notify_one();
+    if (inputWrite_) CancelIoEx(inputWrite_, nullptr);  // unblock writer WriteFile
+
+    if (readThread_.joinable()) readThread_.join();
     if (writeThread_.joinable()) writeThread_.join();
+
+    // Workers are gone; close our handles, then the pseudoconsole last.
     if (inputWrite_) {
         CloseHandle(inputWrite_);
         inputWrite_ = nullptr;
@@ -179,6 +185,10 @@ void ConPty::stop() {
     if (outputRead_) {
         CloseHandle(outputRead_);
         outputRead_ = nullptr;
+    }
+    if (hpc_) {
+        ClosePseudoConsole(hpc_);
+        hpc_ = nullptr;
     }
     if (procInfo_.hProcess) {
         CloseHandle(procInfo_.hProcess);
