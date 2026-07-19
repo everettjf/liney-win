@@ -357,7 +357,9 @@ bool Window::restoreLayout() {
 // ---------------------------------------------------------------------------
 
 void Window::rescanWorkspace() {
-    workspace_.scan(workspaceRoot_.empty() ? launchParent_ : workspaceRoot_);
+    // Empty intentionally disables discovery. Depending on the launch
+    // directory made the sidebar silently change between shortcuts/shells.
+    workspace_.scan(workspaceRoot_);
     for (const std::wstring& p : projects_) workspace_.addProject(p);
 }
 

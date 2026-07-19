@@ -208,12 +208,8 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     renderer_->setColors(uiTheme_.workspaceBg, theme_.background);
     applyFont();
 
-    // Workspace root: config override, else the parent of the launch directory
-    // (so sibling repos show up).
-    wchar_t cwd[MAX_PATH]{};
-    GetCurrentDirectoryW(MAX_PATH, cwd);
-    std::wstring startCwd = cwd;
-    launchParent_ = parentDir(startCwd);
+    // Populate the explicitly configured workspace root/projects. An empty
+    // root means no implicit discovery.
     rescanWorkspace();
 
     // Restore the saved tab/pane layout if any; otherwise open one tab.
@@ -856,15 +852,7 @@ void Window::openConfigFile() {
                   nullptr, SW_SHOWNORMAL);
 }
 
-void Window::openMainMenu() {
-    POINT pt{ static_cast<int>(menuButtonRect_.right()),
-              static_cast<int>(menuButtonRect_.bottom()) };
-    ClientToScreen(hwnd_, &pt);
-    HMENU m = CreatePopupMenu();
-    auto item = [&](UINT id, const wchar_t* text, bool checked = false) {
-        AppendMenuW(m, MF_STRING | (checked ? MF_CHECKED : 0), id, text);
-    };
-
+void Window::openCurrentDirectory(UINT choice) {
     const std::wstring cwd = activeSession() && !activeSession()->cwd().empty()
                                  ? activeSession()->cwd()
                                  : homeDir();
@@ -878,23 +866,80 @@ void Window::openMainMenu() {
     const std::wstring powershell = findExecutable(L"pwsh.exe").empty()
                                         ? findExecutable(L"powershell.exe")
                                         : findExecutable(L"pwsh.exe");
+    switch (choice) {
+    case 30:
+        ShellExecuteW(hwnd_, L"open", cwd.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        break;
+    case 31: {
+        if (powershell.empty()) return;
+        std::wstring escaped = cwd;
+        size_t pos = 0;
+        while ((pos = escaped.find(L'\'', pos)) != std::wstring::npos) {
+            escaped.insert(pos, 1, L'\'');
+            pos += 2;
+        }
+        const std::wstring args =
+            L"-NoExit -Command \"Set-Location -LiteralPath '" + escaped + L"'\"";
+        ShellExecuteW(hwnd_, L"open", powershell.c_str(), args.c_str(), cwd.c_str(),
+                      SW_SHOWNORMAL);
+        break;
+    }
+    case 32: {
+        if (code.empty()) return;
+        const std::wstring args = L"--new-window " + quoteArg(cwd);
+        ShellExecuteW(hwnd_, L"open", code.c_str(), args.c_str(), cwd.c_str(),
+                      SW_SHOWNORMAL);
+        break;
+    }
+    case 33: {
+        if (subl.empty()) return;
+        const std::wstring args = L"--new-window " + quoteArg(cwd);
+        ShellExecuteW(hwnd_, L"open", subl.c_str(), args.c_str(), cwd.c_str(),
+                      SW_SHOWNORMAL);
+        break;
+    }
+    case 34: {
+        if (warp.empty()) return;
+        const std::wstring args = L"--cwd " + quoteArg(cwd);
+        ShellExecuteW(hwnd_, L"open", warp.c_str(), args.c_str(), cwd.c_str(),
+                      SW_SHOWNORMAL);
+        break;
+    }
+    default: break;
+    }
+}
 
-    HMENU open = CreatePopupMenu();
-    AppendMenuW(open, MF_STRING, 30, L"File Explorer");
-    AppendMenuW(open, MF_STRING | (powershell.empty() ? MF_GRAYED : 0), 31,
-                L"PowerShell");
-    AppendMenuW(open, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(open, MF_STRING | (code.empty() ? MF_GRAYED : 0), 32,
-                L"Visual Studio Code");
-    AppendMenuW(open, MF_STRING | (subl.empty() ? MF_GRAYED : 0), 33,
-                L"Sublime Text");
-    AppendMenuW(open, MF_STRING | (warp.empty() ? MF_GRAYED : 0), 34, L"Warp");
-    AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(open),
-                L"Open current directory");
+void Window::openDirectoryMenu() {
+    POINT pt{ static_cast<int>(openButtonRect_.right()),
+              static_cast<int>(openButtonRect_.bottom()) };
+    ClientToScreen(hwnd_, &pt);
+    const std::wstring code = findExecutable(
+        L"code.exe", { envPath(L"LOCALAPPDATA", L"\\Programs\\Microsoft VS Code\\Code.exe") });
+    const std::wstring subl = findExecutable(
+        L"subl.exe", { L"C:\\Program Files\\Sublime Text\\subl.exe",
+                        L"C:\\Program Files (x86)\\Sublime Text\\subl.exe" });
+    const std::wstring warp = findExecutable(
+        L"warp.exe", { envPath(L"LOCALAPPDATA", L"\\Programs\\Warp\\warp.exe") });
+    const bool hasPowerShell = !findExecutable(L"pwsh.exe").empty() ||
+                               !findExecutable(L"powershell.exe").empty();
+    HMENU m = CreatePopupMenu();
+    AppendMenuW(m, MF_STRING, 30, L"File Explorer");
+    AppendMenuW(m, MF_STRING | (hasPowerShell ? 0 : MF_GRAYED), 31, L"PowerShell");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m, MF_STRING | (code.empty() ? MF_GRAYED : 0), 32,
+                L"Visual Studio Code");
+    AppendMenuW(m, MF_STRING | (subl.empty() ? MF_GRAYED : 0), 33, L"Sublime Text");
+    AppendMenuW(m, MF_STRING | (warp.empty() ? MF_GRAYED : 0), 34, L"Warp");
+    const int cmd = TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTALIGN, pt.x, pt.y,
+                                   0, hwnd_, nullptr);
+    DestroyMenu(m);
+    if (cmd) openCurrentDirectory(static_cast<UINT>(cmd));
+}
 
-    // Keep awake ▸ duration presets (Amphetamine / PowerToys Awake pattern).
-    // Command ids 20..26; the active preset carries a radio check.
+void Window::openKeepAwakeMenu() {
+    POINT pt{ static_cast<int>(awakeButtonRect_.right()),
+              static_cast<int>(awakeButtonRect_.bottom()) };
+    ClientToScreen(hwnd_, &pt);
     HMENU awake = CreatePopupMenu();
     struct AwakeOpt { UINT id; int hours; const wchar_t* label; };
     static const AwakeOpt kAwake[] = {
@@ -908,12 +953,21 @@ void Window::openMainMenu() {
         if (o.hours == keepAwakeHours_)
             CheckMenuRadioItem(awake, 20, 26, o.id, MF_BYCOMMAND);
     }
-    std::wstring awakeLabel = L"Keep awake";
-    const std::wstring status = keepAwakeStatus();
-    if (!status.empty()) awakeLabel += L" (" + status + L")";
-    awakeLabel += L"\tCtrl+Shift+K";
-    AppendMenuW(m, MF_POPUP | (keepAwake_ ? MF_CHECKED : 0),
-                reinterpret_cast<UINT_PTR>(awake), awakeLabel.c_str());
+    const int cmd = TrackPopupMenu(awake, TPM_RETURNCMD | TPM_RIGHTALIGN,
+                                   pt.x, pt.y, 0, hwnd_, nullptr);
+    DestroyMenu(awake);
+    for (const AwakeOpt& o : kAwake)
+        if (o.id == static_cast<UINT>(cmd)) { setKeepAwake(o.hours); break; }
+}
+
+void Window::openMainMenu() {
+    POINT pt{ static_cast<int>(menuButtonRect_.right()),
+              static_cast<int>(menuButtonRect_.bottom()) };
+    ClientToScreen(hwnd_, &pt);
+    HMENU m = CreatePopupMenu();
+    auto item = [&](UINT id, const wchar_t* text, bool checked = false) {
+        AppendMenuW(m, MF_STRING | (checked ? MF_CHECKED : 0), id, text);
+    };
 
     item(4, L"New tab\tCtrl+Shift+T");
     item(5, L"Split side by side\tAlt+D");
@@ -955,48 +1009,10 @@ void Window::openMainMenu() {
     case 11: openSettingsDialog(); break;
     case 13: toggleZoom(); break;
     case 14: equalizePanes(); break;
-    case 30:
-        ShellExecuteW(hwnd_, L"open", cwd.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-        break;
-    case 31: {
-        std::wstring escaped = cwd;
-        size_t pos = 0;
-        while ((pos = escaped.find(L'\'', pos)) != std::wstring::npos) {
-            escaped.insert(pos, 1, L'\'');
-            pos += 2;
-        }
-        const std::wstring args =
-            L"-NoExit -Command \"Set-Location -LiteralPath '" + escaped + L"'\"";
-        ShellExecuteW(hwnd_, L"open", powershell.c_str(), args.c_str(), cwd.c_str(),
-                      SW_SHOWNORMAL);
-        break;
-    }
-    case 32: {
-        const std::wstring args = L"--new-window " + quoteArg(cwd);
-        ShellExecuteW(hwnd_, L"open", code.c_str(), args.c_str(), cwd.c_str(),
-                      SW_SHOWNORMAL);
-        break;
-    }
-    case 33: {
-        const std::wstring args = L"--new-window " + quoteArg(cwd);
-        ShellExecuteW(hwnd_, L"open", subl.c_str(), args.c_str(), cwd.c_str(),
-                      SW_SHOWNORMAL);
-        break;
-    }
-    case 34: {
-        const std::wstring args = L"--cwd " + quoteArg(cwd);
-        ShellExecuteW(hwnd_, L"open", warp.c_str(), args.c_str(), cwd.c_str(),
-                      SW_SHOWNORMAL);
-        break;
-    }
     case 12:
         ShellExecuteW(hwnd_, L"open",
                       L"https://github.com/everettjf/liney-win/issues/new",
                       nullptr, nullptr, SW_SHOWNORMAL);
-        break;
-    case 20: case 21: case 22: case 23: case 24: case 25: case 26:
-        for (const AwakeOpt& o : kAwake)
-            if (o.id == static_cast<UINT>(cmd)) { setKeepAwake(o.hours); break; }
         break;
     default: break;
     }

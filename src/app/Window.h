@@ -90,7 +90,10 @@ private:
     // Switch to a theme preset (by name) with an accent override, live across
     // all panes. Used by the Settings dialog.
     void applyTheme(const std::wstring& presetName, const Color& accent);
-    void openMainMenu();     // native popup menu for the top-right "☰" button
+    void openMainMenu();              // overflow menu (top-right three dots)
+    void openDirectoryMenu();         // app picker for the active pane cwd
+    void openCurrentDirectory(UINT);  // 30 Explorer, 31 PowerShell, 32.. editors
+    void openKeepAwakeMenu();          // duration picker beside the coffee button
     void openTabMenu(int x, int y);  // right-click a tab: close / open in explorer…
     void closeTab(size_t idx);       // close an entire tab (all its panes)
     // Close a tab, but confirm first if any of its shells is running a command
@@ -208,8 +211,7 @@ private:
     std::vector<AgentDef> agents_;
     std::vector<std::pair<std::wstring, std::wstring>> projectIcons_;
     std::vector<std::wstring> projects_;   // explicit sidebar project folders
-    std::wstring workspaceRoot_;           // scanned root (empty = launch parent)
-    std::wstring launchParent_;            // parent of the launch dir (default root)
+    std::wstring workspaceRoot_;           // scanned root (empty = explicit only)
     Theme theme_;                  // terminal palette
     UiTheme uiTheme_;              // chrome palette (sidebar/tabs/accent/border)
     std::wstring themeName_;       // active preset name (persisted)
@@ -233,7 +235,8 @@ private:
     bool swallowNextChar_ = false;  // drop the WM_CHAR following a shortcut
 
     // Hit-test rects rebuilt each frame.
-    enum class RowKind { RepoHeader, Worktree, FileUp, FileDir, FileEntry, SshHost, Agent };
+    enum class RowKind { RepoHeader, Worktree, FileUp, FileDir, FileEntry,
+                         SshHost, Agent };
     struct SidebarRow {
         Rect rect;
         RowKind kind = RowKind::RepoHeader;
@@ -247,10 +250,13 @@ private:
     int hoverTab_ = -1;        // tab under the pointer (-1 = none); shows its ×
     int lastMouseX_ = -1, lastMouseY_ = -1;  // client-space pointer, for hover
     Rect workspaceAddRect_{};  // the WORKSPACE "+" (add project) button
+    Rect sidebarToggleRect_{}; // tab-strip button; remains visible when collapsed
     Rect plusRect_{};
     int tabDragIndex_ = -1;  // tab being dragged in the strip (-1 = none)
 
-    // Top-right "☰" menu button (rebuilt each frame in drawTabBar).
+    // Top-right icon menu buttons (rebuilt each frame in drawTabBar).
+    Rect openButtonRect_{};
+    Rect awakeButtonRect_{};
     Rect menuButtonRect_{};
 
     // FILES panel: a navigable listing that follows the focused pane's cwd.

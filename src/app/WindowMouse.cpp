@@ -75,7 +75,13 @@ void Window::onMouseDown(int xi, int yi) {
     }
 
     if (tabBar.contains(x, y)) {
+        if (sidebarToggleRect_.contains(x, y)) {
+            sidebarVisible_ = !sidebarVisible_;
+            return;
+        }
         if (menuButtonRect_.contains(x, y)) { openMainMenu(); return; }
+        if (openButtonRect_.contains(x, y)) { openDirectoryMenu(); return; }
+        if (awakeButtonRect_.contains(x, y)) { openKeepAwakeMenu(); return; }
         if (plusRect_.contains(x, y)) {
             newTab(activeSession() ? activeSession()->cwd() : homeDir());
             return;
@@ -159,7 +165,10 @@ void Window::onMouseDoubleClick(int xi, int yi) {
         // on a tab / + / ☰ it's just a click.
         bool onTab = false;
         for (const Rect& tr : tabRects_) if (tr.contains(x, y)) { onTab = true; break; }
-        if (!onTab && !plusRect_.contains(x, y) && !menuButtonRect_.contains(x, y))
+        const bool onToolbar = menuButtonRect_.contains(x, y) ||
+            openButtonRect_.contains(x, y) || awakeButtonRect_.contains(x, y);
+        if (!onTab && !plusRect_.contains(x, y) &&
+            !sidebarToggleRect_.contains(x, y) && !onToolbar)
             newTab(activeSession() ? activeSession()->cwd() : homeDir());
         else
             onMouseDown(xi, yi);

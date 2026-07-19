@@ -3,6 +3,30 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
+## [0.5.7] — 2026-07-19
+
+### Added
+- **Contextual toolbar menus** — the tab strip now exposes dedicated folder,
+  Keep Awake, and overflow icons. The folder menu opens the active pane's
+  directory in Explorer, PowerShell, VS Code, Sublime Text, or Warp; unavailable
+  applications are disabled automatically.
+- **Visible Sidebar disclosure** — a persistent button at the left of the tab
+  strip collapses and restores the entire Workspace sidebar.
+
+### Changed
+- **Simpler overflow menu** — removed the internal `liney-win` version header
+  and redundant Font/config entries; settings now have one canonical entry.
+- **Explicit workspace discovery** — an empty `workspaceRoot` no longer scans
+  the launch directory's parent. Only manually added projects are shown unless
+  a scan root is explicitly configured.
+
+### Fixed
+- **Verified auto-updates** — downloaded installers now require GitHub's
+  SHA-256 digest and pass status, length, and hash checks before execution;
+  partial or unverified downloads are deleted.
+- **ConPTY startup cleanup** — failed shell/session startup now releases every
+  pipe and pseudoconsole handle instead of leaking resources.
+
 ## [0.5.6] — 2026-07-12
 
 ### Changed

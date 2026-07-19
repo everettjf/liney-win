@@ -9,7 +9,8 @@ namespace liney {
 // Small vector icons drawn from primitives (no image assets) — used for sidebar
 // item glyphs and the top-right toolbar.
 enum class IconKind {
-    Folder, File, Branch, Globe, Spark, Power, Settings, Download, Up, Menu
+    Folder, File, Branch, Globe, Spark, Power, Settings, Download, Up, Coffee,
+    Menu
 };
 
 // Renderer abstraction.

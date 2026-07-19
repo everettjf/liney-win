@@ -35,6 +35,7 @@ bool isGitRepo(const std::wstring& dir) {
 void Workspace::scan(const std::wstring& root) {
     root_ = root;
     repos_.clear();
+    if (root.empty()) return;  // empty means explicit projects only
 
     WIN32_FIND_DATAW fd{};
     HANDLE h = FindFirstFileW((root + L"\\*").c_str(), &fd);

@@ -406,8 +406,8 @@ void D2DRenderer::drawIcon(IconKind kind, float x, float y, float size,
     case IconKind::Spark:
         line(cx, by, cx, by + s);                              // |
         line(bx + s * 0.18f, cy, bx + s * 0.82f, cy);          // -
-        line(bx + s * 0.22f, by + s * 0.22f, bx + s * 0.78f, by + s * 0.78f);  // \
-        line(bx + s * 0.78f, by + s * 0.22f, bx + s * 0.22f, by + s * 0.78f);  // /
+        line(bx + s * 0.22f, by + s * 0.22f, bx + s * 0.78f, by + s * 0.78f);  // diagonal
+        line(bx + s * 0.78f, by + s * 0.22f, bx + s * 0.22f, by + s * 0.78f);  // diagonal
         break;
     case IconKind::Power:
         ring(cx, cy + s * 0.06f, s * 0.40f, s * 0.40f);
@@ -432,11 +432,18 @@ void D2DRenderer::drawIcon(IconKind kind, float x, float y, float size,
         line(cx - s * 0.22f, by + s * 0.42f, cx, by + s * 0.18f); // chevron up
         line(cx + s * 0.22f, by + s * 0.42f, cx, by + s * 0.18f);
         break;
-    case IconKind::Menu:  // hamburger: 3 evenly-spaced horizontal bars
-        for (int i = 0; i < 3; ++i) {
-            float ly = by + s * (0.22f + 0.28f * i);
-            fillR(bx, ly - t * 0.5f, bx + s, ly + t * 0.5f);
-        }
+    case IconKind::Coffee:
+        dc->DrawRoundedRectangle(
+            D2D1::RoundedRect(D2D1::RectF(bx, by + s * 0.30f,
+                                          bx + s * 0.72f, by + s * 0.82f),
+                               s * 0.08f, s * 0.08f), br, t);
+        ring(bx + s * 0.78f, by + s * 0.56f, s * 0.18f, s * 0.18f);
+        line(bx + s * 0.20f, by + s * 0.18f, bx + s * 0.20f, by);
+        line(bx + s * 0.48f, by + s * 0.18f, bx + s * 0.48f, by);
+        break;
+    case IconKind::Menu:  // overflow / more: three horizontal dots
+        for (int i = 0; i < 3; ++i)
+            dot(bx + s * (0.20f + 0.30f * i), cy, s * 0.09f);
         break;
     }
 }

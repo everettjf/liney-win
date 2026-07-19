@@ -208,7 +208,14 @@ void Window::drawTabBar(const Rect& r) {
 
     const float pad = metrics_.cellW;
     const float closeW = metrics_.cellH;  // square × hit area at the tab's right
-    float x = r.x;
+    // A persistent disclosure button makes the whole sidebar directly
+    // collapsible and, importantly, remains available to restore it.
+    const float toggleW = r.h;
+    sidebarToggleRect_ = { r.x, r.y, toggleW, r.h };
+    renderer_->drawText(sidebarVisible_ ? L"‹" : L"›",
+                        r.x + toggleW * 0.34f, r.y + 4.0f, toggleW,
+                        metrics_.cellH, uiTheme_.dim, true);
+    float x = r.x + toggleW;
     for (size_t i = 0; i < tabs_.size(); ++i) {
         std::wstring title = tabs_[i]->title();
         if (title.size() > 18) {
@@ -247,16 +254,26 @@ void Window::drawTabBar(const Rect& r) {
     renderer_->drawText(L"+", x + metrics_.cellW, r.y + 5.0f, plusW,
                         metrics_.cellH, uiTheme_.dim, true);
 
-    // ---- top-right "☰" menu button (opens a native popup) ------------------
-    const float bw = r.h;                 // square, tab-bar tall
+    // ---- top-right contextual menus: folder, coffee, more -----------------
+    const float bw = r.h;
     const float isz = bw * 0.46f;
-    const float bx = r.x + r.w - bw;
+    float bx = r.x + r.w - bw;
     menuButtonRect_ = { bx, r.y, bw, r.h };
-    // Highlight if keep-awake is on (a persistent state worth surfacing).
-    if (keepAwake_) renderer_->fillRect(bx, r.y, bw, r.h, uiTheme_.tabActiveBg);
     renderer_->drawIcon(IconKind::Menu, bx + (bw - isz) * 0.5f,
                         r.y + (r.h - isz) * 0.5f, isz,
+                        uiTheme_.text);
+
+    bx -= bw;
+    awakeButtonRect_ = { bx, r.y, bw, r.h };
+    if (keepAwake_)
+        renderer_->fillRect(bx, r.y, bw, r.h, uiTheme_.tabActiveBg);
+    renderer_->drawIcon(IconKind::Coffee, bx + (bw - isz) * 0.5f,
+                        r.y + (r.h - isz) * 0.5f, isz,
                         keepAwake_ ? uiTheme_.accent : uiTheme_.text);
+    bx -= bw;
+    openButtonRect_ = { bx, r.y, bw, r.h };
+    renderer_->drawIcon(IconKind::Folder, bx + (bw - isz) * 0.5f,
+                        r.y + (r.h - isz) * 0.5f, isz, uiTheme_.text);
 }
 
 void Window::drawPanes(const Rect& r) {

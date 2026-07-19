@@ -173,7 +173,7 @@ The first run writes `%USERPROFILE%\.liney\config.json` (mirroring macOS liney's
 | Key | Meaning |
 |---|---|
 | `shell` | Shell for new tabs (`powershell.exe` / `pwsh.exe` / `wsl.exe`; `wsl tmux` for tmux) |
-| `workspaceRoot` | Directory scanned for repos; empty = the launch directory's parent |
+| `workspaceRoot` | Directory scanned for repos; empty disables discovery and shows explicit projects only |
 | `unixTools` | Append Git's `usr\bin` to PATH so `ls`/`cat`/`grep`/… work |
 | `copyOnSelect` | Copy to the clipboard as soon as a selection ends (PuTTY-style) |
 | `multiLinePasteWarning` | Confirm before pasting text with line breaks (each break runs as Enter) |
