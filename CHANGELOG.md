@@ -3,6 +3,20 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
+## [0.5.8] — 2026-07-19
+
+### Fixed
+- **Clean Windows 10/11 compatibility** — the installer, portable zip, and
+  MSIX staging now include the required MSVC Runtime DLLs, so Liney starts on
+  machines without a separately installed Visual C++ Redistributable.
+- **MSIX launch and payload** — the manifest now launches the renamed
+  `Liney.exe`, uses the public product name, and packages Ghostty plus its
+  runtime dependencies.
+
+### Changed
+- The documented support baseline is now explicit: 64-bit Windows 10 version
+  1809 or newer, and Windows 11.
+
 ## [0.5.7] — 2026-07-19
 
 ### Added

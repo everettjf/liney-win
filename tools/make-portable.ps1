@@ -47,6 +47,15 @@ Copy-Item $winExe $stage
 $dll = Join-Path (Split-Path $winExe) 'ghostty-vt.dll'
 if (-not (Test-Path $dll)) { throw "ghostty-vt.dll not found next to Liney.exe" }
 Copy-Item $dll $stage
+# App-local MSVC runtime copied by CMake. These make the portable package run
+# on a clean Windows 10/11 machine without a separately installed VC++ redist.
+foreach ($pattern in @('msvcp140*.dll', 'vcruntime140*.dll')) {
+    Get-ChildItem (Join-Path (Split-Path $winExe) $pattern) -ErrorAction SilentlyContinue |
+        Copy-Item -Destination $stage
+}
+if (-not (Test-Path (Join-Path $stage 'vcruntime140.dll'))) {
+    throw "MSVC runtime DLLs were not staged by CMake"
+}
 Copy-Item (Join-Path $root 'README.md') $stage
 Copy-Item (Join-Path $root 'LICENSE') $stage
 

@@ -45,6 +45,7 @@ $out = Join-Path $dist 'liney-setup.exe'
     "/DAPPVERSION=$ver" `
     "/DWINEXE=$winExe" `
     "/DGHOSTTYDLL=$dll" `
+    "/DBINDIR=$(Split-Path $winExe)" `
     "/DICONFILE=$ico" `
     "/DOUTFILE=$out" `
     $nsi | Out-Host

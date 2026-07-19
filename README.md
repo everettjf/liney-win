@@ -106,6 +106,9 @@ nothing but the OS.
 | `liney-win-setup.exe` | Installer — per-user, no admin, Start Menu + uninstall |
 | `liney-win-portable.zip` | Portable — unzip and run `Liney.exe` |
 
+**Supported systems:** 64-bit Windows 10 version 1809 or newer, and Windows 11.
+The installer and portable zip include their required MSVC runtime DLLs.
+
 **Build from source** — Windows 10 1809+/11, with:
 - **Visual Studio 2022** Desktop C++ (bundles CMake ≥ 3.20 + Ninja)
 - **[Zig 0.15.2](https://ziglang.org/download/)** on PATH — the terminal core is

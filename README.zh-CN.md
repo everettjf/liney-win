@@ -96,6 +96,9 @@ Direct2D**。用 **MSVC + Zig** 构建。
 | `liney-win-setup.exe` | 安装包 —— 每用户安装,免管理员,带开始菜单 + 卸载 |
 | `liney-win-portable.zip` | 便携版 —— 解压双击 `Liney.exe` |
 
+**支持系统：** 64 位 Windows 10 1809 或更高版本，以及 Windows 11。安装包和
+便携包均自带所需的 MSVC Runtime DLL，无需用户另行安装 VC++ 运行库。
+
 **从源码构建** —— Windows 10 1809+/11,需要:
 - **Visual Studio 2022** Desktop C++(自带 CMake ≥ 3.20 + Ninja)
 - PATH 上有 **[Zig 0.15.2](https://ziglang.org/download/)** —— 终端核心从 Ghostty 经 Zig 构建

@@ -64,6 +64,18 @@ target_compile_definitions(liney_win PRIVATE
 target_link_libraries(liney_win PRIVATE
   d2d1 dwrite d3d11 dxgi imm32 winhttp bcrypt windowscodecs ole32 comdlg32 shell32)
 
+# Ship the MSVC runtime app-locally. A clean Windows 10/11 installation is not
+# guaranteed to have the Visual C++ Redistributable, and both Liney and the
+# Ghostty DLL depend on these files. Keeping them next to Liney.exe makes the
+# installer and portable zip genuinely self-contained.
+include(InstallRequiredSystemLibraries)
+foreach(runtime_dll IN LISTS CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS)
+  add_custom_command(TARGET liney_win POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${runtime_dll}" "$<TARGET_FILE_DIR:liney_win>"
+    COMMENT "Copying MSVC runtime: ${runtime_dll}")
+endforeach()
+
 # Fetch Ghostty and build its libghostty-vt (via Zig) as the terminal core.
 include(FetchContent)
 FetchContent_Declare(ghostty

@@ -10,7 +10,7 @@
 
 Unicode true
 !ifndef APPVERSION
-  !define APPVERSION "0.5.7"
+  !define APPVERSION "0.5.8"
 !endif
 !ifndef OUTFILE
   !define OUTFILE "liney-Setup.exe"
@@ -51,6 +51,10 @@ Section "Liney" SecMain
 !ifdef GHOSTTYDLL
   File "${GHOSTTYDLL}"
 !endif
+!ifdef BINDIR
+  File /nonfatal "${BINDIR}\msvcp140*.dll"
+  File /nonfatal "${BINDIR}\vcruntime140*.dll"
+!endif
 !ifdef ICONFILE
   File "${ICONFILE}"
 !endif
@@ -90,6 +94,8 @@ Section "Uninstall"
   Delete "$INSTDIR\Liney.exe"
   Delete "$INSTDIR\liney_win.exe"
   Delete "$INSTDIR\ghostty-vt.dll"
+  Delete "$INSTDIR\msvcp140*.dll"
+  Delete "$INSTDIR\vcruntime140*.dll"
   Delete "$INSTDIR\liney.ico"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"

@@ -20,7 +20,7 @@ $out = Join-Path $root 'dist\liney-win.msix'
 & (Join-Path $PSScriptRoot 'make-portable.ps1') -BuildDir $BuildDir | Out-Null  # ensures a build
 & (Join-Path $PSScriptRoot 'gen-assets.ps1')
 
-# 2) Locate the built exes.
+# 2) Locate the built executable.
 function Find-Exe($name) {
     foreach ($p in @((Join-Path $build $name), (Join-Path $build "Release\$name"))) {
         if (Test-Path $p) { return $p }
@@ -28,13 +28,22 @@ function Find-Exe($name) {
     throw "$name not found; build first."
 }
 
-# 3) Stage the package layout (manifest + exes + assets).
+# 3) Stage the package layout (manifest + executable + DLLs + assets).
 if (Test-Path $pkgSrc) { Remove-Item $pkgSrc -Recurse -Force }
 New-Item -ItemType Directory -Force -Path (Join-Path $pkgSrc 'Assets') | Out-Null
 Copy-Item (Join-Path $root 'packaging\AppxManifest.xml') $pkgSrc
 Copy-Item (Join-Path $root 'packaging\Assets\*') (Join-Path $pkgSrc 'Assets')
-Copy-Item (Find-Exe 'liney_win.exe') $pkgSrc
-Copy-Item (Find-Exe 'liney.exe') $pkgSrc
+$winExe = Find-Exe 'Liney.exe'
+$binDir = Split-Path $winExe
+Copy-Item $winExe $pkgSrc
+Copy-Item (Join-Path $binDir 'ghostty-vt.dll') $pkgSrc
+foreach ($pattern in @('msvcp140*.dll', 'vcruntime140*.dll')) {
+    Get-ChildItem (Join-Path $binDir $pattern) -ErrorAction SilentlyContinue |
+        Copy-Item -Destination $pkgSrc
+}
+if (-not (Test-Path (Join-Path $pkgSrc 'vcruntime140.dll'))) {
+    throw "MSVC runtime DLLs were not staged by CMake"
+}
 
 # 4) Find makeappx.exe from the latest Windows SDK.
 $sdkBin = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Directory -ErrorAction SilentlyContinue |
