@@ -106,6 +106,7 @@ void Window::checkForUpdates() {
         const std::string body = httpsGet(
             L"api.github.com", L"/repos/everettjf/liney-win/releases/latest");
         std::wstring msg, url;
+        std::string sha256;
         bool pending = false;
         bool ok = false;
         Json j = body.empty() ? Json() : Json::parse(body, &ok);
@@ -118,7 +119,7 @@ void Window::checkForUpdates() {
         } else if (versionNewer(tag, local)) {
             // Find the installer asset (prefer *setup.exe, else any .exe;
             // case-insensitive).
-            std::string assetUrl;
+            std::string assetUrl, assetDigest;
             const Json& assets = j["assets"];
             if (assets.isArray())
                 for (const Json& a : assets.items()) {
@@ -128,12 +129,21 @@ void Window::checkForUpdates() {
                     if (name.size() >= 4 &&
                         name.compare(name.size() - 4, 4, ".exe") == 0) {
                         assetUrl = a["browser_download_url"].asString();
+                        assetDigest = a["digest"].asString();
                         if (name.find("setup") != std::string::npos) break;
                     }
                 }
             msg = L"Update available: " + utf8ToWide(tag);
-            if (!assetUrl.empty()) { url = utf8ToWide(assetUrl); pending = true; }
-            else msg += L" (no installer asset)";
+            if (!assetUrl.empty() && assetDigest.rfind("sha256:", 0) == 0 &&
+                assetDigest.size() == 71) {
+                url = utf8ToWide(assetUrl);
+                sha256 = assetDigest.substr(7);
+                pending = true;
+            } else if (assetUrl.empty()) {
+                msg += L" (no installer asset)";
+            } else {
+                msg += L" (installer has no SHA-256 digest; refusing unsafe update)";
+            }
         } else {
             msg = std::wstring(L"You're up to date (") + kAppVersion + L")";
         }
@@ -141,13 +151,15 @@ void Window::checkForUpdates() {
             std::lock_guard<std::mutex> lk(updateMutex_);
             updateMsg_ = msg;
             downloadUrl_ = url;
+            downloadSha256_ = sha256;
             pendingUpdate_ = pending;
         }
         updateReady_ = true;
     });
 }
 
-void Window::startDownloadAndInstall(const std::wstring& url) {
+void Window::startDownloadAndInstall(const std::wstring& url,
+                                     const std::string& sha256) {
     // Split "https://host/path...".
     std::wstring rest = url;
     const std::wstring scheme = L"https://";
@@ -157,13 +169,16 @@ void Window::startDownloadAndInstall(const std::wstring& url) {
     const std::wstring host = rest.substr(0, slash);
     const std::wstring path = rest.substr(slash);
 
-    wchar_t tmp[MAX_PATH]{};
-    GetTempPathW(MAX_PATH, tmp);
-    const std::wstring out = std::wstring(tmp) + L"liney-win-setup.exe";
+    wchar_t tmp[MAX_PATH]{}, unique[MAX_PATH]{};
+    if (!GetTempPathW(MAX_PATH, tmp) || !GetTempFileNameW(tmp, L"lny", 0, unique)) {
+        showBalloon(L"Liney", L"Could not create a temporary update file");
+        return;
+    }
+    const std::wstring out = unique;
 
     showBalloon(L"Liney", L"Downloading update…");
-    updateThreads_.emplace_back([this, host, path, out]() {
-        const bool dl = httpsDownload(host, path, out);
+    updateThreads_.emplace_back([this, host, path, out, sha256]() {
+        const bool dl = httpsDownload(host, path, out, sha256);
         {
             std::lock_guard<std::mutex> lk(updateMutex_);
             if (dl) installerPath_ = out;
@@ -191,11 +206,13 @@ void Window::pollUpdateResult() {
     }
     if (!updateReady_.exchange(false)) return;
     std::wstring msg, url;
+    std::string sha256;
     bool pending;
     {
         std::lock_guard<std::mutex> lk(updateMutex_);
         msg = updateMsg_;
         url = downloadUrl_;
+        sha256 = downloadSha256_;
         pending = pendingUpdate_;
     }
     showBalloon(L"Liney", msg);
@@ -204,7 +221,7 @@ void Window::pollUpdateResult() {
             msg + L"\n\nDownload and install now? Liney will close.";
         if (MessageBoxW(hwnd_, prompt.c_str(), L"Liney update",
                         MB_YESNO | MB_ICONQUESTION) == IDYES) {
-            startDownloadAndInstall(url);
+            startDownloadAndInstall(url, sha256);
         }
     }
 }

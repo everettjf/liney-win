@@ -10,8 +10,11 @@ namespace liney {
 std::string httpsGet(const std::wstring& host, const std::wstring& path);
 
 // Download `https://host/path` to `outFile` (binary; follows redirects, e.g.
-// GitHub release assets that 302 to a CDN). Returns true on success.
+// GitHub release assets that 302 to a CDN). The expected digest is 64 lowercase
+// or uppercase SHA-256 hex characters. The partial file is deleted on any
+// transport, length, or digest failure.
 bool httpsDownload(const std::wstring& host, const std::wstring& path,
-                   const std::wstring& outFile);
+                   const std::wstring& outFile,
+                   const std::string& expectedSha256);
 
 } // namespace liney

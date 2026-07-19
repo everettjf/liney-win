@@ -32,6 +32,10 @@ bool ConPty::start(const std::wstring& command, short cols, short rows,
     CloseHandle(outputWrite);
     if (FAILED(hr)) {
         hpc_ = nullptr;
+        CloseHandle(inputWrite_);
+        inputWrite_ = nullptr;
+        CloseHandle(outputRead_);
+        outputRead_ = nullptr;
         return false;
     }
 
@@ -43,7 +47,10 @@ bool ConPty::start(const std::wstring& command, short cols, short rows,
     InitializeProcThreadAttributeList(nullptr, 1, 0, &attrBytes);
     auto* attrList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(
         HeapAlloc(GetProcessHeap(), 0, attrBytes));
-    if (!attrList) return false;
+    if (!attrList) {
+        stop();
+        return false;
+    }
     si.lpAttributeList = attrList;
 
     const bool attrInit =
@@ -63,7 +70,10 @@ bool ConPty::start(const std::wstring& command, short cols, short rows,
 
     if (attrInit) DeleteProcThreadAttributeList(attrList);
     HeapFree(GetProcessHeap(), 0, attrList);
-    if (!ok) return false;
+    if (!ok) {
+        stop();
+        return false;
+    }
 
     running_ = true;
     readThread_ = std::thread([this]() {

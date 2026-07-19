@@ -77,6 +77,43 @@ void addGitUnixToolsToPath() {
     next += usrBin + L";" + mingw;
     SetEnvironmentVariableW(L"PATH", next.c_str());
 }
+
+std::wstring findExecutable(const wchar_t* name,
+                            std::initializer_list<std::wstring> fallbacks = {}) {
+    wchar_t found[MAX_PATH]{};
+    if (SearchPathW(nullptr, name, nullptr, MAX_PATH, found, nullptr) > 0)
+        return found;
+    for (const std::wstring& path : fallbacks)
+        if (!path.empty() &&
+            GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES)
+            return path;
+    return {};
+}
+
+std::wstring envPath(const wchar_t* variable, const wchar_t* suffix) {
+    wchar_t value[MAX_PATH]{};
+    const DWORD n = GetEnvironmentVariableW(variable, value, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) return {};
+    return std::wstring(value) + suffix;
+}
+
+std::wstring quoteArg(const std::wstring& value) {
+    std::wstring out = L"\"";
+    size_t slashes = 0;
+    for (wchar_t c : value) {
+        if (c == L'\\') {
+            ++slashes;
+        } else {
+            if (c == L'\"') out.append(slashes + 1, L'\\');
+            else out.append(slashes, L'\\');
+            slashes = 0;
+            out.push_back(c);
+        }
+    }
+    out.append(slashes * 2, L'\\');
+    out.push_back(L'\"');
+    return out;
+}
 }  // namespace
 
 Window::Window() : renderer_(std::make_unique<D2DRenderer>()) {}
@@ -828,9 +865,32 @@ void Window::openMainMenu() {
         AppendMenuW(m, MF_STRING | (checked ? MF_CHECKED : 0), id, text);
     };
 
-    // A grayed app/version header, then the actions grouped by purpose.
-    AppendMenuW(m, MF_STRING | MF_DISABLED | MF_GRAYED, 0,
-                (std::wstring(L"liney-win ") + kAppVersion).c_str());
+    const std::wstring cwd = activeSession() && !activeSession()->cwd().empty()
+                                 ? activeSession()->cwd()
+                                 : homeDir();
+    const std::wstring code = findExecutable(
+        L"code.exe", { envPath(L"LOCALAPPDATA", L"\\Programs\\Microsoft VS Code\\Code.exe") });
+    const std::wstring subl = findExecutable(
+        L"subl.exe", { L"C:\\Program Files\\Sublime Text\\subl.exe",
+                        L"C:\\Program Files (x86)\\Sublime Text\\subl.exe" });
+    const std::wstring warp = findExecutable(
+        L"warp.exe", { envPath(L"LOCALAPPDATA", L"\\Programs\\Warp\\warp.exe") });
+    const std::wstring powershell = findExecutable(L"pwsh.exe").empty()
+                                        ? findExecutable(L"powershell.exe")
+                                        : findExecutable(L"pwsh.exe");
+
+    HMENU open = CreatePopupMenu();
+    AppendMenuW(open, MF_STRING, 30, L"File Explorer");
+    AppendMenuW(open, MF_STRING | (powershell.empty() ? MF_GRAYED : 0), 31,
+                L"PowerShell");
+    AppendMenuW(open, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(open, MF_STRING | (code.empty() ? MF_GRAYED : 0), 32,
+                L"Visual Studio Code");
+    AppendMenuW(open, MF_STRING | (subl.empty() ? MF_GRAYED : 0), 33,
+                L"Sublime Text");
+    AppendMenuW(open, MF_STRING | (warp.empty() ? MF_GRAYED : 0), 34, L"Warp");
+    AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(open),
+                L"Open current directory");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
 
     // Keep awake ▸ duration presets (Amphetamine / PowerToys Awake pattern).
@@ -855,23 +915,26 @@ void Window::openMainMenu() {
     AppendMenuW(m, MF_POPUP | (keepAwake_ ? MF_CHECKED : 0),
                 reinterpret_cast<UINT_PTR>(awake), awakeLabel.c_str());
 
-    item(2, L"Show sidebar\tCtrl+Shift+B", sidebarVisible_);
-    item(3, L"Show files panel\tCtrl+Shift+F", filesPanelVisible_);
-    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     item(4, L"New tab\tCtrl+Shift+T");
     item(5, L"Split side by side\tAlt+D");
     item(6, L"Split stacked\tShift+Alt+D");
-    // Pane management for deep split layouts.
+
+    HMENU view = CreatePopupMenu();
+    AppendMenuW(view, MF_STRING | (sidebarVisible_ ? MF_CHECKED : 0), 2,
+                L"Sidebar\tCtrl+Shift+B");
+    AppendMenuW(view, MF_STRING | (filesPanelVisible_ ? MF_CHECKED : 0), 3,
+                L"Files panel\tCtrl+Shift+F");
+    AppendMenuW(view, MF_SEPARATOR, 0, nullptr);
     Tab* at = activeTab();
     const bool zoomed = at && at->zoom();
-    item(13, zoomed ? L"Restore pane\tCtrl+Shift+Z" : L"Zoom pane\tCtrl+Shift+Z",
-         zoomed);
-    item(14, L"Equalize panes\tCtrl+Shift+E");
-    item(9, L"Find on screen…\tCtrl+F");
+    AppendMenuW(view, MF_STRING | (zoomed ? MF_CHECKED : 0), 13,
+                zoomed ? L"Restore pane\tCtrl+Shift+Z"
+                       : L"Zoom pane\tCtrl+Shift+Z");
+    AppendMenuW(view, MF_STRING, 14, L"Equalize panes\tCtrl+Shift+E");
+    AppendMenuW(view, MF_STRING, 9, L"Find on screen…\tCtrl+F");
+    AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(view), L"View");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     item(11, L"Settings…\tCtrl+,");
-    item(10, L"Font…");
-    item(7, L"Open config file (config.json)");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     item(12, L"Report an issue…");
     item(8, L"Check for updates\tCtrl+Shift+U");
@@ -892,6 +955,40 @@ void Window::openMainMenu() {
     case 11: openSettingsDialog(); break;
     case 13: toggleZoom(); break;
     case 14: equalizePanes(); break;
+    case 30:
+        ShellExecuteW(hwnd_, L"open", cwd.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        break;
+    case 31: {
+        std::wstring escaped = cwd;
+        size_t pos = 0;
+        while ((pos = escaped.find(L'\'', pos)) != std::wstring::npos) {
+            escaped.insert(pos, 1, L'\'');
+            pos += 2;
+        }
+        const std::wstring args =
+            L"-NoExit -Command \"Set-Location -LiteralPath '" + escaped + L"'\"";
+        ShellExecuteW(hwnd_, L"open", powershell.c_str(), args.c_str(), cwd.c_str(),
+                      SW_SHOWNORMAL);
+        break;
+    }
+    case 32: {
+        const std::wstring args = L"--new-window " + quoteArg(cwd);
+        ShellExecuteW(hwnd_, L"open", code.c_str(), args.c_str(), cwd.c_str(),
+                      SW_SHOWNORMAL);
+        break;
+    }
+    case 33: {
+        const std::wstring args = L"--new-window " + quoteArg(cwd);
+        ShellExecuteW(hwnd_, L"open", subl.c_str(), args.c_str(), cwd.c_str(),
+                      SW_SHOWNORMAL);
+        break;
+    }
+    case 34: {
+        const std::wstring args = L"--cwd " + quoteArg(cwd);
+        ShellExecuteW(hwnd_, L"open", warp.c_str(), args.c_str(), cwd.c_str(),
+                      SW_SHOWNORMAL);
+        break;
+    }
     case 12:
         ShellExecuteW(hwnd_, L"open",
                       L"https://github.com/everettjf/liney-win/issues/new",

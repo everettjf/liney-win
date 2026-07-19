@@ -124,7 +124,8 @@ private:
     // off-thread; on confirmation download the installer asset and run it.
     void checkForUpdates();
     void pollUpdateResult();
-    void startDownloadAndInstall(const std::wstring& url);
+    void startDownloadAndInstall(const std::wstring& url,
+                                 const std::string& sha256);
 
     // Input.
     void onChar(wchar_t unit);
@@ -225,6 +226,7 @@ private:
     std::vector<std::thread> updateThreads_;
     std::wstring updateMsg_;
     std::wstring downloadUrl_;     // installer asset URL when an update is found
+    std::string downloadSha256_;   // GitHub-provided digest for that exact asset
     std::wstring installerPath_;   // downloaded installer path
     bool pendingUpdate_ = false;   // an update is available to install
     wchar_t pendingHighSurrogate_ = 0;
