@@ -21,7 +21,30 @@ $install = Start-Process -FilePath $firstInstallerPath -ArgumentList @('/S', "/D
 if ($install.ExitCode -ne 0) { throw "Silent install failed: $($install.ExitCode)" }
 $installedExe = Join-Path $installDir 'Liney.exe'
 if (-not (Test-Path -LiteralPath $installedExe)) { throw 'Installer did not produce Liney.exe' }
-& (Join-Path $PSScriptRoot 'smoke-test.ps1') -Exe $installedExe
+if ($PreviousInstaller) {
+    # Old releases do not necessarily know the newest self-test verbs. Verify
+    # only clean-machine GUI startup here; the upgraded binary gets the full
+    # current smoke suite below.
+    $oldHeadless = $env:LINEY_HEADLESS
+    $oldAutoClose = $env:LINEY_AUTOCLOSE_MS
+    try {
+        $env:LINEY_HEADLESS = '1'
+        $env:LINEY_AUTOCLOSE_MS = '700'
+        $previousLaunch = Start-Process -FilePath $installedExe -PassThru
+        if (-not $previousLaunch.WaitForExit(15000)) {
+            $previousLaunch.Kill()
+            throw 'Previous release did not complete the startup lifecycle.'
+        }
+        if ($previousLaunch.ExitCode -ne 0) {
+            throw "Previous release startup failed: $($previousLaunch.ExitCode)"
+        }
+    } finally {
+        $env:LINEY_HEADLESS = $oldHeadless
+        $env:LINEY_AUTOCLOSE_MS = $oldAutoClose
+    }
+} else {
+    & (Join-Path $PSScriptRoot 'smoke-test.ps1') -Exe $installedExe
+}
 
 # Exercise the in-place upgrade path (from the previous stable release when
 # supplied) as well as a first install. A marker in
