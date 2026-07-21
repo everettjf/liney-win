@@ -25,6 +25,7 @@
 #include "core/ShellProfiles.h"
 #include "vt/Terminal.h"
 #include "util/Diagnostics.h"
+#include "util/Process.h"
 #include "app/WindowInternal.h"
 
 namespace {
@@ -152,6 +153,20 @@ bool runCliIfRequested(int& exitCode) {
         DeleteFileW(path.c_str());
         RemoveDirectoryW(unique);
         exitCode = passed ? 0 : 22;
+        return true;
+    }
+    if (cmd == L"process-self-test") {
+        bool ok = false;
+        const std::wstring output = liney::runCapture(
+            L"cmd.exe /d /s /c \"echo capture-ok\"", L"", &ok, 5000);
+        if (!ok || output.find(L"capture-ok") == std::wstring::npos) {
+            exitCode = 23;
+            return true;
+        }
+        const ULONGLONG started = GetTickCount64();
+        liney::runCapture(
+            L"cmd.exe /d /s /c \"ping 127.0.0.1 -n 6 >nul\"", L"", &ok, 100);
+        exitCode = !ok && GetTickCount64() - started < 3000 ? 0 : 24;
         return true;
     }
     if (cmd == L"semantic-self-test") {

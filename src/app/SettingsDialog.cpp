@@ -28,6 +28,9 @@ constexpr int kIdAccent = 110;
 constexpr int kIdRemember = 111;
 constexpr int kIdSplitDir = 112;
 constexpr int kIdAutoUpdate = 113;
+constexpr int kIdAiProvider = 114;
+constexpr int kIdAiModel = 115;
+constexpr int kIdAiCwd = 116;
 
 struct State {
     HWND shell = nullptr;
@@ -42,6 +45,9 @@ struct State {
     HWND rememberLayout = nullptr;
     HWND splitWorkspaceDir = nullptr;
     HWND autoUpdate = nullptr;
+    HWND aiProvider = nullptr;
+    HWND aiModel = nullptr;
+    HWND aiCwd = nullptr;
     HWND root = nullptr;
     HWND accentHex = nullptr;     // "#RRGGBB" caption next to the swatch
     HBRUSH accentBrush = nullptr; // fills the swatch via WM_CTLCOLORSTATIC
@@ -212,7 +218,7 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
     st.accent = v.accent;
 
     // Size the window so the *client* area is exactly W × contentH.
-    const int contentH = 550;
+    const int contentH = 674;
     RECT wr{ 0, 0, S(W), S(contentH) };
     const DWORD style = WS_POPUP | WS_CAPTION | WS_SYSMENU;
     AdjustWindowRectExForDpi(&wr, style, FALSE, WS_EX_DLGMODALFRAME, dpi);
@@ -362,12 +368,40 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
     mk(0, L"STATIC", L"Empty = only projects you add explicitly.",
        WS_CHILD | WS_VISIBLE, ctrlX, r, ctrlW, 16, -1);
 
+    // ---- AI ---------------------------------------------------------------
+    group(L"AI (terminal contents are sent only when you request it)", 508, 112);
+    r = 530;
+    label(L"Provider", r);
+    st.aiProvider = mk(0, L"COMBOBOX", L"",
+                       WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+                       ctrlX, r, 150, 120, kIdAiProvider);
+    const wchar_t* providerLabels[] = {L"Off", L"OpenAI", L"Codex CLI", L"Custom API"};
+    const wchar_t* providerValues[] = {L"off", L"openai", L"codex", L"custom"};
+    int providerSelection = 0;
+    for (int i = 0; i < 4; ++i) {
+        SendMessageW(st.aiProvider, CB_ADDSTRING, 0,
+                     reinterpret_cast<LPARAM>(providerLabels[i]));
+        if (v.aiProvider == providerValues[i]) providerSelection = i;
+    }
+    SendMessageW(st.aiProvider, CB_SETCURSEL, providerSelection, 0);
+    mk(0, L"STATIC", L"API keys come from environment variables",
+       WS_CHILD | WS_VISIBLE, ctrlX + 162, r + 4, ctrlW - 162, 18, -1);
+    r += 32;
+    label(L"Model", r);
+    st.aiModel = mk(WS_EX_CLIENTEDGE, L"EDIT", v.aiModel.c_str(),
+                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
+                    ctrlX, r, ctrlW, ch, kIdAiModel);
+    r += 30;
+    st.aiCwd = checkbox(kIdAiCwd,
+                        L"Include the current directory in AI requests",
+                        v.aiIncludeCwd, r);
+
     // ---- OK / Cancel ------------------------------------------------------
     mk(0, L"BUTTON", L"OK",
-       WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, ctrlR - 178, 510,
+       WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, ctrlR - 178, 634,
        84, 28, IDOK);
     mk(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE | WS_TABSTOP, ctrlR - 84,
-       510, 84, 28, IDCANCEL);
+       634, 84, 28, IDCANCEL);
 
     // A real Segoe UI font at the monitor's DPI — the biggest single upgrade
     // over the legacy bitmap DEFAULT_GUI_FONT.
@@ -444,6 +478,14 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
             SendMessageW(st.splitWorkspaceDir, BM_GETCHECK, 0, 0) == BST_CHECKED;
         v.checkForUpdatesOnStartup =
             SendMessageW(st.autoUpdate, BM_GETCHECK, 0, 0) == BST_CHECKED;
+        const int provider = static_cast<int>(
+            SendMessageW(st.aiProvider, CB_GETCURSEL, 0, 0));
+        static const wchar_t* providers[] = {L"off", L"openai", L"codex", L"custom"};
+        v.aiProvider = providers[provider >= 0 && provider < 4 ? provider : 0];
+        v.aiModel = windowText(st.aiModel);
+        if (v.aiModel.empty()) v.aiModel = L"gpt-5.6-luna";
+        v.aiIncludeCwd =
+            SendMessageW(st.aiCwd, BM_GETCHECK, 0, 0) == BST_CHECKED;
         v.workspaceRoot = windowText(st.root);
     }
 

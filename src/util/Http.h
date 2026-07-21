@@ -9,6 +9,12 @@ namespace liney {
 // begins with '/'. A User-Agent is sent (GitHub requires one).
 std::string httpsGet(const std::wstring& host, const std::wstring& path);
 
+// HTTPS JSON POST for OpenAI-compatible APIs. The bearer token is kept in
+// memory and sent as an Authorization header; it is never logged or persisted.
+std::string httpsPostJson(const std::wstring& host, const std::wstring& path,
+                          const std::string& body,
+                          const std::wstring& bearerToken);
+
 // Download `https://host/path` to `outFile` (binary; follows redirects, e.g.
 // GitHub release assets that 302 to a CDN). The expected digest is 64 lowercase
 // or uppercase SHA-256 hex characters. The partial file is deleted on any

@@ -48,6 +48,10 @@ struct Config {
     bool rememberLayout = false;            // restore tabs/panes on launch (off by default)
     bool splitUseWorkspaceDir = false;      // new splits open in workspace/home dir (else inherit the pane's cwd)
     bool checkForUpdatesOnStartup = true;  // quiet GitHub release check after launch
+    std::wstring aiProvider = L"off";      // off | openai | codex | custom
+    std::wstring aiModel = L"gpt-5.6-luna";
+    std::wstring aiEndpoint = L"https://api.openai.com/v1/responses";
+    bool aiIncludeCwd = false;              // explicit privacy opt-in
     Osc52Policy osc52Clipboard = Osc52Policy::Ask;
     // Per-project sidebar icons: repo name -> icon file path (png/ico).
     std::vector<std::pair<std::wstring, std::wstring>> projectIcons;

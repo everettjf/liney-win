@@ -3,6 +3,28 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
+## [0.7.0] - 2026-07-21
+
+### Added
+- Opt-in AI explanations for the latest semantic command block, available from
+  the terminal context menu. Only that command and its bounded output are sent;
+  the current directory requires a separate privacy opt-in.
+- OpenAI Responses API, Codex CLI, and custom OpenAI-compatible providers.
+  Credentials are read only from `OPENAI_API_KEY` or `LINEY_AI_API_KEY` and are
+  never written to configuration or diagnostics.
+- Deterministic secret redaction, command risk classification, structured
+  response validation, and two-stage user confirmation before any suggested
+  command can run. Changing terminals or directories cancels execution.
+
+### Changed
+- Captured helper processes now have bounded output and hard timeouts, so a
+  stalled Git/Codex/provider helper cannot hang Liney during shutdown.
+
+### Security
+- AI is disabled by default. Common API keys, bearer tokens, passwords and
+  secrets are redacted before provider calls; full terminal history is never
+  included. Suggested commands are never executed silently.
+
 ## [0.6.0] - 2026-07-21
 
 ### Added

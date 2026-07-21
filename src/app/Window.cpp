@@ -190,6 +190,10 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     rememberLayout_ = cfg.rememberLayout;
     splitUseWorkspaceDir_ = cfg.splitUseWorkspaceDir;
     checkForUpdatesOnStartup_ = cfg.checkForUpdatesOnStartup;
+    aiProvider_ = cfg.aiProvider;
+    aiModel_ = cfg.aiModel;
+    aiEndpoint_ = cfg.aiEndpoint;
+    aiIncludeCwd_ = cfg.aiIncludeCwd;
     osc52Clipboard_ = cfg.osc52Clipboard;
     scrollback_ = cfg.scrollback;
     unixToolsEnabled_ = cfg.unixTools;
@@ -478,6 +482,7 @@ void Window::renderFrame() {
     pollNotifications();  // OSC 9/777 across all sessions -> balloons
     pollClipboardRequests(); // OSC 52 is policy-gated; never silently trusted
     pollUpdateResult();   // show the update-check result when it arrives
+    pollAiResult();       // display an explicitly requested AI explanation
     updateTitle();        // reflect OSC 0/2 title changes live
 
     Tab* t = activeTab();
@@ -861,6 +866,9 @@ void Window::openSettingsDialog() {
     v.rememberLayout = rememberLayout_;
     v.splitUseWorkspaceDir = splitUseWorkspaceDir_;
     v.checkForUpdatesOnStartup = checkForUpdatesOnStartup_;
+    v.aiProvider = aiProvider_;
+    v.aiModel = aiModel_;
+    v.aiIncludeCwd = aiIncludeCwd_;
     v.workspaceRoot = workspaceRoot_;
     if (!showSettingsDialog(hwnd_, v)) return;
 
@@ -872,6 +880,9 @@ void Window::openSettingsDialog() {
     rememberLayout_ = v.rememberLayout;
     splitUseWorkspaceDir_ = v.splitUseWorkspaceDir;
     checkForUpdatesOnStartup_ = v.checkForUpdatesOnStartup;
+    aiProvider_ = v.aiProvider;
+    aiModel_ = v.aiModel;
+    aiIncludeCwd_ = v.aiIncludeCwd;
     if (v.unixTools && !unixToolsEnabled_) addGitUnixToolsToPath();
     unixToolsEnabled_ = v.unixTools;
     if (v.workspaceRoot != workspaceRoot_) {
@@ -920,6 +931,11 @@ void Window::openSettingsDialog() {
         j.set("rememberLayout", Json::boolean(rememberLayout_));
         j.set("splitUseWorkspaceDir", Json::boolean(splitUseWorkspaceDir_));
         j.set("checkForUpdatesOnStartup", Json::boolean(checkForUpdatesOnStartup_));
+        Json ai = j["ai"].isObject() ? j["ai"] : Json::object();
+        ai.set("provider", Json::str(wideToUtf8(aiProvider_)));
+        ai.set("model", Json::str(wideToUtf8(aiModel_)));
+        ai.set("includeCwd", Json::boolean(aiIncludeCwd_));
+        j.set("ai", std::move(ai));
         j.set("workspaceRoot", Json::str(wideToUtf8(workspaceRoot_)));
     });
 }

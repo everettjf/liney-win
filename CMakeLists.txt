@@ -36,6 +36,7 @@ add_executable(liney_win WIN32
   src/app/WindowFind.cpp
   src/app/WindowPalette.cpp
   src/app/WindowSession.cpp
+  src/app/WindowAi.cpp
   src/app/SettingsDialog.cpp
   src/app/Tab.cpp
   src/core/TerminalSession.cpp
@@ -44,6 +45,7 @@ add_executable(liney_win WIN32
   src/core/KeyBinding.cpp
   src/core/SshProfiles.cpp
   src/core/Update.cpp
+  src/core/Ai.cpp
   src/render/D2DRenderer.cpp
   src/pty/ConPty.cpp
   src/vt/Terminal.cpp

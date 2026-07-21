@@ -58,6 +58,16 @@ if ($configTest.ExitCode -ne 0) {
 }
 Write-Host 'Configuration recovery self-test passed.'
 
+$processTest = [Diagnostics.Process]::Start($resolved, 'process-self-test')
+if (-not $processTest.WaitForExit(10000)) {
+    $processTest.Kill()
+    throw 'Bounded child-process self-test timed out.'
+}
+if ($processTest.ExitCode -ne 0) {
+    throw "Bounded child-process self-test failed with exit code $($processTest.ExitCode)."
+}
+Write-Host 'Bounded child-process capture/timeout self-test passed.'
+
 $semanticTest = [Diagnostics.Process]::Start($resolved, 'semantic-self-test')
 if (-not $semanticTest.WaitForExit(15000)) {
     $semanticTest.Kill()

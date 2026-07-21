@@ -83,9 +83,19 @@ jobs:
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\smoke-test.ps1 -Exe build-ghostty\Liney.exe
 
+      - name: Download previous stable installer for upgrade test
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $previous = gh release list --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName'
+          if (-not $previous) { throw 'No previous stable release found' }
+          New-Item -ItemType Directory -Force previous-release | Out-Null
+          gh release download $previous --pattern liney-setup.exe --dir previous-release
+
       - name: Installer, portable, and uninstall smoke test
         shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -File tools\installer-smoke.ps1 -Installer dist\liney-setup.exe -PortableZip dist\liney-portable.zip -ScratchRoot $env:RUNNER_TEMP\liney-package-smoke
+        run: powershell -ExecutionPolicy Bypass -File tools\installer-smoke.ps1 -Installer dist\liney-setup.exe -PreviousInstaller previous-release\liney-setup.exe -PortableZip dist\liney-portable.zip -ScratchRoot $env:RUNNER_TEMP\liney-package-smoke
 
       - name: Sign installer when certificate is configured
         if: env.LINEY_SIGNING_CERT_BASE64 != ''

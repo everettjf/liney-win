@@ -16,6 +16,7 @@
 #include "core/KeyBinding.h"
 #include "core/SshProfiles.h"
 #include "core/Update.h"
+#include "core/Ai.h"
 
 namespace {
 
@@ -46,6 +47,50 @@ void testUpdatePolicy() {
     check(!liney::parseTrustedInstallerUrl(
               L"https://github.com/other/repo/releases/download/v1/a.exe", host, path),
           "foreign GitHub repository rejected");
+}
+
+void testAiSafety() {
+    std::printf("AI privacy and execution safety\n");
+    const std::wstring redacted = liney::redactSensitiveText(
+        L"OPENAI_API_KEY=sk-example-secret\nAuthorization: Bearer abc123\nnormal output");
+    check(redacted.find(L"sk-example-secret") == std::wstring::npos,
+          "OpenAI key is redacted");
+    check(redacted.find(L"abc123") == std::wstring::npos,
+          "bearer token is redacted");
+    check(redacted.find(L"normal output") != std::wstring::npos,
+          "non-secret output is preserved");
+
+    liney::AiRequest request{L"dotnet test", L"failed\nTOKEN=secret", L"C:\\private", 1};
+    const std::string withoutCwd = liney::buildAiPromptJson(request, false);
+    check(withoutCwd.find("C:\\\\private") == std::string::npos,
+          "cwd is excluded by default");
+    check(withoutCwd.find("secret") == std::string::npos,
+          "prompt output is redacted");
+    const std::string withCwd = liney::buildAiPromptJson(request, true);
+    check(withCwd.find("cwd") != std::string::npos,
+          "cwd is included only when opted in");
+
+    check(liney::assessCommandRisk(L"git status") == liney::CommandRisk::Low,
+          "read-only command is low risk");
+    check(liney::assessCommandRisk(L"git push origin main") ==
+              liney::CommandRisk::Medium,
+          "remote mutation is medium risk");
+    check(liney::assessCommandRisk(L"Remove-Item -Recurse C:\\data") ==
+              liney::CommandRisk::High,
+          "destructive command is high risk");
+
+    const liney::AiAnswer answer = liney::parseAiAnswer(
+        R"({"explanation":"A dependency is missing.","suggested_command":"winget install demo"})");
+    check(answer.ok && answer.suggestedCommand == L"winget install demo",
+          "structured AI answer parses");
+    check(!liney::parseAiAnswer("not json").ok,
+          "unstructured provider response is rejected");
+    check(liney::parseAiAnswer(
+              "```json\n{\"explanation\":\"ok\",\"suggested_command\":\"\"}\n```").ok,
+          "fenced JSON provider response is accepted");
+    check(!liney::parseAiAnswer(
+               "{\"explanation\":\"x\",\"suggested_command\":\"echo safe\\nrm -rf /\"}").ok,
+          "multi-line AI command is blocked");
 }
 
 // ---- Json round-trip / parsing -------------------------------------------
@@ -273,6 +318,7 @@ int main() {
     testKeyBindings();
     testSshProfiles();
     testUpdatePolicy();
+    testAiSafety();
     std::printf("\n%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

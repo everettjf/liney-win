@@ -132,6 +132,67 @@ std::string httpsGet(const std::wstring& host, const std::wstring& path) {
     return result;
 }
 
+std::string httpsPostJson(const std::wstring& host, const std::wstring& path,
+                          const std::string& body,
+                          const std::wstring& bearerToken) {
+    std::string result;
+    if (host.empty() || path.empty() || body.size() > kMaxJsonBytes) return result;
+    HINTERNET session = WinHttpOpen(L"liney-win/1.0",
+                                    WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+                                    WINHTTP_NO_PROXY_NAME,
+                                    WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!session) return result;
+    WinHttpSetTimeouts(session, 5000, 5000, 15000, 30000);
+    HINTERNET connect =
+        WinHttpConnect(session, host.c_str(), INTERNET_DEFAULT_HTTPS_PORT, 0);
+    HINTERNET request = connect
+        ? WinHttpOpenRequest(connect, L"POST", path.c_str(), nullptr,
+                             WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
+                             WINHTTP_FLAG_SECURE)
+        : nullptr;
+    if (request) {
+        std::wstring headers = L"Content-Type: application/json\r\n";
+        if (!bearerToken.empty())
+            headers += L"Authorization: Bearer " + bearerToken + L"\r\n";
+        bool ok = WinHttpSendRequest(
+                      request, headers.c_str(), static_cast<DWORD>(-1L),
+                      body.empty() ? WINHTTP_NO_REQUEST_DATA
+                                   : const_cast<char*>(body.data()),
+                      static_cast<DWORD>(body.size()),
+                      static_cast<DWORD>(body.size()), 0) &&
+                  WinHttpReceiveResponse(request, nullptr);
+        DWORD status = 0, statusBytes = sizeof(status);
+        if (!ok || !WinHttpQueryHeaders(
+                       request,
+                       WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                       WINHTTP_HEADER_NAME_BY_INDEX, &status, &statusBytes,
+                       WINHTTP_NO_HEADER_INDEX) ||
+            status < 200 || status >= 300)
+            ok = false;
+        while (ok) {
+            DWORD available = 0;
+            if (!WinHttpQueryDataAvailable(request, &available) || available == 0)
+                break;
+            if (result.size() + available > kMaxJsonBytes) {
+                result.clear();
+                break;
+            }
+            std::string chunk(available, '\0');
+            DWORD read = 0;
+            if (!WinHttpReadData(request, chunk.data(), available, &read)) {
+                result.clear();
+                break;
+            }
+            chunk.resize(read);
+            result += chunk;
+        }
+    }
+    if (request) WinHttpCloseHandle(request);
+    if (connect) WinHttpCloseHandle(connect);
+    WinHttpCloseHandle(session);
+    return result;
+}
+
 bool httpsDownload(const std::wstring& host, const std::wstring& path,
                    const std::wstring& outFile,
                    const std::string& expectedSha256) {

@@ -81,6 +81,12 @@ std::string defaultJson(const Config& c) {
     j.set("rememberLayout", Json::boolean(c.rememberLayout));
     j.set("splitUseWorkspaceDir", Json::boolean(c.splitUseWorkspaceDir));
     j.set("checkForUpdatesOnStartup", Json::boolean(c.checkForUpdatesOnStartup));
+    Json ai = Json::object();
+    ai.set("provider", Json::str(wideToUtf8(c.aiProvider)));
+    ai.set("model", Json::str(wideToUtf8(c.aiModel)));
+    ai.set("endpoint", Json::str(wideToUtf8(c.aiEndpoint)));
+    ai.set("includeCwd", Json::boolean(c.aiIncludeCwd));
+    j.set("ai", std::move(ai));
     j.set("osc52Clipboard", Json::str(
         c.osc52Clipboard == Osc52Policy::Allow ? "allow" :
         c.osc52Clipboard == Osc52Policy::Deny ? "deny" : "ask"));
@@ -293,6 +299,17 @@ Config loadConfig() {
         cfg.splitUseWorkspaceDir = j["splitUseWorkspaceDir"].asBool(false);
     if (j.contains("checkForUpdatesOnStartup"))
         cfg.checkForUpdatesOnStartup = j["checkForUpdatesOnStartup"].asBool(true);
+    if (j["ai"].isObject()) {
+        cfg.aiProvider = utf8ToWide(j["ai"]["provider"].asString("off"));
+        cfg.aiModel = utf8ToWide(j["ai"]["model"].asString("gpt-5.6-luna"));
+        cfg.aiEndpoint = utf8ToWide(j["ai"]["endpoint"].asString(
+            "https://api.openai.com/v1/responses"));
+        cfg.aiIncludeCwd = j["ai"]["includeCwd"].asBool(false);
+    }
+    if (cfg.aiProvider != L"openai" && cfg.aiProvider != L"codex" &&
+        cfg.aiProvider != L"custom")
+        cfg.aiProvider = L"off";
+    if (cfg.aiModel.empty()) cfg.aiModel = L"gpt-5.6-luna";
     if (j.contains("osc52Clipboard")) {
         const std::string policy = j["osc52Clipboard"].asString();
         cfg.osc52Clipboard = policy == "allow" ? Osc52Policy::Allow :

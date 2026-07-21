@@ -8,7 +8,7 @@
 namespace liney {
 
 std::wstring runCapture(const std::wstring& commandLine, const std::wstring& cwd,
-                        bool* ok) {
+                        bool* ok, unsigned long timeoutMs) {
     if (ok) *ok = false;
 
     SECURITY_ATTRIBUTES sa{};
@@ -40,19 +40,48 @@ std::wstring runCapture(const std::wstring& commandLine, const std::wstring& cwd
         return L"";
     }
 
+    constexpr size_t kMaxCaptureBytes = 4 * 1024 * 1024;
     std::string out;
     char buf[4096];
-    DWORD read = 0;
-    while (ReadFile(readPipe, buf, sizeof(buf), &read, nullptr) && read > 0)
-        out.append(buf, read);
+    const ULONGLONG deadline = GetTickCount64() + timeoutMs;
+    bool timedOut = false;
+    for (;;) {
+        DWORD available = 0;
+        if (PeekNamedPipe(readPipe, nullptr, 0, nullptr, &available, nullptr) &&
+            available > 0) {
+            DWORD read = 0;
+            const DWORD wanted = available < sizeof(buf) ? available : sizeof(buf);
+            if (ReadFile(readPipe, buf, wanted, &read, nullptr) && read > 0) {
+                const size_t room = kMaxCaptureBytes - out.size();
+                out.append(buf, read < room ? read : room);
+            }
+        }
+        if (WaitForSingleObject(pi.hProcess, 25) == WAIT_OBJECT_0) break;
+        if (GetTickCount64() >= deadline) {
+            timedOut = true;
+            TerminateProcess(pi.hProcess, 124);
+            WaitForSingleObject(pi.hProcess, 2000);
+            break;
+        }
+    }
+    // Drain bytes written immediately before process exit.
+    for (;;) {
+        DWORD available = 0;
+        if (!PeekNamedPipe(readPipe, nullptr, 0, nullptr, &available, nullptr) ||
+            available == 0) break;
+        DWORD read = 0;
+        const DWORD wanted = available < sizeof(buf) ? available : sizeof(buf);
+        if (!ReadFile(readPipe, buf, wanted, &read, nullptr) || read == 0) break;
+        const size_t room = kMaxCaptureBytes - out.size();
+        out.append(buf, read < room ? read : room);
+    }
     CloseHandle(readPipe);
 
-    WaitForSingleObject(pi.hProcess, INFINITE);
     DWORD code = 1;
     GetExitCodeProcess(pi.hProcess, &code);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
-    if (ok) *ok = (code == 0);
+    if (ok) *ok = (!timedOut && code == 0);
 
     if (out.empty()) return L"";
     int wlen = MultiByteToWideChar(CP_UTF8, 0, out.data(),

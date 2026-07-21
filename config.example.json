@@ -9,6 +9,12 @@
   "copyOnSelect": false,
   "multiLinePasteWarning": true,
   "osc52Clipboard": "ask",
+  "ai": {
+    "provider": "off",
+    "model": "gpt-5.6-luna",
+    "endpoint": "https://api.openai.com/v1/responses",
+    "includeCwd": false
+  },
   "keybindings": {
     "commandPalette": "Ctrl+Shift+P",
     "workspaceSnapshots": "Ctrl+Shift+S"

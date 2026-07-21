@@ -738,6 +738,11 @@ void Window::openPaneMenu(int xi, int yi) {
         AppendMenuW(m, MF_STRING, 27,
                     lastCommand->bookmarked ? L"Remove command bookmark"
                                             : L"Bookmark last command");
+        AppendMenuW(m, MF_STRING |
+                         (aiProvider_ == L"off" || aiBusy_ ||
+                                  lastCommand->state == CommandState::Running
+                              ? MF_GRAYED : 0),
+                    40, L"Explain last command with AI…");
     }
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING, 4, L"Find…\tCtrl+F");
@@ -837,6 +842,9 @@ void Window::openPaneMenu(int xi, int yi) {
         break;
     case 27:
         if (menuSession) menuSession->toggleBookmarkLastCommand();
+        break;
+    case 40:
+        requestAiForLastCommand(menuSession);
         break;
     default: break;
     }

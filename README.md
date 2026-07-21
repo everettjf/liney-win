@@ -91,6 +91,10 @@ nothing but the OS.
 - **Lifecycle hooks** on session start/exit and app exit
 - **Verified auto-update** from GitHub releases: quiet startup checks (optional
   in Settings) plus manual checks with `Ctrl+Shift+U`
+- **Opt-in AI command help**: explain the last command block and propose a fix
+  through OpenAI, Codex CLI, or a custom compatible API. Requests redact common
+  secrets, exclude full history, classify command risk, and always require
+  confirmation before execution.
 - **Reliability tooling**: atomic configuration recovery, rotating diagnostics,
   bounded crash dumps, a copyable privacy-safe diagnostic summary,
   signed-update verification, and reproducible Ghostty pinning
@@ -173,6 +177,7 @@ The first run writes `%USERPROFILE%\.liney\config.json` (mirroring macOS liney's
   "unixTools": true,
   "copyOnSelect": false,
   "multiLinePasteWarning": true,
+  "ai": { "provider": "off", "model": "gpt-5.6-luna", "endpoint": "https://api.openai.com/v1/responses", "includeCwd": false },
   "hooks": { "sessionStart": "", "sessionExit": "", "appExit": "" },
   "sshHosts": ["user@host"],
   "agents": [{ "name": "agent", "command": "claude", "cwd": "" }],
@@ -194,6 +199,17 @@ The first run writes `%USERPROFILE%\.liney\config.json` (mirroring macOS liney's
 | `projectIcons` | Per-repo sidebar icons (else a repo-local `icon.png`/`logo.png`) |
 | `theme` | Terminal fg/bg + the 16-color ANSI palette |
 | `hooks` | Commands run on session start/exit and app exit |
+| `ai.provider` | `off` (default), `openai`, `codex`, or `custom` |
+| `ai.model` | Provider model; the OpenAI default is `gpt-5.6-luna` |
+| `ai.endpoint` | HTTPS endpoint used only by the `custom` provider |
+| `ai.includeCwd` | Include the active directory in explicit AI requests (off by default) |
+
+AI is opt-in. Choose a provider in Settings, then right-click a completed
+semantic command block and select **Explain last command with AI…**. OpenAI
+uses `OPENAI_API_KEY`; custom compatible APIs use `LINEY_AI_API_KEY`; Codex CLI
+uses the user's existing Codex sign-in. Keys are read from the process
+environment and are never stored by Liney. The request includes only the last
+command block after redaction, never the full terminal history.
 
 The window layout is saved to `%USERPROFILE%\.liney\layout.json` and restored on
 the next launch.

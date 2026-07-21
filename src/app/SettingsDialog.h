@@ -25,6 +25,9 @@ struct SettingsValues {
     bool rememberLayout = false;     // restore tabs/panes on launch
     bool splitUseWorkspaceDir = false;  // splits open in workspace/home dir
     bool checkForUpdatesOnStartup = true;
+    std::wstring aiProvider;
+    std::wstring aiModel;
+    bool aiIncludeCwd = false;
     std::wstring workspaceRoot;      // sidebar scan root (empty = explicit only)
 };
 

@@ -13,6 +13,7 @@
 #include "app/Layout.h"
 #include "app/Tab.h"
 #include "core/Config.h"
+#include "core/Ai.h"
 #include "core/ShellProfiles.h"
 #include "render/IRenderer.h"
 #include "workspace/Workspace.h"
@@ -141,6 +142,8 @@ private:
     void pollUpdateResult();
     void startDownloadAndInstall(const std::wstring& url,
                                  const std::string& sha256);
+    void requestAiForLastCommand(TerminalSession* session);
+    void pollAiResult();
 
     // Input.
     void onChar(wchar_t unit);
@@ -258,6 +261,15 @@ private:
     std::wstring installerPath_;   // downloaded installer path
     bool pendingUpdate_ = false;   // an update is available to install
     bool checkForUpdatesOnStartup_ = true;
+    std::wstring aiProvider_ = L"off";
+    std::wstring aiModel_ = L"gpt-5.6-luna";
+    std::wstring aiEndpoint_;
+    bool aiIncludeCwd_ = false;
+    std::atomic<bool> aiBusy_{ false };
+    std::atomic<bool> aiReady_{ false };
+    std::mutex aiMutex_;
+    AiAnswer aiAnswer_;
+    std::wstring aiRequestedCwd_;
     wchar_t pendingHighSurrogate_ = 0;
     bool swallowNextChar_ = false;  // drop the WM_CHAR following a shortcut
 
