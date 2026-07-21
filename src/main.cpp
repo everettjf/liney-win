@@ -176,7 +176,7 @@ bool runCliIfRequested(int& exitCode) {
         const ULONGLONG started = GetTickCount64();
         liney::TerminalSession large;
         if (!large.start(
-                L"cmd.exe /d /s /c \"for /L %i in (1,1,50000) do @echo liney-load-%i\"",
+                L"powershell.exe -NoLogo -NoProfile -Command \"[Console]::Out.Write(('x' * 2097152) + 'liney-load-final')\"",
                 L"", 100, 30, 2000)) {
             exitCode = 60; return true;
         }
@@ -190,7 +190,7 @@ bool runCliIfRequested(int& exitCode) {
         large.snapshot();
         std::string output;
         if (!large.dumpBufferUtf8(output) ||
-            output.find("liney-load-50000") == std::string::npos) {
+            output.find("liney-load-final") == std::string::npos) {
             exitCode = 62; return true;
         }
         {
