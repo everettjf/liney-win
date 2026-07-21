@@ -69,7 +69,9 @@ if ($semanticTest.ExitCode -ne 0) {
 Write-Host 'OSC 133 semantic command self-test passed.'
 
 $shellIntegration = [Diagnostics.Process]::Start($resolved, 'shell-integration-self-test')
-if (-not $shellIntegration.WaitForExit(15000)) {
+# Cold Windows PowerShell startup and ConPTY cleanup can exceed 15 seconds on
+# contended GitHub-hosted Windows runners even after the assertions complete.
+if (-not $shellIntegration.WaitForExit(30000)) {
     $shellIntegration.Kill()
     throw 'PowerShell integration self-test timed out.'
 }
