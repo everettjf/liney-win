@@ -89,7 +89,8 @@ nothing but the OS.
 - **Git**: `Ctrl+Shift+L/G` open `git log` / `git diff` in a new tab
 - **Notifications**: a `liney notify` CLI + OSC `9`/`777` → Windows tray balloons
 - **Lifecycle hooks** on session start/exit and app exit
-- **Auto-update** from GitHub releases (`Ctrl+Shift+U`)
+- **Verified auto-update** from GitHub releases: quiet startup checks (optional
+  in Settings) plus manual checks with `Ctrl+Shift+U`
 - **Reliability tooling**: atomic configuration recovery, rotating diagnostics,
   bounded crash dumps, a copyable privacy-safe diagnostic summary,
   signed-update verification, and reproducible Ghostty pinning

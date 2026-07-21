@@ -137,7 +137,7 @@ private:
 
     // Update check + auto-update (Sparkle analog): query GitHub releases
     // off-thread; on confirmation download the installer asset and run it.
-    void checkForUpdates();
+    void checkForUpdates(bool quiet = false);
     void pollUpdateResult();
     void startDownloadAndInstall(const std::wstring& url,
                                  const std::string& sha256);
@@ -257,6 +257,7 @@ private:
     std::string downloadSha256_;   // GitHub-provided digest for that exact asset
     std::wstring installerPath_;   // downloaded installer path
     bool pendingUpdate_ = false;   // an update is available to install
+    bool checkForUpdatesOnStartup_ = true;
     wchar_t pendingHighSurrogate_ = 0;
     bool swallowNextChar_ = false;  // drop the WM_CHAR following a shortcut
 

@@ -16,6 +16,7 @@ add_executable(liney_tests
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/util/Base64.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/core/KeyBinding.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/core/SshProfiles.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../src/core/Update.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/util/Json.cpp)
 target_include_directories(liney_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 

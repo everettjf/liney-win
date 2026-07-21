@@ -7,6 +7,7 @@
 #include "util/Process.h"
 #include "util/Base64.h"
 #include "util/Authenticode.h"
+#include "core/Update.h"
 #include "workspace/Workspace.h"
 
 #include <fstream>
@@ -18,34 +19,6 @@
 namespace liney {
 
 namespace {
-
-// Parse a "vX.Y.Z" / "X.Y.Z" version into up to 3 integers for comparison.
-void parseVersion(const std::string& s, int out[3]) {
-    out[0] = out[1] = out[2] = 0;
-    size_t i = (!s.empty() && (s[0] == 'v' || s[0] == 'V')) ? 1 : 0;
-    int part = 0;
-    for (; i < s.size() && part < 3; ++part) {
-        int v = 0;
-        bool any = false;
-        while (i < s.size() && s[i] >= '0' && s[i] <= '9') {
-            v = v * 10 + (s[i] - '0');
-            ++i; any = true;
-        }
-        if (any) out[part] = v;
-        if (i < s.size() && s[i] == '.') ++i;
-        else break;
-    }
-}
-
-bool versionNewer(const std::string& remote, const std::string& local) {
-    int r[3], l[3];
-    parseVersion(remote, r);
-    parseVersion(local, l);
-    for (int i = 0; i < 3; ++i) {
-        if (r[i] != l[i]) return r[i] > l[i];
-    }
-    return false;
-}
 
 // Serialize a pane subtree: splits carry dir/ratio/children, leaves carry cwd.
 Json paneToJson(const Pane* p) {
@@ -116,10 +89,10 @@ void Window::pollNotifications() {
     for (const Notification& n : notes) showBalloon(n.title, n.body);
 }
 
-void Window::checkForUpdates() {
-    showBalloon(L"Liney", L"Checking for updates…");
+void Window::checkForUpdates(bool quiet) {
+    if (!quiet) showBalloon(L"Liney", L"Checking for updates…");
     // Query GitHub off the UI thread; renderFrame shows the result + prompt.
-    updateThreads_.emplace_back([this]() {
+    updateThreads_.emplace_back([this, quiet]() {
         const std::string body = httpsGet(
             L"api.github.com", L"/repos/everettjf/liney-win/releases/latest");
         std::wstring msg, url;
@@ -132,7 +105,8 @@ void Window::checkForUpdates() {
         for (const wchar_t* p = kAppVersion; *p; ++p) local.push_back((char)*p);
 
         if (tag.empty()) {
-            msg = L"Update check failed (no network / rate limited)";
+            if (!quiet)
+                msg = L"Update check failed (no network / rate limited)";
         } else if (versionNewer(tag, local)) {
             // Find the installer asset (prefer *setup.exe, else any .exe;
             // case-insensitive).
@@ -161,7 +135,7 @@ void Window::checkForUpdates() {
             } else {
                 msg += L" (installer has no SHA-256 digest; refusing unsafe update)";
             }
-        } else {
+        } else if (!quiet) {
             msg = std::wstring(L"You're up to date (") + kAppVersion + L")";
         }
         {
@@ -177,14 +151,11 @@ void Window::checkForUpdates() {
 
 void Window::startDownloadAndInstall(const std::wstring& url,
                                      const std::string& sha256) {
-    // Split "https://host/path...".
-    std::wstring rest = url;
-    const std::wstring scheme = L"https://";
-    if (rest.rfind(scheme, 0) == 0) rest = rest.substr(scheme.size());
-    size_t slash = rest.find(L'/');
-    if (slash == std::wstring::npos) { showBalloon(L"Liney", L"Bad update URL"); return; }
-    const std::wstring host = rest.substr(0, slash);
-    const std::wstring path = rest.substr(slash);
+    std::wstring host, path;
+    if (!parseTrustedInstallerUrl(url, host, path)) {
+        showBalloon(L"Liney", L"Untrusted update URL blocked");
+        return;
+    }
 
     wchar_t tmp[MAX_PATH]{}, unique[MAX_PATH]{};
     if (!GetTempPathW(MAX_PATH, tmp) || !GetTempFileNameW(tmp, L"lny", 0, unique)) {
@@ -243,7 +214,7 @@ void Window::pollUpdateResult() {
         sha256 = downloadSha256_;
         pending = pendingUpdate_;
     }
-    showBalloon(L"Liney", msg);
+    if (!msg.empty()) showBalloon(L"Liney", msg);
     if (pending && !url.empty()) {
         const std::wstring prompt =
             msg + L"\n\nDownload and install now? Liney will close.";

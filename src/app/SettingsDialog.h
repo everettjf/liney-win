@@ -24,7 +24,8 @@ struct SettingsValues {
     bool unixTools = true;           // add Git's usr/bin to PATH for shells
     bool rememberLayout = false;     // restore tabs/panes on launch
     bool splitUseWorkspaceDir = false;  // splits open in workspace/home dir
-    std::wstring workspaceRoot;      // sidebar scan root (empty = launch parent)
+    bool checkForUpdatesOnStartup = true;
+    std::wstring workspaceRoot;      // sidebar scan root (empty = explicit only)
 };
 
 // Modal, click-to-configure settings window (the GUI counterpart of

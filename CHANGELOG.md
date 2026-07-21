@@ -3,6 +3,20 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
+## [0.6.0] - 2026-07-21
+
+### Added
+- Liney now checks quietly for stable GitHub releases at startup. The behavior
+  is enabled by default and can be disabled in Settings; manual checks remain
+  available from the menu and `Ctrl+Shift+U`.
+- The update/version and trusted-download policy is covered by standalone unit
+  tests on every CI run.
+
+### Security
+- Installer downloads are accepted only from this repository's canonical
+  GitHub Release path. Foreign hosts, repositories, path traversal, missing
+  SHA-256 digests, truncated downloads, and publisher changes are rejected.
+
 ## [0.5.10] - 2026-07-21
 
 ### Added

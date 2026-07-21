@@ -15,6 +15,7 @@
 #include "util/Base64.h"
 #include "core/KeyBinding.h"
 #include "core/SshProfiles.h"
+#include "core/Update.h"
 
 namespace {
 
@@ -27,6 +28,24 @@ void check(bool cond, const char* what) {
         ++g_failures;
         std::printf("  FAIL: %s\n", what);
     }
+}
+
+void testUpdatePolicy() {
+    std::printf("Secure update policy\n");
+    check(liney::versionNewer("v0.6.0", "0.5.10"), "new minor version accepted");
+    check(!liney::versionNewer("v0.5.9", "0.5.10"), "older patch rejected");
+    check(!liney::versionNewer("v0.6.0", "0.6.0"), "same version rejected");
+    std::wstring host, path;
+    check(liney::parseTrustedInstallerUrl(
+              L"https://github.com/everettjf/liney-win/releases/download/v0.6.0/liney-setup.exe",
+              host, path) && host == L"github.com",
+          "official release installer accepted");
+    check(!liney::parseTrustedInstallerUrl(
+              L"https://example.com/liney-setup.exe", host, path),
+          "foreign installer host rejected");
+    check(!liney::parseTrustedInstallerUrl(
+              L"https://github.com/other/repo/releases/download/v1/a.exe", host, path),
+          "foreign GitHub repository rejected");
 }
 
 // ---- Json round-trip / parsing -------------------------------------------
@@ -253,6 +272,7 @@ int main() {
     testDeterministicFuzzSmoke();
     testKeyBindings();
     testSshProfiles();
+    testUpdatePolicy();
     std::printf("\n%d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;
 }

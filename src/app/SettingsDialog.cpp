@@ -27,6 +27,7 @@ constexpr int kIdTheme = 109;
 constexpr int kIdAccent = 110;
 constexpr int kIdRemember = 111;
 constexpr int kIdSplitDir = 112;
+constexpr int kIdAutoUpdate = 113;
 
 struct State {
     HWND shell = nullptr;
@@ -40,6 +41,7 @@ struct State {
     HWND unixTools = nullptr;
     HWND rememberLayout = nullptr;
     HWND splitWorkspaceDir = nullptr;
+    HWND autoUpdate = nullptr;
     HWND root = nullptr;
     HWND accentHex = nullptr;     // "#RRGGBB" caption next to the swatch
     HBRUSH accentBrush = nullptr; // fills the swatch via WM_CTLCOLORSTATIC
@@ -210,7 +212,7 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
     st.accent = v.accent;
 
     // Size the window so the *client* area is exactly W × contentH.
-    const int contentH = 524;
+    const int contentH = 550;
     RECT wr{ 0, 0, S(W), S(contentH) };
     const DWORD style = WS_POPUP | WS_CAPTION | WS_SYSMENU;
     AdjustWindowRectExForDpi(&wr, style, FALSE, WS_EX_DLGMODALFRAME, dpi);
@@ -294,7 +296,7 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
     setAccentSwatch(&st);
 
     // ---- Terminal ---------------------------------------------------------
-    group(L"Terminal", 152, 226);
+    group(L"Terminal", 152, 252);
     r = 174;
     label(L"Shell", r);
     st.shell = mk(0, L"COMBOBOX", L"",
@@ -342,10 +344,14 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
         kIdSplitDir,
         L"New splits open in the workspace / home dir (else inherit the pane's)",
         v.splitUseWorkspaceDir, r);
+    r += 26;
+    st.autoUpdate = checkbox(
+        kIdAutoUpdate, L"Check for stable updates when Liney starts",
+        v.checkForUpdatesOnStartup, r);
 
     // ---- Workspace --------------------------------------------------------
-    group(L"Workspace", 388, 84);
-    r = 410;
+    group(L"Workspace", 414, 84);
+    r = 436;
     label(L"Root", r);
     st.root = mk(WS_EX_CLIENTEDGE, L"EDIT", v.workspaceRoot.c_str(),
                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, ctrlX, r,
@@ -353,15 +359,15 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
     mk(0, L"BUTTON", L"Browse…", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
        ctrlR - 74, r, 74, ch, kIdBrowse);
     r += 30;
-    mk(0, L"STATIC", L"Empty = the parent of the launch folder.",
+    mk(0, L"STATIC", L"Empty = only projects you add explicitly.",
        WS_CHILD | WS_VISIBLE, ctrlX, r, ctrlW, 16, -1);
 
     // ---- OK / Cancel ------------------------------------------------------
     mk(0, L"BUTTON", L"OK",
-       WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, ctrlR - 178, 484,
+       WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, ctrlR - 178, 510,
        84, 28, IDOK);
     mk(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE | WS_TABSTOP, ctrlR - 84,
-       484, 84, 28, IDCANCEL);
+       510, 84, 28, IDCANCEL);
 
     // A real Segoe UI font at the monitor's DPI — the biggest single upgrade
     // over the legacy bitmap DEFAULT_GUI_FONT.
@@ -436,6 +442,8 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
             SendMessageW(st.rememberLayout, BM_GETCHECK, 0, 0) == BST_CHECKED;
         v.splitUseWorkspaceDir =
             SendMessageW(st.splitWorkspaceDir, BM_GETCHECK, 0, 0) == BST_CHECKED;
+        v.checkForUpdatesOnStartup =
+            SendMessageW(st.autoUpdate, BM_GETCHECK, 0, 0) == BST_CHECKED;
         v.workspaceRoot = windowText(st.root);
     }
 

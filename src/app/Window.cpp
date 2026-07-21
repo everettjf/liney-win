@@ -189,6 +189,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     multiLinePasteWarning_ = cfg.multiLinePasteWarning;
     rememberLayout_ = cfg.rememberLayout;
     splitUseWorkspaceDir_ = cfg.splitUseWorkspaceDir;
+    checkForUpdatesOnStartup_ = cfg.checkForUpdatesOnStartup;
     osc52Clipboard_ = cfg.osc52Clipboard;
     scrollback_ = cfg.scrollback;
     unixToolsEnabled_ = cfg.unixTools;
@@ -256,6 +257,11 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     }
 
     initTray();  // for OSC 9/777 balloon notifications
+    wchar_t headlessMode[8]{};
+    const bool headless = GetEnvironmentVariableW(
+        L"LINEY_HEADLESS", headlessMode,
+        static_cast<DWORD>(_countof(headlessMode))) > 0;
+    if (checkForUpdatesOnStartup_ && !headless) checkForUpdates(true);
     return true;
 }
 
@@ -854,6 +860,7 @@ void Window::openSettingsDialog() {
     v.unixTools = unixToolsEnabled_;
     v.rememberLayout = rememberLayout_;
     v.splitUseWorkspaceDir = splitUseWorkspaceDir_;
+    v.checkForUpdatesOnStartup = checkForUpdatesOnStartup_;
     v.workspaceRoot = workspaceRoot_;
     if (!showSettingsDialog(hwnd_, v)) return;
 
@@ -864,6 +871,7 @@ void Window::openSettingsDialog() {
     multiLinePasteWarning_ = v.multiLinePasteWarning;
     rememberLayout_ = v.rememberLayout;
     splitUseWorkspaceDir_ = v.splitUseWorkspaceDir;
+    checkForUpdatesOnStartup_ = v.checkForUpdatesOnStartup;
     if (v.unixTools && !unixToolsEnabled_) addGitUnixToolsToPath();
     unixToolsEnabled_ = v.unixTools;
     if (v.workspaceRoot != workspaceRoot_) {
@@ -911,6 +919,7 @@ void Window::openSettingsDialog() {
         j.set("unixTools", Json::boolean(unixToolsEnabled_));
         j.set("rememberLayout", Json::boolean(rememberLayout_));
         j.set("splitUseWorkspaceDir", Json::boolean(splitUseWorkspaceDir_));
+        j.set("checkForUpdatesOnStartup", Json::boolean(checkForUpdatesOnStartup_));
         j.set("workspaceRoot", Json::str(wideToUtf8(workspaceRoot_)));
     });
 }

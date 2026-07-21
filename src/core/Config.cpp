@@ -80,6 +80,7 @@ std::string defaultJson(const Config& c) {
     j.set("multiLinePasteWarning", Json::boolean(c.multiLinePasteWarning));
     j.set("rememberLayout", Json::boolean(c.rememberLayout));
     j.set("splitUseWorkspaceDir", Json::boolean(c.splitUseWorkspaceDir));
+    j.set("checkForUpdatesOnStartup", Json::boolean(c.checkForUpdatesOnStartup));
     j.set("osc52Clipboard", Json::str(
         c.osc52Clipboard == Osc52Policy::Allow ? "allow" :
         c.osc52Clipboard == Osc52Policy::Deny ? "deny" : "ask"));
@@ -290,6 +291,8 @@ Config loadConfig() {
         cfg.rememberLayout = j["rememberLayout"].asBool(false);
     if (j.contains("splitUseWorkspaceDir"))
         cfg.splitUseWorkspaceDir = j["splitUseWorkspaceDir"].asBool(false);
+    if (j.contains("checkForUpdatesOnStartup"))
+        cfg.checkForUpdatesOnStartup = j["checkForUpdatesOnStartup"].asBool(true);
     if (j.contains("osc52Clipboard")) {
         const std::string policy = j["osc52Clipboard"].asString();
         cfg.osc52Clipboard = policy == "allow" ? Osc52Policy::Allow :
