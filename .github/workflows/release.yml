@@ -44,6 +44,14 @@ jobs:
             throw "Tag v$tag != resource.rc version $ver. Bump res\resource.rc, src\app\WindowInternal.h and packaging manifests first."
           }
 
+      - name: Require Authenticode credentials for stable releases
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:LINEY_SIGNING_CERT_BASE64) -or
+              [string]::IsNullOrWhiteSpace($env:LINEY_SIGNING_CERT_PASSWORD)) {
+            throw 'Stable releases must be Authenticode-signed. Configure LINEY_SIGNING_CERT_BASE64 and LINEY_SIGNING_CERT_PASSWORD repository secrets.'
+          }
+
       - name: Ensure NSIS
         shell: pwsh
         run: |
@@ -57,8 +65,7 @@ jobs:
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\build.ps1
 
-      - name: Sign application binaries when certificate is configured
-        if: env.LINEY_SIGNING_CERT_BASE64 != ''
+      - name: Sign application binaries
         shell: pwsh
         run: |
           $cert = Join-Path $env:RUNNER_TEMP 'liney-signing.pfx'
@@ -97,8 +104,7 @@ jobs:
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\installer-smoke.ps1 -Installer dist\liney-setup.exe -PreviousInstaller previous-release\liney-setup.exe -PortableZip dist\liney-portable.zip -ScratchRoot $env:RUNNER_TEMP\liney-package-smoke
 
-      - name: Sign installer when certificate is configured
-        if: env.LINEY_SIGNING_CERT_BASE64 != ''
+      - name: Sign installer
         shell: pwsh
         run: |
           $cert = Join-Path $env:RUNNER_TEMP 'liney-signing.pfx'

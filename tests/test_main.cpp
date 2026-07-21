@@ -69,6 +69,12 @@ void testAiSafety() {
     const std::string withCwd = liney::buildAiPromptJson(request, true);
     check(withCwd.find("cwd") != std::string::npos,
           "cwd is included only when opted in");
+    check(withoutCwd.find("root cause") != std::string::npos,
+          "failed commands request root-cause diagnosis");
+    request.exitCode = 0;
+    check(liney::buildAiPromptJson(request, false).find("what the terminal command did") !=
+              std::string::npos,
+          "successful commands request explanation instead of failure diagnosis");
 
     check(liney::assessCommandRisk(L"git status") == liney::CommandRisk::Low,
           "read-only command is low risk");

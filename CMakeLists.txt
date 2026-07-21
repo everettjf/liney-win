@@ -46,6 +46,7 @@ add_executable(liney_win WIN32
   src/core/SshProfiles.cpp
   src/core/Update.cpp
   src/core/Ai.cpp
+  src/core/CommandHistory.cpp
   src/render/D2DRenderer.cpp
   src/pty/ConPty.cpp
   src/vt/Terminal.cpp

@@ -49,6 +49,9 @@ jobs:
       - name: ConPTY and VT lifecycle soak
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\soak-smoke.ps1 -Exe build-ghostty\Liney.exe -Iterations 50
+      - name: Large-output, cancellation, and network-path stability soak
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools\stability-soak.ps1 -Exe build-ghostty\Liney.exe -DurationSeconds 30
       - name: Upload diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@v4

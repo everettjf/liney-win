@@ -197,9 +197,14 @@ void Window::pollUpdateResult() {
             path = installerPath_;
         }
         if (!path.empty()) {
-            ShellExecuteW(hwnd_, L"open", path.c_str(), nullptr, nullptr,
-                          SW_SHOWNORMAL);
-            PostQuitMessage(0);
+            const HINSTANCE launched = ShellExecuteW(
+                hwnd_, L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+            if (reinterpret_cast<INT_PTR>(launched) > 32) {
+                PostQuitMessage(0);
+            } else {
+                DeleteFileW(path.c_str());
+                showBalloon(L"Liney", L"The verified installer could not be launched");
+            }
         }
         return;
     }

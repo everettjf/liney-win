@@ -349,6 +349,17 @@ void Window::drawPanes(const Rect& r) {
         const float pad = metrics_.panePad();
         renderer_->drawGrid(leaf->session->grid(), pr.x + pad, pr.y + pad);
         renderer_->popClip();
+        if (leaf->session->exited()) {
+            const float bh = metrics_.cellH + 10.0f;
+            const float bw = std::min(pr.w - 16.0f, metrics_.cellW * 38.0f);
+            const float bx = pr.x + 8.0f;
+            const float by = pr.y + pr.h - bh - 8.0f;
+            renderer_->fillRect(bx, by, bw, bh, uiTheme_.tabActiveBg);
+            renderer_->strokeRect(bx, by, bw, bh, uiTheme_.accent, 1.0f);
+            renderer_->drawText(L"Shell exited - right-click to restart",
+                                bx + 8.0f, by + 4.0f, bw - 16.0f,
+                                metrics_.cellH, uiTheme_.text, true);
+        }
         const bool focused = (leaf == t->active());
         renderer_->strokeRect(pr.x, pr.y, pr.w, pr.h, focused ? uiTheme_.accent : uiTheme_.border,
                               focused ? 1.5f : 1.0f);

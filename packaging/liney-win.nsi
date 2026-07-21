@@ -10,7 +10,7 @@
 
 Unicode true
 !ifndef APPVERSION
-  !define APPVERSION "0.7.0"
+  !define APPVERSION "0.8.0"
 !endif
 !ifndef OUTFILE
   !define OUTFILE "liney-Setup.exe"
@@ -28,6 +28,7 @@ SetCompressor /SOLID lzma
 !endif
 
 !include "MUI2.nsh"
+!include "LogicLib.nsh"
 !define MUI_ABORTWARNING
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
@@ -45,11 +46,20 @@ FunctionEnd
 
 Section "Liney" SecMain
   SetOutPath "$INSTDIR"
+  ; Transactional update: retain the last known-good core until the new build
+  ; proves it can load the VT DLL, create ConPTY and render output.
+  Delete "$INSTDIR\Liney.exe.rollback"
+  Delete "$INSTDIR\ghostty-vt.dll.rollback"
+  IfFileExists "$INSTDIR\Liney.exe" 0 +2
+    Rename "$INSTDIR\Liney.exe" "$INSTDIR\Liney.exe.rollback"
+  IfFileExists "$INSTDIR\ghostty-vt.dll" 0 +2
+    Rename "$INSTDIR\ghostty-vt.dll" "$INSTDIR\ghostty-vt.dll.rollback"
 !ifdef WINEXE
+  ClearErrors
   File "${WINEXE}"
 !endif
 !ifdef GHOSTTYDLL
-  File "${GHOSTTYDLL}"
+  File /oname=ghostty-vt.dll "${GHOSTTYDLL}"
 !endif
 !ifdef BINDIR
   File /nonfatal "${BINDIR}\msvcp140*.dll"
@@ -58,6 +68,31 @@ Section "Liney" SecMain
 !ifdef ICONFILE
   File "${ICONFILE}"
 !endif
+
+  ${If} ${Errors}
+    Goto rollback_update
+  ${EndIf}
+  ExecWait '"$INSTDIR\Liney.exe" self-test' $0
+  ${If} $0 != 0
+    Goto rollback_update
+  ${EndIf}
+  Delete "$INSTDIR\Liney.exe.rollback"
+  Delete "$INSTDIR\ghostty-vt.dll.rollback"
+  Goto update_verified
+
+rollback_update:
+  Delete "$INSTDIR\Liney.exe"
+  Delete "$INSTDIR\ghostty-vt.dll"
+  IfFileExists "$INSTDIR\Liney.exe.rollback" 0 +2
+    Rename "$INSTDIR\Liney.exe.rollback" "$INSTDIR\Liney.exe"
+  IfFileExists "$INSTDIR\ghostty-vt.dll.rollback" 0 +2
+    Rename "$INSTDIR\ghostty-vt.dll.rollback" "$INSTDIR\ghostty-vt.dll"
+  IfSilent +2 0
+    MessageBox MB_ICONSTOP|MB_OK "The new Liney build failed its startup check. The previous version was restored."
+  SetErrorLevel 20
+  Abort
+
+update_verified:
 
   ; Remove binaries from older-named installs (GUI liney_win.exe + the separate
   ; liney.exe CLI, now merged into Liney.exe) so upgraders don't keep stale ones.

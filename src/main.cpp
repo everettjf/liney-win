@@ -17,12 +17,15 @@
 
 #include <cstdlib>  // __argc, __wargv
 #include <algorithm>
+#include <fstream>
+#include <iterator>
 #include <string>
 
 #include "app/Window.h"
 #include "core/TerminalSession.h"
 #include "core/Config.h"
 #include "core/ShellProfiles.h"
+#include "core/CommandHistory.h"
 #include "vt/Terminal.h"
 #include "util/Diagnostics.h"
 #include "util/Process.h"
@@ -167,6 +170,83 @@ bool runCliIfRequested(int& exitCode) {
         liney::runCapture(
             L"cmd.exe /d /s /c \"ping 127.0.0.1 -n 6 >nul\"", L"", &ok, 100);
         exitCode = !ok && GetTickCount64() - started < 3000 ? 0 : 24;
+        return true;
+    }
+    if (cmd == L"stability-self-test") {
+        const ULONGLONG started = GetTickCount64();
+        liney::TerminalSession large;
+        if (!large.start(
+                L"cmd.exe /d /s /c \"for /L %i in (1,1,50000) do @echo liney-load-%i\"",
+                L"", 100, 30, 2000)) {
+            exitCode = 60; return true;
+        }
+        const ULONGLONG deadline = GetTickCount64() + 30000;
+        while (!large.exited() && GetTickCount64() < deadline) Sleep(5);
+        if (!large.exited()) { exitCode = 61; return true; }
+        // The shell process can exit just before ConPTY finishes flushing its
+        // buffered output. Keep the read side alive briefly so teardown does
+        // not intentionally break a still-draining high-volume pipe.
+        Sleep(500);
+        large.snapshot();
+        std::string output;
+        if (!large.dumpBufferUtf8(output) ||
+            output.find("liney-load-50000") == std::string::npos) {
+            exitCode = 62; return true;
+        }
+        {
+            liney::TerminalSession longRunning;
+            if (!longRunning.start(L"cmd.exe /d /s /c \"ping 127.0.0.1 -n 30 >nul\"",
+                                   L"", 80, 24, 100)) {
+                exitCode = 63; return true;
+            }
+            Sleep(50); // destructor must cancel and join its reader promptly
+        }
+        const ULONGLONG networkStarted = GetTickCount64();
+        liney::TerminalSession unavailableNetwork;
+        const bool unexpectedlyStarted = unavailableNetwork.start(
+            L"cmd.exe", L"\\\\liney-invalid-host\\missing-share", 80, 24, 100);
+        if (unexpectedlyStarted || GetTickCount64() - networkStarted > 5000) {
+            exitCode = 64; return true;
+        }
+        exitCode = GetTickCount64() - started < 45000 ? 0 : 65;
+        return true;
+    }
+    if (cmd == L"recovery-self-test") {
+        wchar_t temp[MAX_PATH]{}, unique[MAX_PATH]{};
+        if (!GetTempPathW(MAX_PATH, temp) ||
+            !GetTempFileNameW(temp, L"lnr", 0, unique)) {
+            exitCode = 66; return true;
+        }
+        DeleteFileW(unique);
+        if (!CreateDirectoryW(unique, nullptr)) { exitCode = 67; return true; }
+        SetEnvironmentVariableW(L"LINEY_CONFIG_DIR", unique);
+        const std::wstring diag = std::wstring(unique) + L"\\diagnostics";
+        CreateDirectoryW(diag.c_str(), nullptr);
+        const std::wstring stale = diag + L"\\run-4294967294.active";
+        const std::wstring recovery = diag + L"\\recovery-4294967294.json";
+        { std::ofstream f(stale.c_str()); f << "active\n"; }
+        { std::ofstream f(recovery.c_str()); f << "{\"tabs\":[]}"; }
+        liney::initializeDiagnostics(L"self-test");
+        liney::diagnosticLog("self-test log");
+        liney::appendCommandHistory({L"echo history-ok sk-super-secret", L"C:\\test", 0, 1});
+        const auto history = liney::searchCommandHistory(L"history-ok", 5);
+        const std::wstring zip = std::wstring(unique) + L"\\diagnostics.zip";
+        bool passed = liney::previousRunCrashed() &&
+            liney::previousRecoveryLayoutPath() == recovery &&
+            history.size() == 1 &&
+            history[0].command.find(L"super-secret") == std::wstring::npos &&
+            liney::exportDiagnosticBundle(zip, L"self-test") &&
+            GetFileAttributesW(zip.c_str()) != INVALID_FILE_ATTRIBUTES;
+        if (passed) {
+            std::ifstream archive(zip.c_str(), std::ios::binary);
+            std::string bytes((std::istreambuf_iterator<char>(archive)), {});
+            passed = bytes.size() >= 22 && bytes.compare(0, 4, "PK\x03\x04", 4) == 0 &&
+                     bytes.compare(bytes.size() - 22, 4, "PK\x05\x06", 4) == 0 &&
+                     bytes.find("history-ok") == std::string::npos &&
+                     bytes.find("super-secret") == std::string::npos;
+        }
+        liney::markCleanShutdown();
+        exitCode = passed ? 0 : 68;
         return true;
     }
     if (cmd == L"semantic-self-test") {
@@ -350,16 +430,21 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     liney::initializeDiagnostics(liney::kAppVersion);
     enablePerMonitorDpi();
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);  // for WIC image loading
-    liney::Window window;
-    if (!window.create(hInstance, L"Liney", 1000, 640)) {
-        liney::diagnosticLog("window creation failed");
-        return 1;
+    int result = 1;
+    {
+        liney::Window window;
+        if (!window.create(hInstance, L"Liney", 1000, 640)) {
+            liney::diagnosticLog("window creation failed");
+        } else {
+            wchar_t headless[8]{};
+            const bool isHeadless = GetEnvironmentVariableW(
+                L"LINEY_HEADLESS", headless,
+                static_cast<DWORD>(_countof(headless))) > 0;
+            window.show(isHeadless ? SW_HIDE : nCmdShow);
+            result = window.runMessageLoop();
+        }
     }
-    wchar_t headless[8]{};
-    const bool isHeadless = GetEnvironmentVariableW(
-        L"LINEY_HEADLESS", headless, static_cast<DWORD>(_countof(headless))) > 0;
-    window.show(isHeadless ? SW_HIDE : nCmdShow);
-    const int result = window.runMessageLoop();
     liney::diagnosticLog("application exiting");
+    liney::markCleanShutdown();
     return result;
 }
