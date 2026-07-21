@@ -186,6 +186,17 @@ void ConPty::stop() {
     // block on a flush.
     running_ = false;
 
+    // A live shell (or a child such as ping) can keep the pseudoconsole open
+    // after our pipes are cancelled. Explicitly terminate the root process and
+    // give Windows a bounded interval to tear down its console process tree;
+    // otherwise ClosePseudoConsole can inherit the child's full remaining run
+    // time on Windows Server 2022.
+    if (procInfo_.hProcess &&
+        WaitForSingleObject(procInfo_.hProcess, 0) == WAIT_TIMEOUT) {
+        TerminateProcess(procInfo_.hProcess, ERROR_CANCELLED);
+        WaitForSingleObject(procInfo_.hProcess, 2000);
+    }
+
     if (outputRead_) CancelIoEx(outputRead_, nullptr);  // unblock reader ReadFile
     {
         std::lock_guard<std::mutex> lock(writeMutex_);
