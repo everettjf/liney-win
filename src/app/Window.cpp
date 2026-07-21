@@ -3,8 +3,6 @@
 #include <windowsx.h>  // GET_X_LPARAM / GET_WHEEL_DELTA_WPARAM
 #include <commdlg.h>   // ChooseFontW (the Font… picker)
 #include <tlhelp32.h>  // process snapshot for the running-command check
-#include <UIAutomationCore.h>
-#include <UIAutomation.h>
 
 #include <algorithm>
 #include <cstdio>
