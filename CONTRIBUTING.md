@@ -89,15 +89,29 @@ Both accept `-BuildDir <dir>` to package from an existing build.
 
 ## Releasing
 
+Stable releases require an Authenticode code-signing certificate with its
+private key in PFX/P12 format. Configure it once from an authenticated GitHub
+CLI session; the script validates the private key, Code Signing EKU, and
+validity period before writing encrypted repository secrets directly from
+memory:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\configure-signing.ps1 -PfxPath C:\secure\liney-signing.pfx
+```
+
+Do not commit the certificate. The release workflow refuses to publish an
+unsigned stable build, timestamps and verifies `Liney.exe`, `ghostty-vt.dll`,
+and the installer, then publishes SHA-256 checksums and an SBOM.
+
 1. Bump the version in `res\resource.rc` (FILEVERSION/PRODUCTVERSION + the two
    string values), `src\app\WindowInternal.h` (`kAppVersion`),
    `packaging\AppxManifest.xml`, `packaging\liney-win.nsi` (default), and the
    `packaging\winget\*.yaml` manifests — all should agree.
 2. Add a section to `CHANGELOG.md`.
 3. Merge, then tag: `git tag v0.x.0 && git push origin v0.x.0`.
-4. The `Release` workflow builds `liney-win-setup.exe` + `liney-win-portable.zip`
-   and publishes the GitHub release (it fails if the tag doesn't match
-   `resource.rc`).
+4. The `Release` workflow builds `liney-setup.exe` + `liney-portable.zip`, runs
+   upgrade/rollback/package smoke tests, signs the artifacts, and publishes the
+   GitHub release (it fails if the tag doesn't match `resource.rc`).
 
 ## Style & PRs
 
