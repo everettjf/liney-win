@@ -19,6 +19,8 @@ CMakeFiles/
 cmake_install.cmake
 build-ghostty/
 build-tests/
+build-zig*/
+build-tests-zig/
 
 # Local toolchain (e.g. pinned Zig)
 .toolchain/

@@ -1,12 +1,16 @@
 #include "app/Window.h"
 #include "app/WindowInternal.h"
 #include "util/Dialogs.h"
+#include "util/InputBox.h"
 #include "util/Http.h"
 #include "util/Json.h"
 #include "util/Process.h"
+#include "util/Base64.h"
+#include "util/Authenticode.h"
 #include "workspace/Workspace.h"
 
 #include <fstream>
+#include <algorithm>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -57,6 +61,19 @@ Json paneToJson(const Pane* p) {
         j.set("cwd", Json::str(wideToUtf8(p->session ? p->session->cwd() : L"")));
         j.set("shell",
               Json::str(wideToUtf8(p->session ? p->session->shellCommand() : L"")));
+        if (p->session) {
+            const SessionContext& context = p->session->context();
+            Json c = Json::object();
+            const char* role = context.role == SessionRole::Agent ? "agent" :
+                               context.role == SessionRole::Ssh ? "ssh" : "shell";
+            c.set("role", Json::str(role));
+            c.set("projectPath", Json::str(wideToUtf8(context.projectPath)));
+            c.set("worktreePath", Json::str(wideToUtf8(context.worktreePath)));
+            c.set("taskName", Json::str(wideToUtf8(context.taskName)));
+            c.set("agentName", Json::str(wideToUtf8(context.agentName)));
+            c.set("testCommand", Json::str(wideToUtf8(context.testCommand)));
+            j.set("context", std::move(c));
+        }
     }
     return j;
 }
@@ -178,7 +195,18 @@ void Window::startDownloadAndInstall(const std::wstring& url,
 
     showBalloon(L"Liney", L"Downloading update…");
     updateThreads_.emplace_back([this, host, path, out, sha256]() {
-        const bool dl = httpsDownload(host, path, out, sha256);
+        bool dl = httpsDownload(host, path, out, sha256);
+        // Preserve compatibility with existing unsigned builds, but once the
+        // running app is signed, never cross back to an unsigned installer.
+        wchar_t currentExe[32768]{};
+        const DWORD currentLen = GetModuleFileNameW(
+            nullptr, currentExe, static_cast<DWORD>(_countof(currentExe)));
+        if (dl && currentLen > 0 && currentLen < _countof(currentExe) &&
+            verifyAuthenticode(currentExe) &&
+            !sameAuthenticodePublisher(currentExe, out)) {
+            dl = false;
+            DeleteFileW(out.c_str());
+        }
         {
             std::lock_guard<std::mutex> lk(updateMutex_);
             if (dl) installerPath_ = out;
@@ -230,7 +258,68 @@ void Window::pollUpdateResult() {
 void Window::saveLayout() const {
     const std::wstring dir = configDir();
     if (dir.empty() || tabs_.empty()) return;
+    writeLayoutTo(dir + L"\\layout.json");
+}
+
+void Window::pollClipboardRequests() {
+    for (auto& tab : tabs_) {
+        for (Pane* leaf : tab->leaves()) {
+            if (!leaf->session || !leaf->session->hasPendingClipboardRequest())
+                continue;
+            const std::string encoded = leaf->session->takeClipboardRequest();
+            if (osc52Clipboard_ == Osc52Policy::Deny) continue;
+            std::string decoded;
+            if (!decodeBase64(encoded, decoded, 1024 * 1024)) {
+                showBalloon(L"Liney", L"Blocked a malformed OSC 52 clipboard request");
+                continue;
+            }
+            const int chars = MultiByteToWideChar(
+                CP_UTF8, MB_ERR_INVALID_CHARS, decoded.data(),
+                static_cast<int>(decoded.size()), nullptr, 0);
+            if (chars <= 0) {
+                showBalloon(L"Liney", L"Blocked a non-text OSC 52 clipboard request");
+                continue;
+            }
+            std::wstring text(static_cast<size_t>(chars), L'\0');
+            MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, decoded.data(),
+                                static_cast<int>(decoded.size()), text.data(), chars);
+            if (osc52Clipboard_ == Osc52Policy::Ask) {
+                std::wstring source = leaf->session->title();
+                if (source.empty()) source = leaf->session->cwd();
+                const std::wstring message =
+                    L"A terminal program requests permission to replace the "
+                    L"Windows clipboard.\n\nSource: " + source +
+                    L"\nText length: " + std::to_wstring(text.size()) +
+                    L" characters\n\nAllow this request?";
+                if (MessageBoxW(hwnd_, message.c_str(), L"Liney - clipboard request",
+                                MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
+                    continue;
+            }
+            if (!OpenClipboard(hwnd_)) continue;
+            EmptyClipboard();
+            const size_t bytes = (text.size() + 1) * sizeof(wchar_t);
+            if (HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, bytes)) {
+                if (void* target = GlobalLock(memory)) {
+                    memcpy(target, text.c_str(), bytes);
+                    GlobalUnlock(memory);
+                    if (!SetClipboardData(CF_UNICODETEXT, memory)) GlobalFree(memory);
+                } else {
+                    GlobalFree(memory);
+                }
+            }
+            CloseClipboard();
+        }
+    }
+}
+
+bool Window::writeLayoutTo(const std::wstring& path) const {
+    if (path.empty() || tabs_.empty()) return false;
     Json root = Json::object();
+    root.set("schemaVersion", Json::number(1));
+    Json projects = Json::array();
+    for (const std::wstring& project : projects_)
+        projects.push(Json::str(wideToUtf8(project)));
+    root.set("projects", std::move(projects));
     Json tabs = Json::array();
     for (const auto& tab : tabs_) {
         Json t = Json::object();
@@ -255,7 +344,81 @@ void Window::saveLayout() const {
         root.set("window", std::move(w));
     }
 
-    writeFileAtomic(dir + L"\\layout.json", root.dump(2));
+    return writeFileAtomicWithBackup(path, root.dump(2));
+}
+
+bool Window::saveWorkspaceSnapshot(const std::wstring& name) const {
+    if (name.empty()) return false;
+    std::wstring safe;
+    for (wchar_t ch : name) {
+        if ((ch >= L'a' && ch <= L'z') || (ch >= L'A' && ch <= L'Z') ||
+            (ch >= L'0' && ch <= L'9') || ch == L'-' || ch == L'_' ||
+            ch == L' ' || ch == L'.') safe.push_back(ch);
+    }
+    while (!safe.empty() && (safe.back() == L' ' || safe.back() == L'.'))
+        safe.pop_back();
+    if (safe.empty()) return false;
+    const std::wstring base = configDir();
+    if (base.empty()) return false;
+    const std::wstring dir = base + L"\\workspaces";
+    if (!CreateDirectoryW(dir.c_str(), nullptr) &&
+        GetLastError() != ERROR_ALREADY_EXISTS) return false;
+    return writeLayoutTo(dir + L"\\" + safe + L".json");
+}
+
+void Window::openWorkspaceSnapshotMenu() {
+    const std::wstring base = configDir();
+    if (base.empty()) return;
+    const std::wstring dir = base + L"\\workspaces";
+    CreateDirectoryW(dir.c_str(), nullptr);
+    std::vector<std::pair<std::wstring, std::wstring>> snapshots;
+    WIN32_FIND_DATAW fd{};
+    HANDLE find = FindFirstFileW((dir + L"\\*.json").c_str(), &fd);
+    if (find != INVALID_HANDLE_VALUE) {
+        do {
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+            std::wstring file = fd.cFileName;
+            std::wstring label = file;
+            if (label.size() > 5) label.resize(label.size() - 5);
+            snapshots.push_back({label, dir + L"\\" + file});
+        } while (FindNextFileW(find, &fd));
+        FindClose(find);
+    }
+    std::sort(snapshots.begin(), snapshots.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
+
+    HMENU menu = CreatePopupMenu();
+    AppendMenuW(menu, MF_STRING, 1, L"Save current workspace…");
+    if (!snapshots.empty()) AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    for (size_t i = 0; i < snapshots.size() && i < 100; ++i)
+        AppendMenuW(menu, MF_STRING, static_cast<UINT>(100 + i),
+                    snapshots[i].first.c_str());
+    POINT pt{static_cast<int>(menuButtonRect_.right()),
+             static_cast<int>(menuButtonRect_.bottom())};
+    ClientToScreen(hwnd_, &pt);
+    const int command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTALIGN,
+                                       pt.x, pt.y, 0, hwnd_, nullptr);
+    DestroyMenu(menu);
+    if (command == 1) {
+        const std::wstring name = inputBox(hwnd_, L"Save workspace snapshot",
+                                           L"Workspace name:", L"");
+        if (!name.empty() && !saveWorkspaceSnapshot(name))
+            MessageBoxW(hwnd_, L"The workspace snapshot could not be saved.",
+                        L"Liney", MB_OK | MB_ICONERROR);
+        return;
+    }
+    const size_t index = command >= 100 ? static_cast<size_t>(command - 100)
+                                        : snapshots.size();
+    if (index >= snapshots.size()) return;
+    std::vector<size_t> all;
+    for (size_t i = 0; i < tabs_.size(); ++i) all.push_back(i);
+    if (!confirmCloseRunning(runningTabTitles(all),
+                             L"Opening a workspace snapshot closes the current tabs."))
+        return;
+    clearSelection();
+    tabs_.clear();
+    activeTab_ = 0;
+    if (!restoreLayoutFrom(snapshots[index].second)) newTab(homeDir());
 }
 
 std::unique_ptr<Pane> Window::paneFromJson(const Json& j, int cols, int rows) {
@@ -279,8 +442,22 @@ std::unique_ptr<Pane> Window::paneFromJson(const Json& j, int cols, int rows) {
     const std::wstring cwd = utf8ToWide(j["cwd"].asString());
     std::wstring shell = utf8ToWide(j["shell"].asString());
     if (shell.empty()) shell = shell_;
+    shell = prepareShellCommand(shell);
     auto s = std::make_unique<TerminalSession>();
     if (!s->start(shell, cwd, cols, rows, scrollback_)) return nullptr;
+    const Json& c = j["context"];
+    if (c.isObject()) {
+        SessionContext context;
+        const std::string role = c["role"].asString();
+        context.role = role == "agent" ? SessionRole::Agent :
+                       role == "ssh" ? SessionRole::Ssh : SessionRole::Shell;
+        context.projectPath = utf8ToWide(c["projectPath"].asString());
+        context.worktreePath = utf8ToWide(c["worktreePath"].asString());
+        context.taskName = utf8ToWide(c["taskName"].asString());
+        context.agentName = utf8ToWide(c["agentName"].asString());
+        context.testCommand = utf8ToWide(c["testCommand"].asString());
+        s->setContext(std::move(context));
+    }
     s->setTheme(theme_);
     auto p = std::make_unique<Pane>();
     p->session = std::move(s);
@@ -290,7 +467,11 @@ std::unique_ptr<Pane> Window::paneFromJson(const Json& j, int cols, int rows) {
 bool Window::restoreLayout() {
     const std::wstring dir = configDir();
     if (dir.empty()) return false;
-    std::ifstream f((dir + L"\\layout.json").c_str(), std::ios::binary);
+    return restoreLayoutFrom(dir + L"\\layout.json");
+}
+
+bool Window::restoreLayoutFrom(const std::wstring& path) {
+    std::ifstream f(path.c_str(), std::ios::binary);
     if (!f) return false;
     std::ostringstream ss;
     ss << f.rdbuf();
@@ -300,6 +481,16 @@ bool Window::restoreLayout() {
     bool ok = false;
     Json root = Json::parse(text, &ok);
     if (!ok || !root.isObject()) return false;
+
+    const Json& savedProjects = root["projects"];
+    if (savedProjects.isArray()) {
+        projects_.clear();
+        for (const Json& project : savedProjects.items())
+            if (project.type() == Json::Type::String && !project.asString().empty())
+                projects_.push_back(utf8ToWide(project.asString()));
+        persistWorkspaceConfig();
+        rescanWorkspace();
+    }
 
     // Restore window geometry first so the panes are sized for the final client
     // rect (MoveWindow fires WM_SIZE synchronously). Done before show().

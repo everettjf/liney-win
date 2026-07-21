@@ -90,6 +90,12 @@ nothing but the OS.
 - **Notifications**: a `liney notify` CLI + OSC `9`/`777` → Windows tray balloons
 - **Lifecycle hooks** on session start/exit and app exit
 - **Auto-update** from GitHub releases (`Ctrl+Shift+U`)
+- **Reliability tooling**: atomic configuration recovery, rotating diagnostics
+  and crash dumps, signed-update verification, and reproducible Ghostty pinning
+- **Command blocks** from OSC 133: jump, copy command/output, rerun, bookmark,
+  and inspect exit status/duration from the pane menu
+- **Named workspace snapshots** and isolated Agent worktrees with Git/test/review
+  actions; Agent sessions remain available after exit for inspection
 
 ## 📸 Screenshots
 
@@ -117,7 +123,7 @@ The installer and portable zip include their required MSVC runtime DLLs.
 ```powershell
 # in the "x64 Native Tools Command Prompt for VS 2022", with zig on PATH
 powershell -ExecutionPolicy Bypass -File tools\build.ps1
-.\build\Liney.exe
+.\build-ghostty\Liney.exe
 ```
 
 `tools\build.ps1` configures + builds and points Zig's cache at the build drive
@@ -199,11 +205,14 @@ terminal over OSC (mirrors macOS liney's `liney notify`):
 liney notify <body>            # Windows tray notification
 liney notify <title> <body>
 liney title  <text>            # set the tab/window title
+liney agent-status <state>     # running | waiting | needs-input | done | failed
 ```
 
 Put `Liney.exe` on PATH and `liney notify "done"` pings you when a long task
 finishes. The terminal also parses OSC `0/2` (title), `7` (cwd), `9` and
-`777;notify` (notifications).
+`777;notify` (notifications). Agent adapters can emit status through the
+companion command so the workspace sidebar reports meaningful task state
+without binding Liney to a particular AI provider.
 
 ## 🏗️ Architecture
 

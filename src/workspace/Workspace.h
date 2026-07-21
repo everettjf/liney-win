@@ -3,12 +3,15 @@
 #include <string>
 #include <vector>
 
+#include "workspace/GitStatusParser.h"
+
 namespace liney {
 
 // One checkout of a repo (the main worktree plus any `git worktree add`ed ones).
 struct Worktree {
     std::wstring path;
     std::wstring label;  // branch name or short path, for the sidebar
+    GitWorktreeStatus status;
 };
 
 // A git repository discovered in the workspace root.
@@ -40,6 +43,7 @@ public:
 
     // Populate repo.worktrees via `git worktree list` (no-op if already loaded).
     void loadWorktrees(Repo& repo);
+    void refreshStatus(Worktree& worktree);
 
     // Create a worktree + branch `name` for `repo` as a sibling directory.
     // Returns the new path on success (empty on failure); refreshes the list.

@@ -127,6 +127,17 @@ bool ConPty::hasExited() const {
            WaitForSingleObject(procInfo_.hProcess, 0) == WAIT_OBJECT_0;
 }
 
+bool ConPty::exitCode(unsigned long& code) const {
+    if (!procInfo_.hProcess ||
+        WaitForSingleObject(procInfo_.hProcess, 0) != WAIT_OBJECT_0)
+        return false;
+    DWORD value = 0;
+    if (!GetExitCodeProcess(procInfo_.hProcess, &value) || value == STILL_ACTIVE)
+        return false;
+    code = value;
+    return true;
+}
+
 bool ConPty::hasRunningChild() const {
     const DWORD shellPid = procInfo_.dwProcessId;
     if (shellPid == 0) return false;

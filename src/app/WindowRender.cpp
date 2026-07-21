@@ -90,8 +90,17 @@ void Window::drawLeftSidebar(const Rect& r) {
         if (repo.expanded) {
             for (int w = 0; w < static_cast<int>(repo.worktrees.size()); ++w) {
                 if (y > r.bottom()) break;  // don't emit rows past the panel
+                const Worktree& wt = repo.worktrees[w];
+                std::wstring statusLabel = wt.label;
+                if (wt.status.changed > 0)
+                    statusLabel += L"  *" + std::to_wstring(wt.status.changed);
+                if (wt.status.ahead > 0)
+                    statusLabel += L"  ↑" + std::to_wstring(wt.status.ahead);
+                if (wt.status.behind > 0)
+                    statusLabel += L"  ↓" + std::to_wstring(wt.status.behind);
                 iconRow(IconKind::Branch, r.x + pad + metrics_.cellW * 2.0f, y,
-                        repo.worktrees[w].label, uiTheme_.dim, uiTheme_.accent);
+                        statusLabel, wt.status.changed > 0 ? uiTheme_.text : uiTheme_.dim,
+                        wt.status.changed > 0 ? Color{220, 170, 110} : uiTheme_.accent);
                 sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::Worktree, i, w, L"" });
                 y += rowH;
             }
@@ -105,7 +114,8 @@ void Window::drawLeftSidebar(const Rect& r) {
         y += rowH + 4.0f;
         for (int i = 0; i < static_cast<int>(sshHosts_.size()); ++i) {
             if (y > r.bottom()) break;
-            iconRow(IconKind::Globe, r.x + pad, y, sshHosts_[i], uiTheme_.text, uiTheme_.accent);
+            iconRow(IconKind::Globe, r.x + pad, y, sshHosts_[i].name,
+                    uiTheme_.text, uiTheme_.accent);
             sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::SshHost, i, -1, L"" });
             y += rowH;
         }
@@ -118,7 +128,33 @@ void Window::drawLeftSidebar(const Rect& r) {
         y += rowH + 4.0f;
         for (int i = 0; i < static_cast<int>(agents_.size()); ++i) {
             if (y > r.bottom()) break;
-            iconRow(IconKind::Spark, r.x + pad, y, agents_[i].name, uiTheme_.text, uiTheme_.accent);
+            std::wstring label = agents_[i].name;
+            Color stateColor = uiTheme_.dim;
+            const wchar_t* state = L"idle";
+            for (const auto& tab : tabs_) {
+                for (Pane* leaf : tab->leaves()) {
+                    if (!leaf->session ||
+                        leaf->session->context().agentName != agents_[i].name)
+                        continue;
+                    switch (leaf->session->agentActivity()) {
+                    case AgentActivity::Running:
+                        state = L"running"; stateColor = uiTheme_.accent; break;
+                    case AgentActivity::Waiting:
+                        state = L"waiting"; stateColor = Color{230, 185, 90}; break;
+                    case AgentActivity::NeedsInput:
+                        state = L"needs input"; stateColor = Color{230, 185, 90}; break;
+                    case AgentActivity::Done:
+                        state = L"done"; stateColor = Color{120, 200, 160}; break;
+                    case AgentActivity::Failed:
+                        state = L"failed"; stateColor = Color{220, 120, 120}; break;
+                    case AgentActivity::Idle: break;
+                    }
+                }
+            }
+            label += L"  ";
+            label += state;
+            iconRow(IconKind::Spark, r.x + pad, y, label, uiTheme_.text,
+                    stateColor);
             sidebarRows_.push_back({ { r.x, y, r.w, rowH }, RowKind::Agent, i, -1, L"" });
             y += rowH;
         }

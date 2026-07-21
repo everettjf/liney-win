@@ -3,6 +3,8 @@
 #include <windowsx.h>  // GET_X_LPARAM / GET_WHEEL_DELTA_WPARAM
 #include <commdlg.h>   // ChooseFontW (the Font… picker)
 #include <tlhelp32.h>  // process snapshot for the running-command check
+#include <UIAutomationCore.h>
+#include <UIAutomation.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -14,6 +16,8 @@
 
 #include "app/SettingsDialog.h"
 #include "app/WindowInternal.h"
+#include "util/AccessibilityProvider.h"
+#include "util/Diagnostics.h"
 #include "core/Config.h"
 #include "core/RenderSignal.h"
 #include "render/D2DRenderer.h"
@@ -31,6 +35,7 @@ static constexpr UINT kIdleRenderMs = 100;
 
 // One-shot timer id for keep-awake auto-expiry (see setKeepAwake).
 static constexpr UINT_PTR kKeepAwakeTimerId = 0x4B41;  // 'KA'
+static constexpr UINT_PTR kHeadlessCloseTimerId = 0x4843; // 'HC'
 
 // Monitor DPI as a 96-relative scale. GetDpiForWindow is Win10 1607+, so load it
 // dynamically and fall back to the device caps.
@@ -122,6 +127,7 @@ Window::~Window() {
     // otherwise write into a destroyed Window (bounded by the HTTP timeouts).
     for (std::thread& t : updateThreads_)
         if (t.joinable()) t.join();
+    if (accessibilityProvider_) accessibilityProvider_->Release();
 }
 
 bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
@@ -159,6 +165,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     hwnd_ = CreateWindowExW(0, kClassName, title, WS_OVERLAPPEDWINDOW,
                             x, y, w, h, nullptr, nullptr, hInstance, this);
     if (!hwnd_) return false;
+    accessibilityProvider_ = createAccessibilityProvider(hwnd_);
 
     g_wakeHwnd.store(hwnd_, std::memory_order_relaxed);  // PTY thread wakes us here
     dpiScale_ = queryDpiScale(hwnd_);                    // scale the font to the monitor
@@ -171,6 +178,8 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     // User config (shell, font, workspace root); seeds %USERPROFILE%\.liney.
     const Config cfg = loadConfig();
     shell_ = cfg.shell;
+    shellProfiles_ = discoverShellProfiles();
+    keybindings_ = cfg.keybindings;
     fontFamily_ = cfg.fontFamily;
     fontSize_ = cfg.fontSize;
     defaultFontSize_ = cfg.fontSize;
@@ -181,6 +190,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     multiLinePasteWarning_ = cfg.multiLinePasteWarning;
     rememberLayout_ = cfg.rememberLayout;
     splitUseWorkspaceDir_ = cfg.splitUseWorkspaceDir;
+    osc52Clipboard_ = cfg.osc52Clipboard;
     scrollback_ = cfg.scrollback;
     unixToolsEnabled_ = cfg.unixTools;
     if (cfg.unixTools) addGitUnixToolsToPath();  // ls/cat/grep/… in spawned shells
@@ -191,9 +201,11 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
         wchar_t cur[1024]{};
         DWORD n = GetEnvironmentVariableW(L"PROMPT", cur, 1024);
         std::wstring base = (n > 0 && n < 1024) ? std::wstring(cur) : L"$p$g";
-        if (base.find(L"]7;") == std::wstring::npos)  // don't double-add
+        if (base.find(L"]133;") == std::wstring::npos)  // don't double-add
             SetEnvironmentVariableW(
-                L"PROMPT", (L"$e]7;file://localhost/$p$e\\" + base).c_str());
+                L"PROMPT",
+                (L"$e]133;D;$e\\$e]7;file://localhost/$p$e\\"
+                 L"$e]133;A$e\\" + base + L"$e]133;B$e\\").c_str());
     }
     sshHosts_ = cfg.sshHosts;
     agents_ = cfg.agents;
@@ -203,6 +215,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     theme_ = cfg.theme;
     uiTheme_ = cfg.uiTheme;
     themeName_ = cfg.themeName;
+    applyHighContrastIfEnabled();
     // Gutters/margins behind panes use the chrome's workspace color; panes
     // fill with the terminal background themselves.
     renderer_->setColors(uiTheme_.workspaceBg, theme_.background);
@@ -211,6 +224,16 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     // Populate the explicitly configured workspace root/projects. An empty
     // root means no implicit discovery.
     rescanWorkspace();
+
+    wchar_t autoClose[16]{};
+    const DWORD autoCloseLength = GetEnvironmentVariableW(
+        L"LINEY_AUTOCLOSE_MS", autoClose,
+        static_cast<DWORD>(_countof(autoClose)));
+    if (autoCloseLength > 0 && autoCloseLength < _countof(autoClose)) {
+        const unsigned long delay = wcstoul(autoClose, nullptr, 10);
+        if (delay >= 10 && delay <= 60000)
+            SetTimer(hwnd_, kHeadlessCloseTimerId, static_cast<UINT>(delay), nullptr);
+    }
 
     // Restore the saved tab/pane layout if any; otherwise open one tab.
     // Only restore the saved tab/pane layout when the user opted in (off by
@@ -292,6 +315,11 @@ LRESULT CALLBACK Window::wndProcThunk(HWND hwnd, UINT msg, WPARAM wParam,
 
 LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
+    case WM_GETOBJECT:
+        if (static_cast<LONG>(lParam) == UiaRootObjectId && accessibilityProvider_)
+            return UiaReturnRawElementProvider(hwnd_, wParam, lParam,
+                                               accessibilityProvider_);
+        return DefWindowProcW(hwnd_, msg, wParam, lParam);
     case WM_CLOSE: {
         // Quitting the app: one consolidated warning that lists every tab still
         // running a command, instead of a dialog per tab.
@@ -331,6 +359,11 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
         markRenderDirty();
         return 0;
     }
+    case WM_SETTINGCHANGE:
+        applyHighContrastIfEnabled();
+        if (renderer_) renderer_->setColors(uiTheme_.workspaceBg, theme_.background);
+        markRenderDirty();
+        return 0;
     case WM_CHAR:
         onChar(static_cast<wchar_t>(wParam));
         return 0;
@@ -392,6 +425,11 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
         // decision happens back in runMessageLoop. Nothing to do here.
         return 0;
     case WM_TIMER:
+        if (wParam == kHeadlessCloseTimerId) {
+            KillTimer(hwnd_, kHeadlessCloseTimerId);
+            DestroyWindow(hwnd_);
+            return 0;
+        }
         if (wParam == kKeepAwakeTimerId) {
             // setKeepAwake(0) already shows a "Keep awake: off" balloon; don't
             // add a second one for the same event.
@@ -433,6 +471,7 @@ void Window::renderFrame() {
     if (tabs_.empty()) return;
 
     pollNotifications();  // OSC 9/777 across all sessions -> balloons
+    pollClipboardRequests(); // OSC 52 is policy-gated; never silently trusted
     pollUpdateResult();   // show the update-check result when it arrives
     updateTitle();        // reflect OSC 0/2 title changes live
 
@@ -461,6 +500,7 @@ void Window::renderFrame() {
     drawTabBar(tabBar);
     renderer_->popClip();
     drawPanes(panes);
+    drawCommandPalette();
     renderer_->endFrame();
 }
 
@@ -472,6 +512,9 @@ void Window::reapExitedPanes() {
         Tab* t = tabs_[ti].get();
         for (Pane* leaf : t->leaves()) {
             if (!leaf->session || !leaf->session->exited()) continue;
+            // Completed Agent panes are durable review artifacts: keep their
+            // output/diff context until the user closes them explicitly.
+            if (leaf->session->context().role == SessionRole::Agent) continue;
             Tab* prevActive =
                 (activeTab_ < tabs_.size()) ? tabs_[activeTab_].get() : nullptr;
             activeTab_ = ti;
@@ -518,7 +561,8 @@ void Window::cellsForRect(const Rect& r, int& cols, int& rows) const {
 
 void Window::newTab(const std::wstring& cwd) { newTabShell(shell_, cwd); }
 
-void Window::newTabShell(const std::wstring& shellCmd, const std::wstring& cwd) {
+TerminalSession* Window::newTabShell(const std::wstring& shellCmd,
+                                     const std::wstring& cwd) {
     clearSelection();
     Rect leftBar, rightPanel, tabBar, panes;
     regions(leftBar, rightPanel, tabBar, panes);
@@ -526,12 +570,15 @@ void Window::newTabShell(const std::wstring& shellCmd, const std::wstring& cwd) 
     cellsForRect(panes, cols, rows);
 
     auto session = std::make_unique<TerminalSession>();
-    if (!session->start(shellCmd, cwd, cols, rows, scrollback_)) return;
+    const std::wstring preparedShell = prepareShellCommand(shellCmd);
+    if (!session->start(preparedShell, cwd, cols, rows, scrollback_)) return nullptr;
     session->setTheme(theme_);
     runStartHook(session.get());
+    TerminalSession* created = session.get();
     tabs_.push_back(std::make_unique<Tab>(std::move(session)));
     activeTab_ = tabs_.size() - 1;
     updateTitle();
+    return created;
 }
 
 void Window::runStartHook(TerminalSession* s) {
@@ -754,6 +801,29 @@ static std::string colorToHex(const Color& c) {
     return buf;
 }
 
+void Window::applyHighContrastIfEnabled() {
+    HIGHCONTRASTW highContrast{};
+    highContrast.cbSize = sizeof(highContrast);
+    if (!SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(highContrast),
+                               &highContrast, 0) ||
+        !(highContrast.dwFlags & HCF_HIGHCONTRASTON)) return;
+    auto systemColor = [](int index) {
+        const COLORREF value = GetSysColor(index);
+        return Color{GetRValue(value), GetGValue(value), GetBValue(value)};
+    };
+    theme_.background = systemColor(COLOR_WINDOW);
+    theme_.foreground = systemColor(COLOR_WINDOWTEXT);
+    uiTheme_.workspaceBg = theme_.background;
+    uiTheme_.sidebarBg = systemColor(COLOR_BTNFACE);
+    uiTheme_.tabBg = uiTheme_.sidebarBg;
+    uiTheme_.tabActiveBg = systemColor(COLOR_HIGHLIGHT);
+    uiTheme_.text = systemColor(COLOR_BTNTEXT);
+    uiTheme_.dim = systemColor(COLOR_GRAYTEXT);
+    uiTheme_.accent = systemColor(COLOR_HIGHLIGHTTEXT);
+    uiTheme_.border = systemColor(COLOR_WINDOWFRAME);
+    uiTheme_.sidebarHdr = uiTheme_.text;
+}
+
 void Window::applyTheme(const std::wstring& presetName, const Color& accent) {
     const auto presets = builtinThemePresets();
     if (const ThemePreset* p = findThemePreset(presets, presetName)) {
@@ -762,6 +832,7 @@ void Window::applyTheme(const std::wstring& presetName, const Color& accent) {
         uiTheme_ = p->ui;
     }
     uiTheme_.accent = accent;  // override on top of the preset
+    applyHighContrastIfEnabled();
     renderer_->setColors(uiTheme_.workspaceBg, theme_.background);
     // Push the terminal palette to every live session so the change is
     // instant, not only for tabs opened afterward.
@@ -936,6 +1007,22 @@ void Window::openDirectoryMenu() {
     if (cmd) openCurrentDirectory(static_cast<UINT>(cmd));
 }
 
+void Window::openNewWindow(bool elevated) {
+    wchar_t executable[32768]{};
+    const DWORD length = GetModuleFileNameW(
+        nullptr, executable, static_cast<DWORD>(_countof(executable)));
+    if (length == 0 || length >= _countof(executable)) return;
+    const std::wstring cwd = activeSession() ? activeSession()->cwd() : L"";
+    ShellExecuteW(hwnd_, elevated ? L"runas" : L"open", executable, nullptr,
+                  cwd.empty() ? nullptr : cwd.c_str(), SW_SHOWNORMAL);
+}
+
+void Window::openDiagnosticsFolder() {
+    const std::wstring dir = diagnosticsDir();
+    if (!dir.empty())
+        ShellExecuteW(hwnd_, L"open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
+
 void Window::openKeepAwakeMenu() {
     POINT pt{ static_cast<int>(awakeButtonRect_.right()),
               static_cast<int>(awakeButtonRect_.bottom()) };
@@ -970,8 +1057,17 @@ void Window::openMainMenu() {
     };
 
     item(4, L"New tab\tCtrl+Shift+T");
+    HMENU profiles = CreatePopupMenu();
+    for (size_t i = 0; i < shellProfiles_.size() && i < 50; ++i)
+        AppendMenuW(profiles, MF_STRING, static_cast<UINT>(200 + i),
+                    shellProfiles_[i].name.c_str());
+    AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(profiles),
+                L"New tab with profile");
     item(5, L"Split side by side\tAlt+D");
     item(6, L"Split stacked\tShift+Alt+D");
+    item(16, L"New window");
+    item(17, L"New administrator window…");
+    item(15, L"Workspace snapshots…");
 
     HMENU view = CreatePopupMenu();
     AppendMenuW(view, MF_STRING | (sidebarVisible_ ? MF_CHECKED : 0), 2,
@@ -991,11 +1087,17 @@ void Window::openMainMenu() {
     item(11, L"Settings…\tCtrl+,");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     item(12, L"Report an issue…");
+    item(18, L"Open diagnostics folder");
     item(8, L"Check for updates\tCtrl+Shift+U");
 
     const int cmd = TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTALIGN, pt.x, pt.y,
                                    0, hwnd_, nullptr);
     DestroyMenu(m);  // also frees the submenu
+    if (cmd >= 200 && cmd < 200 + static_cast<int>(shellProfiles_.size())) {
+        newTabShell(shellProfiles_[static_cast<size_t>(cmd - 200)].command,
+                    activeSession() ? activeSession()->cwd() : homeDir());
+        return;
+    }
     switch (cmd) {
     case 2: sidebarVisible_ = !sidebarVisible_; break;
     case 3: filesPanelVisible_ = !filesPanelVisible_; break;
@@ -1009,6 +1111,10 @@ void Window::openMainMenu() {
     case 11: openSettingsDialog(); break;
     case 13: toggleZoom(); break;
     case 14: equalizePanes(); break;
+    case 15: openWorkspaceSnapshotMenu(); break;
+    case 16: openNewWindow(false); break;
+    case 17: openNewWindow(true); break;
+    case 18: openDiagnosticsFolder(); break;
     case 12:
         ShellExecuteW(hwnd_, L"open",
                       L"https://github.com/everettjf/liney-win/issues/new",

@@ -9,6 +9,7 @@
 
 #include "render/Cell.h"
 #include "vt/Notification.h"
+#include "vt/OscParser.h"
 
 extern "C" {
 #include <ghostty/vt.h>
@@ -83,6 +84,8 @@ public:
     // per row, top of scrollback first) and jump the viewport by absolute row.
     bool dumpBufferUtf8(std::string& out);
     uint64_t viewportRow();                // first visible row (scrollbar offset)
+    uint64_t bottomRow();                  // live viewport's first absolute row
+    uint64_t currentRow();                 // cursor row in absolute scroll space
     void scrollToRow(uint64_t row);
 
     // Mouse reporting: true when the app enabled any tracking mode; encode
@@ -98,7 +101,9 @@ public:
     // OSC-driven metadata (built-in backend only; libghostty returns empty).
     std::wstring oscTitle();
     bool takeCwd(std::wstring& out);                  // true if cwd changed
+    std::wstring hyperlinkAt(int vx, int vy);
     void drainNotifications(std::vector<Notification>& out);
+    std::vector<SemanticEvent> drainSemanticEvents();
 
 private:
     bool modeGet(uint16_t mode, bool ansi);  // query a DEC/ANSI mode (locks mutex_)
@@ -123,6 +128,9 @@ private:
     std::vector<uint32_t> graphemeBuf_;
     // Query-response sink; the WRITE_PTY trampoline reads this member.
     PtyWriter ptyWriter_;
+    OscParser oscParser_;
+    std::vector<SemanticEvent> semanticEvents_;
+    size_t vtStreamOffset_ = 0;
 };
 
 } // namespace liney

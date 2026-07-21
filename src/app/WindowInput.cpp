@@ -100,6 +100,7 @@ void Window::positionIme() {
 
 void Window::onChar(wchar_t unit) {
     if (swallowNextChar_) { swallowNextChar_ = false; return; }
+    if (paletteActive_) { onPaletteChar(unit); return; }
     if (findActive_) { onFindChar(unit); return; }  // typing edits the find query
     if (unit >= 0xD800 && unit <= 0xDBFF) { pendingHighSurrogate_ = unit; return; }
     if (unit >= 0xDC00 && unit <= 0xDFFF) {
@@ -118,6 +119,16 @@ bool Window::onKeyDown(WPARAM vk) {
     const bool ctrl = keyDown(VK_CONTROL);
     const bool shift = keyDown(VK_SHIFT);
     const bool alt = keyDown(VK_MENU);
+
+    if (paletteActive_ && onPaletteKey(vk)) {
+        swallowNextChar_ = vk == VK_BACK || vk == VK_RETURN;
+        return true;
+    }
+    if (!paletteActive_ && executeConfiguredBinding(static_cast<int>(vk), ctrl,
+                                                     shift, alt)) {
+        swallowNextChar_ = true;
+        return true;
+    }
 
     // While the find bar is open it owns Esc / Enter / F3 / Backspace; printable
     // keys reach it via WM_CHAR. Other shortcuts (below) still work. Esc / Enter /
@@ -147,7 +158,7 @@ bool Window::onKeyDown(WPARAM vk) {
         case VK_UP:    if (t) t->focusDir(SplitDir::Rows, false); swallowNextChar_ = true; return true;
         case VK_DOWN:  if (t) t->focusDir(SplitDir::Rows, true);  swallowNextChar_ = true; return true;
         case 'D':  // Alt+D side by side; Shift+Alt+D stacked
-            splitActive(shift ? SplitDir::Rows : SplitDir::Cols);
+            executePaletteAction(shift ? 3 : 2);
             swallowNextChar_ = true; return true;
         default: break;
         }
@@ -166,9 +177,9 @@ bool Window::onKeyDown(WPARAM vk) {
                     return true;
                 }
                 break;  // no selection: let WM_CHAR deliver ^C to the shell
-            case 'F': openFind(); swallowNextChar_ = true; return true;
+            case 'F': executePaletteAction(8); swallowNextChar_ = true; return true;
             case VK_OEM_COMMA:  // Ctrl+, opens Settings (VS Code convention)
-                openSettingsDialog(); swallowNextChar_ = true; return true;
+                executePaletteAction(9); swallowNextChar_ = true; return true;
             case '1': case '2': case '3': case '4':
             case '5': case '6': case '7': case '8': {
                 // Ctrl+1..8 jump to that tab; Ctrl+9 jumps to the last tab.
@@ -192,17 +203,18 @@ bool Window::onKeyDown(WPARAM vk) {
         }
         if (shift) {
             switch (vk) {
-            case 'T': newTab(activeSession() ? activeSession()->cwd() : homeDir()); swallowNextChar_ = true; return true;
+            case 'P': openCommandPalette(); swallowNextChar_ = true; return true;
+            case 'T': executePaletteAction(1); swallowNextChar_ = true; return true;
             case 'W': closeActivePaneConfirming(); swallowNextChar_ = true; return true;
-            case 'B': sidebarVisible_ = !sidebarVisible_; swallowNextChar_ = true; return true;
-            case 'F': filesPanelVisible_ = !filesPanelVisible_; swallowNextChar_ = true; return true;
-            case 'K': toggleKeepAwake(); swallowNextChar_ = true; return true;
-            case 'U': checkForUpdates(); swallowNextChar_ = true; return true;
+            case 'B': executePaletteAction(4); swallowNextChar_ = true; return true;
+            case 'F': executePaletteAction(5); swallowNextChar_ = true; return true;
+            case 'K': executePaletteAction(12); swallowNextChar_ = true; return true;
+            case 'U': executePaletteAction(11); swallowNextChar_ = true; return true;
             case 'A': selectAllActive(); swallowNextChar_ = true; return true;
             case 'C': copySelection(); swallowNextChar_ = true; return true;
             case 'V': paste(); swallowNextChar_ = true; return true;
-            case 'Z': toggleZoom(); swallowNextChar_ = true; return true;
-            case 'E': equalizePanes(); swallowNextChar_ = true; return true;
+            case 'Z': executePaletteAction(6); swallowNextChar_ = true; return true;
+            case 'E': executePaletteAction(7); swallowNextChar_ = true; return true;
             case 'L':  // git history for the active pane's repo (pager view)
                 if (auto* s = activeSession()) {
                     const std::wstring cwd = s->cwd();

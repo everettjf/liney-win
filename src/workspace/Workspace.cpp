@@ -85,7 +85,9 @@ void Workspace::loadWorktrees(Repo& repo) {
         if (curPath.empty()) return;
         std::wstring label =
             !curBranch.empty() ? curBranch : basename(curPath);
-        repo.worktrees.push_back(Worktree{ curPath, label });
+        Worktree worktree{ curPath, label };
+        refreshStatus(worktree);
+        repo.worktrees.push_back(std::move(worktree));
         curPath.clear();
         curBranch.clear();
     };
@@ -114,7 +116,19 @@ void Workspace::loadWorktrees(Repo& repo) {
 
     // Fallback: if git wasn't available, at least show the repo root itself.
     if (repo.worktrees.empty())
-        repo.worktrees.push_back(Worktree{ repo.path, basename(repo.path) });
+        repo.worktrees.push_back(Worktree{ repo.path, basename(repo.path), {} });
+}
+
+void Workspace::refreshStatus(Worktree& worktree) {
+    bool ok = false;
+    const std::wstring output = runCapture(
+        L"git status --porcelain=v2 --branch --untracked-files=normal",
+        worktree.path, &ok);
+    if (ok) {
+        worktree.status = parseGitStatusPorcelainV2(output);
+        if (!worktree.status.branch.empty() && !worktree.status.detached)
+            worktree.label = worktree.status.branch;
+    }
 }
 
 std::wstring Workspace::addWorktree(Repo& repo, const std::wstring& name,
@@ -135,8 +149,23 @@ std::wstring Workspace::addWorktree(Repo& repo, const std::wstring& name,
             return L"";
         }
     }
-    const std::wstring path =
-        parentDir(repo.path) + L"\\" + basename(repo.path) + L"-" + name;
+    bool validBranch = false;
+    const std::wstring validation =
+        runCapture(L"git check-ref-format --branch \"" + name + L"\"",
+                   repo.path, &validBranch);
+    if (!validBranch) {
+        if (err) *err = validation.empty() ? L"Git rejected the branch name."
+                                           : validation;
+        return L"";
+    }
+    std::wstring pathName = name;
+    std::replace(pathName.begin(), pathName.end(), L'/', L'-');
+    const std::wstring path = parentDir(repo.path) + L"\\" +
+                              basename(repo.path) + L"-" + pathName;
+    if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        if (err) *err = L"The worktree directory already exists: " + path;
+        return L"";
+    }
 
     bool ok = false;
     std::wstring out =

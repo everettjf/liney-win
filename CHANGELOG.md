@@ -3,6 +3,32 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
+## [0.5.9] - 2026-07-21
+
+### Added
+- Reliable OSC 133 command blocks with jump, copy, rerun, status, duration,
+  output extraction, and bookmarks; OSC 8 links and policy-controlled OSC 52.
+- Automatic PowerShell, pwsh, cmd, WSL, and Git Bash profiles, a searchable
+  command palette, configurable key bindings, multiple windows, and a separate
+  administrator-window flow.
+- Named workspace snapshots, Git worktree status, isolated Agent tasks,
+  provider-neutral Agent states, project verification, review, and safe cleanup.
+- Secure SSH profiles and connection diagnostics, UI Automation baseline,
+  high-contrast support, crash dumps, rotating logs, and a diagnostics folder.
+
+### Changed
+- Ghostty is pinned to a verified commit and Windows 10/11 compatibility is
+  declared in the embedded application manifest.
+- Configuration writes are atomic, versioned, backed up, and automatically
+  recover from malformed files without discarding the invalid source.
+- Release artifacts support Authenticode signing, same-publisher update checks,
+  SHA-256 checksums, an SPDX SBOM, and installer/portable/upgrade smoke tests.
+
+### Fixed
+- OSC markers now retain their exact terminal row even when several markers and
+  command output arrive in one PTY chunk, preventing empty copied output.
+- PowerShell integration works under restrictive machine execution policies.
+
 ## [0.5.8] — 2026-07-19
 
 ### Fixed

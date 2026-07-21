@@ -37,8 +37,17 @@ void Window::onMouseDown(int xi, int yi) {
                 auto& repos = workspace_.repos();
                 if (row.repo < 0 || row.repo >= static_cast<int>(repos.size())) return;
                 Repo& repo = repos[row.repo];
-                if (row.worktree < static_cast<int>(repo.worktrees.size()))
-                    newTab(repo.worktrees[row.worktree].path);
+                if (row.worktree >= 0 &&
+                    row.worktree < static_cast<int>(repo.worktrees.size())) {
+                    const Worktree& wt = repo.worktrees[row.worktree];
+                    newTab(wt.path);
+                    if (TerminalSession* session = activeSession()) {
+                        SessionContext context;
+                        context.projectPath = repo.path;
+                        context.worktreePath = wt.path;
+                        session->setContext(std::move(context));
+                    }
+                }
                 break;
             }
             case RowKind::FileUp: {
@@ -62,11 +71,26 @@ void Window::onMouseDown(int xi, int yi) {
             }
             case RowKind::SshHost:
                 if (row.repo >= 0 && row.repo < static_cast<int>(sshHosts_.size()))
-                    newTabShell(L"ssh " + sshHosts_[row.repo], L"");
+                    if (TerminalSession* session =
+                            newTabShell(buildSshCommand(sshHosts_[row.repo]), L"")) {
+                        SessionContext context;
+                        context.role = SessionRole::Ssh;
+                        context.taskName = sshHosts_[row.repo].name;
+                        session->setContext(std::move(context));
+                    }
                 break;
             case RowKind::Agent:
                 if (row.repo >= 0 && row.repo < static_cast<int>(agents_.size()))
-                    newTabShell(agents_[row.repo].command, agents_[row.repo].cwd);
+                    if (TerminalSession* session = newTabShell(
+                            agents_[row.repo].command, agents_[row.repo].cwd)) {
+                        SessionContext context;
+                        context.role = SessionRole::Agent;
+                        context.agentName = agents_[row.repo].name;
+                        context.taskName = agents_[row.repo].name;
+                        context.worktreePath = agents_[row.repo].cwd;
+                        context.testCommand = agents_[row.repo].testCommand;
+                        session->setContext(std::move(context));
+                    }
                 break;
             }
             return;
@@ -124,10 +148,30 @@ void Window::onMouseDown(int xi, int yi) {
 
         // Apps that track the mouse (vim :set mouse=a, htop, mc…) get the
         // click; hold Shift to make a local selection instead.
-        if (forwardMouse(0 /*press*/, 1 /*left*/, xi, yi)) return;
-
         int cx = 0, cy = 0;
         if (!paneCellAt(leaf, xi, yi, cx, cy)) return;
+
+        // OSC 8 links require an intentional Ctrl+click. Terminal output may
+        // not launch arbitrary custom protocols.
+        if (keyDown(VK_CONTROL) && leaf->session) {
+            const std::wstring uri = leaf->session->hyperlinkAt(cx, cy);
+            std::wstring lower = uri;
+            for (wchar_t& ch : lower) ch = static_cast<wchar_t>(towlower(ch));
+            const bool allowed = lower.rfind(L"https://", 0) == 0 ||
+                                 lower.rfind(L"http://", 0) == 0 ||
+                                 lower.rfind(L"mailto:", 0) == 0 ||
+                                 lower.rfind(L"file://", 0) == 0;
+            if (!uri.empty()) {
+                if (allowed)
+                    ShellExecuteW(hwnd_, L"open", uri.c_str(), nullptr, nullptr,
+                                  SW_SHOWNORMAL);
+                else
+                    showBalloon(L"Liney", L"Blocked an unsafe hyperlink protocol");
+                return;
+            }
+        }
+
+        if (forwardMouse(0 /*press*/, 1 /*left*/, xi, yi)) return;
 
         // A third press shortly after a double-click on the same row escalates
         // to whole-line selection (double-click already selected the word).
@@ -227,6 +271,26 @@ void Window::onMouseDownRight(int xi, int yi) {
 
     for (const SidebarRow& row : sidebarRows_) {
         if (!row.rect.contains(x, y)) continue;
+        if (row.kind == RowKind::SshHost) {
+            if (row.repo < 0 || row.repo >= static_cast<int>(sshHosts_.size()))
+                return;
+            POINT point{xi, yi};
+            ClientToScreen(hwnd_, &point);
+            HMENU sshMenu = CreatePopupMenu();
+            AppendMenuW(sshMenu, MF_STRING, 40, L"Connect");
+            AppendMenuW(sshMenu, MF_STRING, 41, L"Diagnose connection");
+            const int action = TrackPopupMenu(
+                sshMenu, TPM_RETURNCMD | TPM_RIGHTBUTTON, point.x, point.y, 0,
+                hwnd_, nullptr);
+            DestroyMenu(sshMenu);
+            const std::wstring command = action == 40
+                ? buildSshCommand(sshHosts_[row.repo])
+                : action == 41
+                    ? buildSshDiagnosticCommand(sshHosts_[row.repo])
+                    : std::wstring();
+            if (!command.empty()) newTabShell(command, L"");
+            return;
+        }
         auto& repos = workspace_.repos();
         if (row.repo < 0 || row.repo >= static_cast<int>(repos.size())) return;
         Repo& repo = repos[row.repo];
@@ -237,6 +301,14 @@ void Window::onMouseDownRight(int xi, int yi) {
             ClientToScreen(hwnd_, &pt);
             HMENU menu = CreatePopupMenu();
             AppendMenuW(menu, MF_STRING, 1, L"New worktree…");
+            if (!agents_.empty()) {
+                HMENU agentMenu = CreatePopupMenu();
+                for (size_t i = 0; i < agents_.size() && i < 50; ++i)
+                    AppendMenuW(agentMenu, MF_STRING, static_cast<UINT>(100 + i),
+                                agents_[i].name.c_str());
+                AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(agentMenu),
+                            L"New isolated Agent task");
+            }
             AppendMenuW(menu, MF_STRING, 2, L"Set icon…");
             AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
             AppendMenuW(menu, MF_STRING, 3, L"Remove from workspace");
@@ -256,19 +328,66 @@ void Window::onMouseDownRight(int xi, int yi) {
                     MessageBoxW(hwnd_, msg.c_str(), L"Liney",
                                 MB_OK | MB_ICONERROR);
                 }
+            } else if (cmd >= 100 &&
+                       cmd < 100 + static_cast<int>(agents_.size())) {
+                const size_t agentIndex = static_cast<size_t>(cmd - 100);
+                const std::wstring task = inputBox(
+                    hwnd_, L"New isolated Agent task",
+                    L"Task / branch name (letters, digits, - _ . /):", L"");
+                if (task.empty()) return;
+                std::wstring err;
+                const std::wstring path = workspace_.addWorktree(repo, task, &err);
+                if (path.empty()) {
+                    std::wstring message = L"Could not create the task worktree.";
+                    if (!err.empty()) message += L"\n\n" + err;
+                    MessageBoxW(hwnd_, message.c_str(), L"Liney",
+                                MB_OK | MB_ICONERROR);
+                    return;
+                }
+                if (TerminalSession* session =
+                        newTabShell(agents_[agentIndex].command, path)) {
+                    SessionContext context;
+                    context.role = SessionRole::Agent;
+                    context.projectPath = repo.path;
+                    context.worktreePath = path;
+                    context.taskName = task;
+                    context.agentName = agents_[agentIndex].name;
+                    context.testCommand = agents_[agentIndex].testCommand;
+                    session->setContext(std::move(context));
+                }
             } else if (cmd == 2) {
                 setProjectIcon(repo);
             } else if (cmd == 3) {
                 removeProject(repo);  // erases `repo`; nothing used after
             }
         } else if (row.worktree < static_cast<int>(repo.worktrees.size())) {
-            // Worktree row: confirm and remove.
-            const Worktree& wt = repo.worktrees[row.worktree];
-            std::wstring msg = L"Remove worktree?\n\n" + wt.path;
-            if (MessageBoxW(hwnd_, msg.c_str(), L"Remove worktree",
-                            MB_YESNO | MB_ICONWARNING) == IDYES) {
+            const std::wstring worktreePath = repo.worktrees[row.worktree].path;
+            POINT pt{xi, yi};
+            ClientToScreen(hwnd_, &pt);
+            HMENU worktreeMenu = CreatePopupMenu();
+            AppendMenuW(worktreeMenu, MF_STRING, 10, L"Open");
+            AppendMenuW(worktreeMenu, MF_STRING, 11, L"Review changes");
+            AppendMenuW(worktreeMenu, MF_STRING, 12, L"Refresh Git status");
+            AppendMenuW(worktreeMenu, MF_SEPARATOR, 0, nullptr);
+            AppendMenuW(worktreeMenu, MF_STRING, 13, L"Remove worktree…");
+            const int action = TrackPopupMenu(worktreeMenu,
+                TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd_, nullptr);
+            DestroyMenu(worktreeMenu);
+            if (action == 10) {
+                newTab(worktreePath);
+            } else if (action == 11) {
+                newTabShell(L"git -C \"" + worktreePath + L"\" diff",
+                            worktreePath);
+            } else if (action == 12) {
+                workspace_.refreshStatus(repo.worktrees[row.worktree]);
+            } else if (action == 13) {
+                std::wstring msg = L"Remove worktree?\n\n" + worktreePath +
+                    L"\n\nGit will refuse if it contains uncommitted changes.";
+                if (MessageBoxW(hwnd_, msg.c_str(), L"Remove worktree",
+                                MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
+                    return;
                 std::wstring err;
-                if (!workspace_.removeWorktree(repo, wt.path, &err)) {
+                if (!workspace_.removeWorktree(repo, worktreePath, &err)) {
                     std::wstring m = L"git worktree remove failed.";
                     if (!err.empty()) m += L"\n\n" + err;  // e.g. "use --force"
                     MessageBoxW(hwnd_, m.c_str(), L"Liney",
@@ -403,12 +522,16 @@ void Window::copySelection() {
         if (c == L'\n') crlf += L"\r\n";
         else crlf.push_back(c);
     }
-    if (!OpenClipboard(hwnd_)) return;
+    setClipboardText(crlf);
+}
+
+void Window::setClipboardText(const std::wstring& text) {
+    if (text.empty() || !OpenClipboard(hwnd_)) return;
     EmptyClipboard();
-    const size_t bytes = (crlf.size() + 1) * sizeof(wchar_t);
+    const size_t bytes = (text.size() + 1) * sizeof(wchar_t);
     if (HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, bytes)) {
         if (void* p = GlobalLock(h)) {
-            memcpy(p, crlf.c_str(), bytes);
+            memcpy(p, text.c_str(), bytes);
             GlobalUnlock(h);
             SetClipboardData(CF_UNICODETEXT, h);
         } else {
@@ -574,6 +697,48 @@ void Window::openPaneMenu(int xi, int yi) {
                 L"Copy\tCtrl+Shift+C");
     AppendMenuW(m, MF_STRING, 2, L"Paste\tShift+Insert");
     AppendMenuW(m, MF_STRING, 3, L"Select all\tCtrl+Shift+A");
+    TerminalSession* menuSession = activeSession();
+    const bool agentSession = menuSession &&
+        menuSession->context().role == SessionRole::Agent;
+    if (agentSession) {
+        AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(m, MF_STRING, 20, L"Review Agent changes");
+        AppendMenuW(m, MF_STRING |
+                         (menuSession->context().testCommand.empty() ? MF_GRAYED : 0),
+                    21, L"Run project verification");
+        AppendMenuW(m, MF_STRING, 28, L"Open task directory in...");
+        AppendMenuW(m, MF_STRING |
+                         (!menuSession->exited() ||
+                                  menuSession->context().worktreePath.empty()
+                              ? MF_GRAYED : 0),
+                    29, L"Safely remove task worktree...");
+    }
+    const CommandBlock* lastCommand = nullptr;
+    if (menuSession && !menuSession->commandBlocks().empty())
+        lastCommand = &menuSession->commandBlocks().back();
+    if (lastCommand) {
+        AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+        const wchar_t* state = lastCommand->state == CommandState::Running ? L"running" :
+                               lastCommand->state == CommandState::Succeeded ? L"succeeded" :
+                                                                               L"failed";
+        const std::wstring summary = L"Last command: " + std::wstring(state) +
+            L" (" + std::to_wstring(lastCommand->duration.count()) + L" ms)";
+        AppendMenuW(m, MF_STRING | MF_DISABLED, 0, summary.c_str());
+        AppendMenuW(m, MF_STRING |
+                         (lastCommand->command.empty() ? MF_GRAYED : 0),
+                    22, L"Copy last command");
+        AppendMenuW(m, MF_STRING |
+                         (lastCommand->command.empty() ||
+                                  lastCommand->state == CommandState::Running
+                              ? MF_GRAYED : 0),
+                    23, L"Run last command again");
+        AppendMenuW(m, MF_STRING, 24, L"Jump to previous command");
+        AppendMenuW(m, MF_STRING, 25, L"Jump to next command");
+        AppendMenuW(m, MF_STRING, 26, L"Copy last command output");
+        AppendMenuW(m, MF_STRING, 27,
+                    lastCommand->bookmarked ? L"Remove command bookmark"
+                                            : L"Bookmark last command");
+    }
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING, 4, L"Find…\tCtrl+F");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
@@ -601,6 +766,78 @@ void Window::openPaneMenu(int xi, int yi) {
     case 8: splitActive(SplitDir::Rows); break;
     case 9: toggleZoom(); break;
     case 10: equalizePanes(); break;
+    case 20:
+        if (menuSession) {
+            const std::wstring cwd = !menuSession->context().worktreePath.empty()
+                                         ? menuSession->context().worktreePath
+                                         : menuSession->cwd();
+            if (!cwd.empty()) newTabShell(L"git -C \"" + cwd + L"\" diff", cwd);
+        }
+        break;
+    case 21:
+        if (menuSession && !menuSession->context().testCommand.empty()) {
+            const std::wstring cwd = !menuSession->context().worktreePath.empty()
+                                         ? menuSession->context().worktreePath
+                                         : menuSession->cwd();
+            const SessionContext source = menuSession->context();
+            if (TerminalSession* verification =
+                    newTabShell(source.testCommand, cwd)) {
+                SessionContext context = source;
+                context.taskName += L" verification";
+                verification->setContext(std::move(context));
+            }
+        }
+        break;
+    case 28:
+        openDirectoryMenu();
+        break;
+    case 29:
+        if (menuSession && menuSession->exited() &&
+            !menuSession->context().worktreePath.empty()) {
+            const std::wstring path = menuSession->context().worktreePath;
+            if (MessageBoxW(hwnd_,
+                    (L"Remove the completed task worktree?\n\n" + path +
+                     L"\n\nUncommitted changes are never forced away.").c_str(),
+                    L"Liney", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
+                break;
+            bool found = false;
+            std::wstring error;
+            for (Repo& repo : workspace_.repos()) {
+                for (const Worktree& wt : repo.worktrees) {
+                    if (_wcsicmp(wt.path.c_str(), path.c_str()) == 0) {
+                        found = workspace_.removeWorktree(repo, path, &error);
+                        break;
+                    }
+                }
+                if (found || !error.empty()) break;
+            }
+            if (!found) {
+                std::wstring message = L"The worktree was not removed.";
+                if (!error.empty()) message += L"\n\n" + error;
+                MessageBoxW(hwnd_, message.c_str(), L"Liney",
+                            MB_OK | MB_ICONERROR);
+            }
+        }
+        break;
+    case 22:
+        if (lastCommand) setClipboardText(lastCommand->command);
+        break;
+    case 23:
+        if (lastCommand && !lastCommand->command.empty()) {
+            const std::wstring line = lastCommand->command + L"\r";
+            sendUtf16(line.c_str(), line.size());
+        }
+        break;
+    case 24: if (menuSession) menuSession->jumpPreviousCommand(); break;
+    case 25: if (menuSession) menuSession->jumpNextCommand(); break;
+    case 26:
+        if (menuSession && !menuSession->commandBlocks().empty())
+            setClipboardText(utf8ToWide(menuSession->commandOutputUtf8(
+                menuSession->commandBlocks().size() - 1)));
+        break;
+    case 27:
+        if (menuSession) menuSession->toggleBookmarkLastCommand();
+        break;
     default: break;
     }
 }

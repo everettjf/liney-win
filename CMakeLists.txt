@@ -34,20 +34,30 @@ add_executable(liney_win WIN32
   src/app/WindowInput.cpp
   src/app/WindowMouse.cpp
   src/app/WindowFind.cpp
+  src/app/WindowPalette.cpp
   src/app/WindowSession.cpp
   src/app/SettingsDialog.cpp
   src/app/Tab.cpp
   src/core/TerminalSession.cpp
   src/core/Config.cpp
+  src/core/ShellProfiles.cpp
+  src/core/KeyBinding.cpp
+  src/core/SshProfiles.cpp
   src/render/D2DRenderer.cpp
   src/pty/ConPty.cpp
   src/vt/Terminal.cpp
+  src/vt/OscParser.cpp
   src/workspace/Workspace.cpp
+  src/workspace/GitStatusParser.cpp
   src/util/Process.cpp
   src/util/Json.cpp
   src/util/InputBox.cpp
   src/util/Dialogs.cpp
+  src/util/Base64.cpp
   src/util/Http.cpp
+  src/util/Diagnostics.cpp
+  src/util/Authenticode.cpp
+  src/util/AccessibilityProvider.cpp
 )
 
 # The GUI binary is Liney.exe. It also serves as the companion CLI: invoked as
@@ -59,10 +69,12 @@ set_target_properties(liney_win PROPERTIES OUTPUT_NAME "Liney")
 target_include_directories(liney_win PRIVATE src)
 
 target_compile_definitions(liney_win PRIVATE
-  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN
+  WINVER=0x0A00 _WIN32_WINNT=0x0A00)
 
 target_link_libraries(liney_win PRIVATE
-  d2d1 dwrite d3d11 dxgi imm32 winhttp bcrypt windowscodecs ole32 comdlg32 shell32)
+  d2d1 dwrite d3d11 dxgi imm32 winhttp bcrypt windowscodecs ole32 oleaut32
+  comdlg32 shell32 dbghelp wintrust crypt32 uiautomationcore)
 
 # Ship the MSVC runtime app-locally. A clean Windows 10/11 installation is not
 # guaranteed to have the Visual C++ Redistributable, and both Liney and the
@@ -78,9 +90,13 @@ endforeach()
 
 # Fetch Ghostty and build its libghostty-vt (via Zig) as the terminal core.
 include(FetchContent)
+set(LINEY_GHOSTTY_REVISION
+    "a887df42c56f6de86c0fe6da9c4eeca37931e083"
+    CACHE STRING "Verified Ghostty commit used to build libghostty-vt")
 FetchContent_Declare(ghostty
   GIT_REPOSITORY https://github.com/ghostty-org/ghostty.git
-  GIT_TAG main)
+  GIT_TAG ${LINEY_GHOSTTY_REVISION}
+  GIT_SHALLOW FALSE)
 FetchContent_MakeAvailable(ghostty)
 
 # `ghostty-vt` is the target produced by Ghostty's CMake (delegates to

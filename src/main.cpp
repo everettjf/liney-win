@@ -13,11 +13,18 @@
 
 #include <windows.h>
 #include <objbase.h>  // CoInitializeEx (WIN32_LEAN_AND_MEAN excludes it)
+#include <dwrite.h>
 
 #include <cstdlib>  // __argc, __wargv
+#include <algorithm>
 #include <string>
 
 #include "app/Window.h"
+#include "core/TerminalSession.h"
+#include "core/Config.h"
+#include "core/ShellProfiles.h"
+#include "vt/Terminal.h"
+#include "util/Diagnostics.h"
 
 namespace {
 
@@ -77,6 +84,229 @@ bool runCliIfRequested(int& exitCode) {
         exitCode = 0;
         return true;
     }
+    if (cmd == L"agent-status" && __argc >= 3) {
+        const std::wstring value = __wargv[2];
+        if (value != L"running" && value != L"waiting" &&
+            value != L"needs-input" && value != L"done" &&
+            value != L"failed") {
+            exitCode = 2;
+            return true;
+        }
+        emitRaw("\x1b]777;agent-status;" + sanitizeOsc(value, true) + "\x07");
+        exitCode = 0;
+        return true;
+    }
+    if (cmd == L"self-test") {
+        liney::TerminalSession session;
+        if (!session.start(L"cmd.exe /d /s /c \"echo liney-self-test\"",
+                           L"", 80, 24, 100)) {
+            exitCode = 10;
+            return true;
+        }
+        const ULONGLONG deadline = GetTickCount64() + 5000;
+        while (!session.exited() && GetTickCount64() < deadline) Sleep(10);
+        if (!session.exited()) {
+            exitCode = 11;
+            return true;
+        }
+        session.snapshot();
+        std::string output;
+        const bool rendered = session.dumpBufferUtf8(output);
+        exitCode = rendered && output.find("liney-self-test") != std::string::npos
+                       ? 0 : 12;
+        return true;
+    }
+    if (cmd == L"config-self-test") {
+        wchar_t temp[MAX_PATH]{}, unique[MAX_PATH]{};
+        if (!GetTempPathW(MAX_PATH, temp) ||
+            !GetTempFileNameW(temp, L"lny", 0, unique)) {
+            exitCode = 20;
+            return true;
+        }
+        DeleteFileW(unique);
+        if (!CreateDirectoryW(unique, nullptr)) {
+            exitCode = 21;
+            return true;
+        }
+        SetEnvironmentVariableW(L"LINEY_CONFIG_DIR", unique);
+        SetEnvironmentVariableW(L"LINEY_HEADLESS", L"1");
+        const std::wstring path = std::wstring(unique) + L"\\config.json";
+        const std::string initial =
+            R"({"schemaVersion":1,"shell":"cmd.exe","fontSize":18})";
+        bool passed = liney::writeFileAtomic(path, initial);
+        if (passed) {
+            const liney::Config first = liney::loadConfig();
+            passed = first.fontSize == 18.0f;
+        }
+        if (passed) liney::saveFontSize(20.0f); // creates .bak with fontSize 18
+        if (passed) passed = liney::writeFileAtomic(path, "{broken");
+        if (passed) {
+            const liney::Config recovered = liney::loadConfig();
+            passed = recovered.fontSize == 18.0f &&
+                     GetFileAttributesW((path + L".invalid").c_str()) !=
+                         INVALID_FILE_ATTRIBUTES;
+        }
+        DeleteFileW((path + L".invalid").c_str());
+        DeleteFileW((path + L".bak").c_str());
+        DeleteFileW(path.c_str());
+        RemoveDirectoryW(unique);
+        exitCode = passed ? 0 : 22;
+        return true;
+    }
+    if (cmd == L"semantic-self-test") {
+        SetEnvironmentVariableW(
+            L"PROMPT",
+            L"$e]133;D;$e\\$e]7;file://localhost/$p$e\\"
+            L"$e]133;A$e\\$p$g$e]133;B$e\\");
+        liney::TerminalSession session;
+        if (!session.start(L"cmd.exe /d /q", L"", 80, 24, 100)) {
+            exitCode = 30;
+            return true;
+        }
+        std::vector<liney::Notification> notes;
+        const ULONGLONG readyDeadline = GetTickCount64() + 500;
+        while (GetTickCount64() < readyDeadline) {
+            session.poll(notes);
+            Sleep(10);
+        }
+        const char command[] = "echo semantic-ok\r";
+        session.sendBytes(command, sizeof(command) - 1);
+        const ULONGLONG doneDeadline = GetTickCount64() + 5000;
+        int semanticResult = 31;
+        while (GetTickCount64() < doneDeadline) {
+            session.poll(notes);
+            const auto& blocks = session.commandBlocks();
+            if (!blocks.empty() &&
+                blocks.back().state != liney::CommandState::Running) {
+                semanticResult = blocks.back().command.find(L"echo semantic-ok") ==
+                                     std::wstring::npos
+                                     ? 33
+                                     : (blocks.back().exitCode == 0 ? 0 : 34);
+                if (semanticResult == 0) {
+                    const std::string commandOutput =
+                        session.commandOutputUtf8(blocks.size() - 1);
+                    if (commandOutput.find("semantic-ok") == std::string::npos)
+                        semanticResult = 35;
+                }
+                break;
+            }
+            Sleep(10);
+        }
+        const char close[] = "exit\r";
+        session.sendBytes(close, sizeof(close) - 1);
+        exitCode = semanticResult;
+        return true;
+    }
+    if (cmd == L"shell-integration-self-test") {
+        std::wstring powershell;
+        for (const auto& profile : liney::discoverShellProfiles()) {
+            if (profile.id == L"pwsh" || profile.id == L"windows-powershell") {
+                powershell = liney::prepareShellCommand(profile.command);
+                break;
+            }
+        }
+        if (powershell.empty()) { exitCode = 0; return true; }
+        liney::TerminalSession session;
+        if (!session.start(powershell, L"", 80, 24, 100)) {
+            exitCode = 36; return true;
+        }
+        std::vector<liney::Notification> notes;
+        const ULONGLONG ready = GetTickCount64() + 2500;
+        while (GetTickCount64() < ready) { session.poll(notes); Sleep(10); }
+        const char command[] = "Write-Output 'liney-powershell-ok'\r";
+        session.sendBytes(command, sizeof(command) - 1);
+        const ULONGLONG deadline = GetTickCount64() + 8000;
+        int result = 37;
+        while (GetTickCount64() < deadline) {
+            session.poll(notes);
+            const auto& blocks = session.commandBlocks();
+            if (!blocks.empty() &&
+                blocks.back().state != liney::CommandState::Running) {
+                result = blocks.back().exitCode == 0 ? 0 : 38;
+                break;
+            }
+            Sleep(10);
+        }
+        const char close[] = "exit\r";
+        session.sendBytes(close, sizeof(close) - 1);
+        exitCode = result;
+        return true;
+    }
+    if (cmd == L"vt-regression-self-test") {
+        liney::Terminal terminal;
+        liney::Grid grid;
+        bool passed = terminal.create(12, 4, 100);
+        bool altPassed = false, reflowPassed = false;
+        if (passed) {
+            liney::Theme theme;
+            terminal.setTheme(theme);
+            const std::string content =
+                "A\x1b[31mR\x1b[0m \xE4\xB8\xAD "
+                "\x1b]8;;https://example.com\x07link\x1b]8;;\x07";
+            terminal.write(content.data(), content.size());
+            passed = terminal.snapshotInto(grid);
+        }
+        bool sawA = false, sawRed = false, sawWide = false;
+        if (passed) {
+            for (const liney::Cell& cell : grid.cells) {
+                if (cell.ch == L"A") sawA = true;
+                if (cell.ch == L"R" && cell.fg.r > 150 && cell.fg.g < 100)
+                    sawRed = true;
+                if (cell.ch == L"中" && (cell.flags & liney::kFlagWide))
+                    sawWide = true;
+            }
+            passed = sawA && sawRed && sawWide;
+        }
+        if (passed) {
+            static const char enterAlt[] = "\x1b[?1049hALT";
+            terminal.write(enterAlt, sizeof(enterAlt) - 1);
+            passed = terminal.altScreenActive() && terminal.snapshotInto(grid);
+            terminal.write("\x1b[?1049l", 8);
+            passed = passed && !terminal.altScreenActive();
+            altPassed = passed;
+        }
+        if (passed) {
+            terminal.resize(5, 4, 8, 16);
+            terminal.write("abcdefghij", 10);
+            std::string buffer;
+            passed = terminal.dumpBufferUtf8(buffer);
+            buffer.erase(std::remove(buffer.begin(), buffer.end(), '\r'), buffer.end());
+            buffer.erase(std::remove(buffer.begin(), buffer.end(), '\n'), buffer.end());
+            passed = passed && buffer.find("abcdefghij") != std::string::npos;
+            reflowPassed = passed;
+        }
+        exitCode = passed ? 0 : (!sawA ? 41 : !sawRed ? 42 : !sawWide ? 43 :
+                                 !altPassed ? 44 : !reflowPassed ? 45 : 46);
+        return true;
+    }
+    if (cmd == L"font-self-test") {
+        IDWriteFactory* factory = nullptr;
+        IDWriteTextFormat* format = nullptr;
+        IDWriteTextLayout* layout = nullptr;
+        HRESULT hr = DWriteCreateFactory(
+            DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+            reinterpret_cast<IUnknown**>(&factory));
+        if (SUCCEEDED(hr))
+            hr = factory->CreateTextFormat(
+                L"Cascadia Mono", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+                DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 16.0f,
+                L"en-us", &format);
+        // Includes a programming ligature candidate, combining emoji sequence,
+        // and CJK. DirectWrite must shape the whole run without dropping it.
+        const wchar_t sample[] = L"=> e\u0301 \U0001F469\u200D\U0001F4BB \u4E2D\u6587";
+        if (SUCCEEDED(hr))
+            hr = factory->CreateTextLayout(sample, _countof(sample) - 1,
+                                            format, 800.0f, 100.0f, &layout);
+        DWRITE_TEXT_METRICS metrics{};
+        if (SUCCEEDED(hr)) hr = layout->GetMetrics(&metrics);
+        const bool passed = SUCCEEDED(hr) && metrics.width > 0.0f &&
+                            metrics.height > 0.0f;
+        if (layout) layout->Release();
+        if (format) format->Release();
+        if (factory) factory->Release();
+        exitCode = passed ? 0 : 50;
+        return true;
+    }
     return false;
 }
 
@@ -101,12 +331,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     int cliExit = 0;
     if (runCliIfRequested(cliExit)) return cliExit;  // `Liney notify …` — no window
 
+    liney::initializeDiagnostics();
     enablePerMonitorDpi();
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);  // for WIC image loading
     liney::Window window;
     if (!window.create(hInstance, L"Liney", 1000, 640)) {
+        liney::diagnosticLog("window creation failed");
         return 1;
     }
-    window.show(nCmdShow);
-    return window.runMessageLoop();
+    wchar_t headless[8]{};
+    const bool isHeadless = GetEnvironmentVariableW(
+        L"LINEY_HEADLESS", headless, static_cast<DWORD>(_countof(headless))) > 0;
+    window.show(isHeadless ? SW_HIDE : nCmdShow);
+    const int result = window.runMessageLoop();
+    liney::diagnosticLog("application exiting");
+    return result;
 }

@@ -13,8 +13,11 @@
 #include "app/Layout.h"
 #include "app/Tab.h"
 #include "core/Config.h"
+#include "core/ShellProfiles.h"
 #include "render/IRenderer.h"
 #include "workspace/Workspace.h"
+
+struct IRawElementProviderSimple;
 
 namespace liney {
 
@@ -58,7 +61,7 @@ private:
     TerminalSession* activeSession() const;
     void cellsForRect(const Rect& r, int& cols, int& rows) const;
     void newTab(const std::wstring& cwd);
-    void newTabShell(const std::wstring& shellCmd, const std::wstring& cwd);
+    TerminalSession* newTabShell(const std::wstring& shellCmd, const std::wstring& cwd);
     void splitActive(SplitDir dir);
     void toggleZoom();     // Ctrl+Shift+Z: maximize/restore the active pane
     void equalizePanes();  // reset all split ratios evenly
@@ -90,9 +93,12 @@ private:
     // Switch to a theme preset (by name) with an accent override, live across
     // all panes. Used by the Settings dialog.
     void applyTheme(const std::wstring& presetName, const Color& accent);
+    void applyHighContrastIfEnabled();
     void openMainMenu();              // overflow menu (top-right three dots)
     void openDirectoryMenu();         // app picker for the active pane cwd
     void openCurrentDirectory(UINT);  // 30 Explorer, 31 PowerShell, 32.. editors
+    void openNewWindow(bool elevated);
+    void openDiagnosticsFolder();
     void openKeepAwakeMenu();          // duration picker beside the coffee button
     void openTabMenu(int x, int y);  // right-click a tab: close / open in explorer…
     void closeTab(size_t idx);       // close an entire tab (all its panes)
@@ -114,7 +120,11 @@ private:
 
     // Layout persistence (%USERPROFILE%\.liney\layout.json).
     void saveLayout() const;
+    bool saveWorkspaceSnapshot(const std::wstring& name) const;
+    void openWorkspaceSnapshotMenu();
     bool restoreLayout();    // returns true if at least one tab was restored
+    bool restoreLayoutFrom(const std::wstring& path);
+    bool writeLayoutTo(const std::wstring& path) const;
     std::unique_ptr<Pane> paneFromJson(const class Json& j, int cols, int rows);
 
     // Tray icon + balloon notifications (driven by OSC 9/777).
@@ -122,6 +132,7 @@ private:
     void showBalloon(const std::wstring& title, const std::wstring& body);
     void removeTray();
     void pollNotifications();  // drain OSC notifications from all sessions
+    void pollClipboardRequests();
 
     // Update check + auto-update (Sparkle analog): query GitHub releases
     // off-thread; on confirmation download the installer asset and run it.
@@ -158,6 +169,7 @@ private:
     bool paneHasSelection() const; // does selPane_'s terminal hold a selection?
     std::wstring selectionText() const;
     void copySelection();
+    void setClipboardText(const std::wstring& text);
     void paste();
     void selectWordAt(Pane* p, int cx, int cy);   // double-click word selection
     void selectLineAt(Pane* p, int cy);           // triple-click line selection
@@ -184,7 +196,18 @@ private:
     void drawFindBar(const Rect& paneRect);
     std::wstring rowText(const Grid& g, int y, std::vector<int>* colOfPos) const;
 
+    // Searchable action surface (Ctrl+Shift+P).
+    void openCommandPalette();
+    void closeCommandPalette();
+    void drawCommandPalette();
+    void onPaletteChar(wchar_t c);
+    bool onPaletteKey(WPARAM key);
+    void executePaletteAction(int id);
+    std::vector<int> filteredPaletteActions() const;
+    bool executeConfiguredBinding(int virtualKey, bool ctrl, bool shift, bool alt);
+
     HWND hwnd_ = nullptr;
+    ::IRawElementProviderSimple* accessibilityProvider_ = nullptr;
     std::unique_ptr<IRenderer> renderer_;
     Metrics metrics_;
     Workspace workspace_;
@@ -207,7 +230,9 @@ private:
     std::wstring sessionStartHook_; // command sent to each newly started shell
     std::wstring sessionExitHook_;  // command run when a pane closes
     std::wstring appExitHook_;      // command run on app quit
-    std::vector<std::wstring> sshHosts_;
+    std::vector<SshProfile> sshHosts_;
+    std::vector<ShellProfile> shellProfiles_;
+    std::vector<KeyBinding> keybindings_;
     std::vector<AgentDef> agents_;
     std::vector<std::pair<std::wstring, std::wstring>> projectIcons_;
     std::vector<std::wstring> projects_;   // explicit sidebar project folders
@@ -277,6 +302,7 @@ private:
     bool multiLinePasteWarning_ = true;  // confirm before pasting multiple lines
     bool rememberLayout_ = false;  // restore tabs/panes on launch (opt-in)
     bool splitUseWorkspaceDir_ = false;  // splits open in workspace/home dir vs inherit
+    Osc52Policy osc52Clipboard_ = Osc52Policy::Ask;
     bool unixToolsEnabled_ = true; // Git's usr/bin appended to shells' PATH
     int mouseButtonsDown_ = 0;     // forwarded-to-app buttons, bitmask by number
 
@@ -294,6 +320,9 @@ private:
     int findIndex_ = -1;           // active match index into findMatches_ (-1 none)
     long long findSeekRow_ = -1;   // absolute row of a pending scrollback jump
     Rect findBarRect_{};           // find bar hit rect (rebuilt each frame)
+    bool paletteActive_ = false;
+    std::wstring paletteQuery_;
+    size_t paletteSelected_ = 0;
 };
 
 } // namespace liney

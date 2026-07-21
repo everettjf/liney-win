@@ -8,6 +8,8 @@
 #include "core/Themes.h"
 #include "render/Cell.h"
 #include "util/Json.h"
+#include "core/KeyBinding.h"
+#include "core/SshProfiles.h"
 
 namespace liney {
 
@@ -17,21 +19,26 @@ struct AgentDef {
     std::wstring name;
     std::wstring command;
     std::wstring cwd;  // empty => inherit
+    std::wstring testCommand; // optional verification command for review
 };
+
+enum class Osc52Policy { Deny, Ask, Allow };
 
 // User settings, loaded from %USERPROFILE%\.liney\config.json. A default file is
 // written on first run. Mirrors macOS liney's ~/.liney/ persistence directory.
 struct Config {
+    int schemaVersion = 1;
     std::wstring shell = L"cmd.exe";        // default shell for new tabs
     std::wstring fontFamily = L"Cascadia Mono";
     float fontSize = 16.0f;
     int scrollback = 10000;                 // history lines retained per session
-    std::wstring workspaceRoot;             // empty => parent of launch directory
+    std::wstring workspaceRoot;             // empty => explicit projects only
     std::wstring sessionStartHook;          // command run in each new shell
     std::wstring sessionExitHook;           // command run when a pane closes
     std::wstring appExitHook;               // command run on app quit
-    std::vector<std::wstring> sshHosts;     // e.g. "user@host"; sidebar SSH list
+    std::vector<SshProfile> sshHosts;
     std::vector<AgentDef> agents;           // sidebar AGENTS list
+    std::vector<KeyBinding> keybindings;
     std::wstring themeName;                  // active preset name (see Themes.h)
     Theme theme;                            // terminal palette (preset + overrides)
     UiTheme uiTheme;                        // chrome palette (preset + accent override)
@@ -40,6 +47,7 @@ struct Config {
     bool multiLinePasteWarning = true;      // confirm before pasting multiple lines
     bool rememberLayout = false;            // restore tabs/panes on launch (off by default)
     bool splitUseWorkspaceDir = false;      // new splits open in workspace/home dir (else inherit the pane's cwd)
+    Osc52Policy osc52Clipboard = Osc52Policy::Ask;
     // Per-project sidebar icons: repo name -> icon file path (png/ico).
     std::vector<std::pair<std::wstring, std::wstring>> projectIcons;
     // Explicit project folders added to the sidebar (besides scanned ones).
@@ -64,6 +72,10 @@ void saveFontFamily(const std::wstring& family);
 // Write `content` via temp file + atomic rename, so a crash mid-write can't
 // leave a truncated file. Returns false on failure (target left untouched).
 bool writeFileAtomic(const std::wstring& path, const std::string& content);
+
+// Preserve the last known-good target as `<path>.bak`, then atomically write.
+bool writeFileAtomicWithBackup(const std::wstring& path,
+                               const std::string& content);
 
 // Re-parse config.json, apply `mutate`, write it back atomically. Preserves
 // every other key; refuses to overwrite a config.json that no longer parses

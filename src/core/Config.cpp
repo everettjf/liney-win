@@ -12,6 +12,16 @@ namespace liney {
 
 namespace {
 
+constexpr int kConfigSchemaVersion = 1;
+
+void configWarning(const std::wstring& message, const wchar_t* title) {
+    wchar_t headless[8]{};
+    if (GetEnvironmentVariableW(L"LINEY_HEADLESS", headless,
+                                static_cast<DWORD>(_countof(headless))) > 0)
+        return;
+    MessageBoxW(nullptr, message.c_str(), title, MB_OK | MB_ICONWARNING);
+}
+
 std::wstring utf8ToWide(const std::string& s) {
     if (s.empty()) return L"";
     int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
@@ -59,16 +69,60 @@ bool writeFile(const std::wstring& path, const std::string& content) {
 
 std::string defaultJson(const Config& c) {
     Json j = Json::object();
+    j.set("schemaVersion", Json::number(kConfigSchemaVersion));
     j.set("shell", Json::str(wideToUtf8(c.shell)));
     j.set("fontFamily", Json::str(wideToUtf8(c.fontFamily)));
     j.set("fontSize", Json::number(c.fontSize));
+    j.set("scrollback", Json::number(c.scrollback));
     j.set("workspaceRoot", Json::str(wideToUtf8(c.workspaceRoot)));
+    j.set("unixTools", Json::boolean(c.unixTools));
+    j.set("copyOnSelect", Json::boolean(c.copyOnSelect));
+    j.set("multiLinePasteWarning", Json::boolean(c.multiLinePasteWarning));
+    j.set("rememberLayout", Json::boolean(c.rememberLayout));
+    j.set("splitUseWorkspaceDir", Json::boolean(c.splitUseWorkspaceDir));
+    j.set("osc52Clipboard", Json::str(
+        c.osc52Clipboard == Osc52Policy::Allow ? "allow" :
+        c.osc52Clipboard == Osc52Policy::Deny ? "deny" : "ask"));
     Json hooks = Json::object();
     hooks.set("sessionStart", Json::str(wideToUtf8(c.sessionStartHook)));
+    hooks.set("sessionExit", Json::str(wideToUtf8(c.sessionExitHook)));
+    hooks.set("appExit", Json::str(wideToUtf8(c.appExitHook)));
     j.set("hooks", std::move(hooks));
     Json hosts = Json::array();
-    for (const auto& h : c.sshHosts) hosts.push(Json::str(wideToUtf8(h)));
+    for (const auto& h : c.sshHosts) {
+        Json item = Json::object();
+        item.set("name", Json::str(wideToUtf8(h.name)));
+        item.set("host", Json::str(wideToUtf8(h.host)));
+        item.set("port", Json::number(h.port));
+        item.set("identityFile", Json::str(wideToUtf8(h.identityFile)));
+        hosts.push(std::move(item));
+    }
     j.set("sshHosts", std::move(hosts));
+    Json agents = Json::array();
+    for (const auto& a : c.agents) {
+        Json item = Json::object();
+        item.set("name", Json::str(wideToUtf8(a.name)));
+        item.set("command", Json::str(wideToUtf8(a.command)));
+        item.set("cwd", Json::str(wideToUtf8(a.cwd)));
+        item.set("testCommand", Json::str(wideToUtf8(a.testCommand)));
+        agents.push(std::move(item));
+    }
+    j.set("agents", std::move(agents));
+    Json bindings = Json::object();
+    for (const auto& binding : c.keybindings)
+        bindings.set(wideToUtf8(binding.action),
+                     Json::str(wideToUtf8(formatKeyChord(binding.chord))));
+    j.set("keybindings", std::move(bindings));
+    Json projects = Json::array();
+    for (const auto& project : c.projects)
+        projects.push(Json::str(wideToUtf8(project)));
+    j.set("projects", std::move(projects));
+    Json icons = Json::object();
+    for (const auto& icon : c.projectIcons)
+        icons.set(wideToUtf8(icon.first), Json::str(wideToUtf8(icon.second)));
+    j.set("projectIcons", std::move(icons));
+    if (!c.themeName.empty())
+        j.set("theme", Json::str(wideToUtf8(c.themeName)));
     return j.dump(2);
 }
 
@@ -76,7 +130,12 @@ std::string defaultJson(const Config& c) {
 
 std::wstring configDir() {
     wchar_t buf[MAX_PATH]{};
-    DWORD n = GetEnvironmentVariableW(L"USERPROFILE", buf, MAX_PATH);
+    DWORD n = GetEnvironmentVariableW(L"LINEY_CONFIG_DIR", buf, MAX_PATH);
+    if (n > 0 && n < MAX_PATH) {
+        CreateDirectoryW(buf, nullptr);
+        return buf;
+    }
+    n = GetEnvironmentVariableW(L"USERPROFILE", buf, MAX_PATH);
     if (n == 0 || n >= MAX_PATH) return L"";
     std::wstring dir = std::wstring(buf) + L"\\.liney";
     CreateDirectoryW(dir.c_str(), nullptr);  // ignore "already exists"
@@ -106,14 +165,38 @@ Config loadConfig() {
     bool ok = false;
     Json j = Json::parse(text, &ok);
     if (!ok || !j.isObject()) {
-        // Malformed config: warn once instead of silently acting as if the
-        // user's settings vanished, then run with defaults. The file is left
-        // untouched so it can be fixed (saves also refuse to clobber it).
-        MessageBoxW(nullptr,
-                    (L"config.json could not be parsed; using default "
-                     L"settings.\n\nFix or delete:\n" + path).c_str(),
-                    L"liney — invalid config", MB_OK | MB_ICONWARNING);
-        return cfg;
+        const std::wstring backupPath = path + L".bak";
+        const std::string backup = readFile(backupPath);
+        bool backupOk = false;
+        Json recovered = backup.empty() ? Json() : Json::parse(backup, &backupOk);
+        const std::wstring brokenPath = path + L".invalid";
+        DeleteFileW(brokenPath.c_str());
+        MoveFileExW(path.c_str(), brokenPath.c_str(), MOVEFILE_REPLACE_EXISTING);
+        if (backupOk && recovered.isObject()) {
+            writeFileAtomic(path, backup);
+            j = std::move(recovered);
+            configWarning(
+                L"config.json was restored from config.json.bak.\n\n"
+                L"The invalid file is preserved at:\n" + brokenPath,
+                L"Liney - configuration recovered");
+        } else {
+            writeFileAtomic(path, defaultJson(cfg));
+            configWarning(
+                L"Liney started with safe defaults.\n\nThe invalid file is "
+                L"preserved at:\n" + brokenPath,
+                L"Liney - configuration recovered");
+            return cfg;
+        }
+    }
+
+    cfg.schemaVersion =
+        static_cast<int>(j["schemaVersion"].asNumber(kConfigSchemaVersion));
+    if (cfg.schemaVersion < 1) cfg.schemaVersion = 1;
+    if (cfg.schemaVersion > kConfigSchemaVersion) {
+        configWarning(
+            L"This config.json was written by a newer Liney version. Known "
+            L"settings will be used, but Liney will not rewrite it.",
+            L"Liney - newer configuration");
     }
 
     if (j.contains("shell")) cfg.shell = utf8ToWide(j["shell"].asString());
@@ -130,10 +213,23 @@ Config loadConfig() {
     cfg.sessionExitHook = utf8ToWide(j["hooks"]["sessionExit"].asString());
     cfg.appExitHook = utf8ToWide(j["hooks"]["appExit"].asString());
     // sshHosts: ["user@host", ...]
-    if (j["sshHosts"].isArray())
-        for (const Json& host : j["sshHosts"].items())
-            if (host.type() == Json::Type::String)
-                cfg.sshHosts.push_back(utf8ToWide(host.asString()));
+    if (j["sshHosts"].isArray()) {
+        for (const Json& host : j["sshHosts"].items()) {
+            if (host.type() == Json::Type::String) {
+                const std::wstring value = utf8ToWide(host.asString());
+                if (validSshHost(value)) cfg.sshHosts.push_back({value, value, 22, L""});
+            } else if (host.isObject()) {
+                SshProfile profile;
+                profile.host = utf8ToWide(host["host"].asString());
+                profile.name = utf8ToWide(host["name"].asString());
+                profile.port = static_cast<int>(host["port"].asNumber(22));
+                profile.identityFile = utf8ToWide(host["identityFile"].asString());
+                if (profile.name.empty()) profile.name = profile.host;
+                if (validSshHost(profile.host) && profile.port >= 1 &&
+                    profile.port <= 65535) cfg.sshHosts.push_back(std::move(profile));
+            }
+        }
+    }
     // agents: [{ name, command, cwd }]
     if (j["agents"].isArray())
         for (const Json& a : j["agents"].items())
@@ -142,11 +238,20 @@ Config loadConfig() {
                 d.name = utf8ToWide(a["name"].asString());
                 d.command = utf8ToWide(a["command"].asString());
                 d.cwd = utf8ToWide(a["cwd"].asString());
+                d.testCommand = utf8ToWide(a["testCommand"].asString());
                 if (!d.command.empty()) {
                     if (d.name.empty()) d.name = d.command;
                     cfg.agents.push_back(d);
                 }
             }
+    const Json& keybindings = j["keybindings"];
+    if (keybindings.isObject()) {
+        for (const auto& item : keybindings.members()) {
+            KeyChord chord;
+            if (parseKeyChord(utf8ToWide(item.second.asString()), chord))
+                cfg.keybindings.push_back({utf8ToWide(item.first), chord});
+        }
+    }
     // theme: either a preset NAME (string, e.g. "Azure Night") that picks a
     // coordinated terminal + chrome look, or the legacy { background,
     // foreground, palette } OBJECT of terminal-only overrides.
@@ -185,6 +290,12 @@ Config loadConfig() {
         cfg.rememberLayout = j["rememberLayout"].asBool(false);
     if (j.contains("splitUseWorkspaceDir"))
         cfg.splitUseWorkspaceDir = j["splitUseWorkspaceDir"].asBool(false);
+    if (j.contains("osc52Clipboard")) {
+        const std::string policy = j["osc52Clipboard"].asString();
+        cfg.osc52Clipboard = policy == "allow" ? Osc52Policy::Allow :
+                             policy == "deny" ? Osc52Policy::Deny :
+                                                  Osc52Policy::Ask;
+    }
     // projectIcons: { "<repoName>": "<icon path>" }
     const Json& pi = j["projectIcons"];
     if (pi.isObject())
@@ -223,9 +334,12 @@ void updateConfigFile(Fn mutate) {
         // Skip the save: dropping one setting update is recoverable, silently
         // rewriting the file with a near-empty object is not.
         if (!ok || !j.isObject()) return;
+        if (j["schemaVersion"].asNumber(kConfigSchemaVersion) >
+            kConfigSchemaVersion) return;
     }
     mutate(j);
-    writeFile(path, j.dump(2));
+    j.set("schemaVersion", Json::number(kConfigSchemaVersion));
+    writeFileAtomicWithBackup(path, j.dump(2));
 }
 } // namespace
 
@@ -255,6 +369,17 @@ bool writeFileAtomic(const std::wstring& path, const std::string& content) {
         return false;
     }
     return true;
+}
+
+bool writeFileAtomicWithBackup(const std::wstring& path,
+                               const std::string& content) {
+    const DWORD attrs = GetFileAttributesW(path.c_str());
+    if (attrs != INVALID_FILE_ATTRIBUTES &&
+        !(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+        const std::wstring backup = path + L".bak";
+        if (!CopyFileW(path.c_str(), backup.c_str(), FALSE)) return false;
+    }
+    return writeFileAtomic(path, content);
 }
 
 void updateConfigJson(const std::function<void(Json&)>& mutate) {

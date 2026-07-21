@@ -1,4 +1,5 @@
 {
+  "schemaVersion": 1,
   "shell": "cmd.exe",
   "fontFamily": "Cascadia Mono",
   "fontSize": 16,
@@ -7,6 +8,11 @@
   "unixTools": true,
   "copyOnSelect": false,
   "multiLinePasteWarning": true,
+  "osc52Clipboard": "ask",
+  "keybindings": {
+    "commandPalette": "Ctrl+Shift+P",
+    "workspaceSnapshots": "Ctrl+Shift+S"
+  },
 
   "hooks": {
     "sessionStart": "",
@@ -15,11 +21,12 @@
   },
 
   "sshHosts": [
-    "user@example.com"
+    "user@example.com",
+    { "name": "Production", "host": "deploy@prod.example.com", "port": 22, "identityFile": "C:\\Users\\me\\.ssh\\id_ed25519" }
   ],
 
   "agents": [
-    { "name": "my-agent", "command": "claude", "cwd": "" }
+    { "name": "my-agent", "command": "claude", "cwd": "", "testCommand": "ctest --test-dir build --output-on-failure" }
   ],
 
   "projectIcons": {

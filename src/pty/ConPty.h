@@ -45,6 +45,7 @@ public:
     // well as reader EOF — ConPTY often keeps the output pipe open after the
     // child exits (e.g. after `exit`), so EOF alone is not enough.
     bool hasExited() const;
+    bool exitCode(unsigned long& code) const;
 
     // True if the shell has any live child process — i.e. it's running a
     // command rather than sitting idle at the prompt. Used to warn before

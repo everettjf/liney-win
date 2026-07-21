@@ -76,10 +76,47 @@ void Terminal::setPtyWriter(PtyWriter writer) {
 
 void Terminal::write(const char* data, size_t len) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (terminal_) {
-        ghostty_terminal_vt_write(
-            terminal_, reinterpret_cast<const uint8_t*>(data), len);
+    oscParser_.feed(data, len);
+    auto events = oscParser_.drain();
+    size_t segmentStart = 0;
+    for (auto& event : events) {
+        const size_t eventEnd = event.streamOffset >= vtStreamOffset_
+                                    ? event.streamOffset - vtStreamOffset_
+                                    : segmentStart;
+        const size_t boundedEnd = eventEnd > len ? len : eventEnd;
+        if (terminal_ && boundedEnd > segmentStart) {
+            ghostty_terminal_vt_write(
+                terminal_, reinterpret_cast<const uint8_t*>(data + segmentStart),
+                boundedEnd - segmentStart);
+        }
+        segmentStart = boundedEnd;
+        if (terminal_) {
+            GhosttyTerminalScrollbar sb{};
+            uint16_t cursorY = 0;
+            if (ghostty_terminal_get(terminal_, GHOSTTY_TERMINAL_DATA_SCROLLBAR,
+                                     &sb) == GHOSTTY_SUCCESS &&
+                ghostty_terminal_get(terminal_, GHOSTTY_TERMINAL_DATA_CURSOR_Y,
+                                     &cursorY) == GHOSTTY_SUCCESS) {
+                const uint64_t top = sb.total > sb.len ? sb.total - sb.len : 0;
+                event.row = top + cursorY;
+            }
+        }
+        if (semanticEvents_.size() >= 256) semanticEvents_.erase(semanticEvents_.begin());
+        semanticEvents_.push_back(std::move(event));
     }
+    if (terminal_ && segmentStart < len) {
+        ghostty_terminal_vt_write(
+            terminal_, reinterpret_cast<const uint8_t*>(data + segmentStart),
+            len - segmentStart);
+    }
+    vtStreamOffset_ += len;
+}
+
+std::vector<SemanticEvent> Terminal::drainSemanticEvents() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<SemanticEvent> out;
+    out.swap(semanticEvents_);
+    return out;
 }
 
 void Terminal::resize(int cols, int rows, int cellWidthPx, int cellHeightPx) {
@@ -439,6 +476,28 @@ uint64_t Terminal::viewportRow() {
     return sb.offset;
 }
 
+uint64_t Terminal::bottomRow() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!terminal_) return 0;
+    GhosttyTerminalScrollbar sb{};
+    if (ghostty_terminal_get(terminal_, GHOSTTY_TERMINAL_DATA_SCROLLBAR, &sb) !=
+        GHOSTTY_SUCCESS) return 0;
+    return sb.total > sb.len ? sb.total - sb.len : 0;
+}
+
+uint64_t Terminal::currentRow() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!terminal_) return 0;
+    GhosttyTerminalScrollbar sb{};
+    uint16_t cursorY = 0;
+    if (ghostty_terminal_get(terminal_, GHOSTTY_TERMINAL_DATA_SCROLLBAR, &sb) !=
+            GHOSTTY_SUCCESS ||
+        ghostty_terminal_get(terminal_, GHOSTTY_TERMINAL_DATA_CURSOR_Y,
+                            &cursorY) != GHOSTTY_SUCCESS) return 0;
+    const uint64_t top = sb.total > sb.len ? sb.total - sb.len : 0;
+    return top + cursorY;
+}
+
 void Terminal::scrollToRow(uint64_t row) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!terminal_) return;
@@ -602,6 +661,24 @@ bool Terminal::takeCwd(std::wstring& out) {
 }
 
 void Terminal::drainNotifications(std::vector<Notification>&) {}
+
+std::wstring Terminal::hyperlinkAt(int vx, int vy) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!terminal_ || vx < 0 || vy < 0) return {};
+    GhosttyGridRef ref{};
+    ref.size = sizeof(ref);
+    if (ghostty_terminal_grid_ref(terminal_, viewportPoint(vx, vy), &ref) !=
+        GHOSTTY_SUCCESS) return {};
+    size_t required = 0;
+    GhosttyResult result =
+        ghostty_grid_ref_hyperlink_uri(&ref, nullptr, 0, &required);
+    if (required == 0 || required > 8192 ||
+        (result != GHOSTTY_OUT_OF_SPACE && result != GHOSTTY_SUCCESS)) return {};
+    std::vector<uint8_t> bytes(required);
+    if (ghostty_grid_ref_hyperlink_uri(&ref, bytes.data(), bytes.size(),
+                                       &required) != GHOSTTY_SUCCESS) return {};
+    return utf8ToWide(bytes.data(), required);
+}
 
 void Terminal::setTheme(const Theme& theme) {
     std::lock_guard<std::mutex> lock(mutex_);

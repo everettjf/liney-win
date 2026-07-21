@@ -12,10 +12,14 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   release:
     runs-on: windows-latest
+    env:
+      LINEY_SIGNING_CERT_BASE64: ${{ secrets.LINEY_SIGNING_CERT_BASE64 }}
+      LINEY_SIGNING_CERT_PASSWORD: ${{ secrets.LINEY_SIGNING_CERT_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -49,9 +53,69 @@ jobs:
             choco install nsis -y --no-progress
           }
 
+      - name: Build release binaries
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools\build.ps1
+
+      - name: Sign application binaries when certificate is configured
+        if: env.LINEY_SIGNING_CERT_BASE64 != ''
+        shell: pwsh
+        run: |
+          $cert = Join-Path $env:RUNNER_TEMP 'liney-signing.pfx'
+          [IO.File]::WriteAllBytes($cert, [Convert]::FromBase64String($env:LINEY_SIGNING_CERT_BASE64))
+          $signtool = (Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          if (-not $signtool) { throw 'signtool.exe not found' }
+          $liney = Get-ChildItem build-ghostty -Recurse -Filter Liney.exe | Select-Object -First 1
+          if (-not $liney) { throw 'Liney.exe not found after build' }
+          $ghostty = Join-Path $liney.DirectoryName 'ghostty-vt.dll'
+          foreach ($binary in @($liney.FullName, $ghostty)) {
+            & $signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $cert /p $env:LINEY_SIGNING_CERT_PASSWORD $binary
+            if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed: $binary" }
+            & $signtool verify /pa /all $binary
+            if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed: $binary" }
+          }
+
       - name: Build installer + portable zip
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\make-installer.ps1
+
+      - name: Smoke test packaged binary
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools\smoke-test.ps1 -Exe build-ghostty\Liney.exe
+
+      - name: Installer, portable, and uninstall smoke test
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools\installer-smoke.ps1 -Installer dist\liney-setup.exe -PortableZip dist\liney-portable.zip -ScratchRoot $env:RUNNER_TEMP\liney-package-smoke
+
+      - name: Sign installer when certificate is configured
+        if: env.LINEY_SIGNING_CERT_BASE64 != ''
+        shell: pwsh
+        run: |
+          $cert = Join-Path $env:RUNNER_TEMP 'liney-signing.pfx'
+          if (-not (Test-Path $cert)) {
+            [IO.File]::WriteAllBytes($cert, [Convert]::FromBase64String($env:LINEY_SIGNING_CERT_BASE64))
+          }
+          $signtool = (Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          if (-not $signtool) { throw 'signtool.exe not found' }
+          & $signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $cert /p $env:LINEY_SIGNING_CERT_PASSWORD dist\liney-setup.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Authenticode signing failed' }
+          & $signtool verify /pa /all dist\liney-setup.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Authenticode verification failed' }
+          Remove-Item -LiteralPath $cert -Force
+
+      - name: Generate SHA-256 checksums
+        shell: pwsh
+        run: |
+          Get-FileHash dist\liney-setup.exe, dist\liney-portable.zip -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } |
+            Set-Content -Encoding ascii dist\SHA256SUMS.txt
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: dist/liney-win.spdx.json
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
@@ -68,3 +132,5 @@ jobs:
           files: |
             dist/liney-setup.exe
             dist/liney-portable.zip
+            dist/SHA256SUMS.txt
+            dist/liney-win.spdx.json

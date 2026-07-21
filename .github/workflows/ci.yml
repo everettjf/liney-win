@@ -24,7 +24,11 @@ jobs:
   # check that catches compile breaks in the Win32 / Direct2D / ConPTY code,
   # which the unit tests can't reach. Heavier (fetches + builds Ghostty).
   windows-build:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - name: Set up MSVC
@@ -36,3 +40,21 @@ jobs:
       - name: Build
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\build.ps1
+      - name: Clean-machine load smoke test
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools\smoke-test.ps1 -Exe build-ghostty\Liney.exe
+      - name: Startup regression budget
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools\perf-smoke.ps1 -Exe build-ghostty\Liney.exe
+      - name: ConPTY and VT lifecycle soak
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools\soak-smoke.ps1 -Exe build-ghostty\Liney.exe -Iterations 50
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build-diagnostics-${{ matrix.os }}
+          path: |
+            build-ghostty/CMakeFiles/CMakeConfigureLog.yaml
+            build-ghostty/**/*.log
+          if-no-files-found: ignore
