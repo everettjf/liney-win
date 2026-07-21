@@ -3,6 +3,9 @@
 #include <cwchar>
 #include <cwctype>
 #include <cstdlib>
+#include <atomic>
+#include <memory>
+#include <thread>
 
 #include "core/RenderSignal.h"
 #include "core/CommandHistory.h"
@@ -20,10 +23,36 @@ std::wstring basename(const std::wstring& path) {
     std::wstring name = path.substr(start, end - start);
     return name.empty() ? path : name;
 }
+
+// CreateProcessW can block for tens of seconds while Windows resolves an
+// unavailable UNC working directory (notably on Windows Server 2022). Probe
+// only UNC paths off-thread and fail closed after two seconds. The detached
+// probe owns both its path and shared result, so a late network response cannot
+// touch a destroyed TerminalSession.
+bool networkWorkingDirectoryReady(const std::wstring& path) {
+    if (path.size() < 2 || path[0] != L'\\' || path[1] != L'\\') return true;
+    static std::atomic<int> activeProbes{0};
+    if (activeProbes.fetch_add(1) >= 4) {
+        activeProbes.fetch_sub(1);
+        return false;
+    }
+    auto result = std::make_shared<std::atomic<int>>(-1);
+    std::thread([path, result]() {
+        const DWORD attrs = GetFileAttributesW(path.c_str());
+        *result = attrs != INVALID_FILE_ATTRIBUTES &&
+                          (attrs & FILE_ATTRIBUTE_DIRECTORY)
+                      ? 1 : 0;
+        activeProbes.fetch_sub(1);
+    }).detach();
+    const ULONGLONG deadline = GetTickCount64() + 2000;
+    while (result->load() < 0 && GetTickCount64() < deadline) Sleep(10);
+    return result->load() == 1;
+}
 } // namespace
 
 bool TerminalSession::start(const std::wstring& shell, const std::wstring& cwd,
                             int cols, int rows, int scrollback) {
+    if (!networkWorkingDirectoryReady(cwd)) return false;
     cwd_ = cwd;
     shell_ = shell;
     title_ = basename(cwd);
