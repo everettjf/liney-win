@@ -90,8 +90,9 @@ nothing but the OS.
 - **Notifications**: a `liney notify` CLI + OSC `9`/`777` → Windows tray balloons
 - **Lifecycle hooks** on session start/exit and app exit
 - **Auto-update** from GitHub releases (`Ctrl+Shift+U`)
-- **Reliability tooling**: atomic configuration recovery, rotating diagnostics
-  and crash dumps, signed-update verification, and reproducible Ghostty pinning
+- **Reliability tooling**: atomic configuration recovery, rotating diagnostics,
+  bounded crash dumps, a copyable privacy-safe diagnostic summary,
+  signed-update verification, and reproducible Ghostty pinning
 - **Command blocks** from OSC 133: jump, copy command/output, rerun, bookmark,
   and inspect exit status/duration from the pane menu
 - **Named workspace snapshots** and isolated Agent worktrees with Git/test/review

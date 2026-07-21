@@ -99,6 +99,7 @@ private:
     void openCurrentDirectory(UINT);  // 30 Explorer, 31 PowerShell, 32.. editors
     void openNewWindow(bool elevated);
     void openDiagnosticsFolder();
+    void copyDiagnosticSummary();
     void openKeepAwakeMenu();          // duration picker beside the coffee button
     void openTabMenu(int x, int y);  // right-click a tab: close / open in explorer…
     void closeTab(size_t idx);       // close an entire tab (all its panes)

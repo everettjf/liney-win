@@ -25,6 +25,7 @@
 #include "core/ShellProfiles.h"
 #include "vt/Terminal.h"
 #include "util/Diagnostics.h"
+#include "app/WindowInternal.h"
 
 namespace {
 
@@ -331,7 +332,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     int cliExit = 0;
     if (runCliIfRequested(cliExit)) return cliExit;  // `Liney notify …` — no window
 
-    liney::initializeDiagnostics();
+    liney::initializeDiagnostics(liney::kAppVersion);
     enablePerMonitorDpi();
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);  // for WIC image loading
     liney::Window window;

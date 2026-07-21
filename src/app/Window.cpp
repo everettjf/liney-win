@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <string>
@@ -1021,6 +1022,25 @@ void Window::openDiagnosticsFolder() {
         ShellExecuteW(hwnd_, L"open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
 
+void Window::copyDiagnosticSummary() {
+    const std::wstring summary = diagnosticSummary(kAppVersion);
+    if (!OpenClipboard(hwnd_)) return;
+    EmptyClipboard();
+    const SIZE_T bytes = (summary.size() + 1) * sizeof(wchar_t);
+    HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (memory) {
+        if (void* target = GlobalLock(memory)) {
+            memcpy(target, summary.c_str(), bytes);
+            GlobalUnlock(memory);
+            if (!SetClipboardData(CF_UNICODETEXT, memory)) GlobalFree(memory);
+        } else {
+            GlobalFree(memory);
+        }
+    }
+    CloseClipboard();
+    showBalloon(L"Liney", L"Diagnostic summary copied");
+}
+
 void Window::openKeepAwakeMenu() {
     POINT pt{ static_cast<int>(awakeButtonRect_.right()),
               static_cast<int>(awakeButtonRect_.bottom()) };
@@ -1086,6 +1106,7 @@ void Window::openMainMenu() {
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     item(12, L"Report an issue…");
     item(18, L"Open diagnostics folder");
+    item(19, L"Copy diagnostic summary");
     item(8, L"Check for updates\tCtrl+Shift+U");
 
     const int cmd = TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTALIGN, pt.x, pt.y,
@@ -1113,6 +1134,7 @@ void Window::openMainMenu() {
     case 16: openNewWindow(false); break;
     case 17: openNewWindow(true); break;
     case 18: openDiagnosticsFolder(); break;
+    case 19: copyDiagnosticSummary(); break;
     case 12:
         ShellExecuteW(hwnd_, L"open",
                       L"https://github.com/everettjf/liney-win/issues/new",

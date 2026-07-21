@@ -3,6 +3,18 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
+## [0.5.10] - 2026-07-21
+
+### Added
+- A privacy-conscious diagnostic summary can be copied directly from the main
+  menu for issue reports. It includes Liney/Windows/architecture information
+  and dump metadata, never terminal contents or command history.
+
+### Changed
+- Crash dumps are retained newest-first with a five-dump limit, preventing the
+  diagnostics directory from growing without bound.
+- Startup logs now identify the running Liney version.
+
 ## [0.5.9] - 2026-07-21
 
 ### Added

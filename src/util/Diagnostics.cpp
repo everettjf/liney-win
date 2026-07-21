@@ -4,8 +4,10 @@
 #include <dbghelp.h>
 
 #include <cstdio>
+#include <algorithm>
 #include <fstream>
 #include <mutex>
+#include <vector>
 
 #include "core/Config.h"
 
@@ -14,6 +16,44 @@ namespace {
 
 std::mutex g_logMutex;
 constexpr ULONGLONG kMaxLogBytes = 1024ULL * 1024ULL;
+constexpr size_t kMaxCrashDumps = 5;
+
+using RtlGetVersionFn = LONG(WINAPI*)(PRTL_OSVERSIONINFOW);
+
+std::wstring windowsVersion() {
+    RTL_OSVERSIONINFOW version{};
+    version.dwOSVersionInfoSize = sizeof(version);
+    if (HMODULE ntdll = GetModuleHandleW(L"ntdll.dll")) {
+        if (auto rtlGetVersion = reinterpret_cast<RtlGetVersionFn>(
+                GetProcAddress(ntdll, "RtlGetVersion"));
+            rtlGetVersion && rtlGetVersion(&version) == 0) {
+            return std::to_wstring(version.dwMajorVersion) + L"." +
+                   std::to_wstring(version.dwMinorVersion) + L"." +
+                   std::to_wstring(version.dwBuildNumber);
+        }
+    }
+    return L"unknown";
+}
+
+std::vector<std::wstring> crashDumps(const std::wstring& dir) {
+    std::vector<std::wstring> files;
+    WIN32_FIND_DATAW data{};
+    HANDLE find = FindFirstFileW((dir + L"\\crash-*.dmp").c_str(), &data);
+    if (find == INVALID_HANDLE_VALUE) return files;
+    do {
+        if (!(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+            files.push_back(data.cFileName);
+    } while (FindNextFileW(find, &data));
+    FindClose(find);
+    std::sort(files.begin(), files.end(), std::greater<std::wstring>());
+    return files;
+}
+
+void pruneCrashDumps(const std::wstring& dir) {
+    const std::vector<std::wstring> files = crashDumps(dir);
+    for (size_t i = kMaxCrashDumps; i < files.size(); ++i)
+        DeleteFileW((dir + L"\\" + files[i]).c_str());
+}
 
 std::wstring timestamp(bool fileSafe) {
     SYSTEMTIME st{};
@@ -91,10 +131,38 @@ void diagnosticLog(const std::string& message) {
     out << utf8 << " " << message << "\r\n";
 }
 
-void initializeDiagnostics() {
-    diagnosticsDir();
+std::wstring diagnosticSummary(const wchar_t* appVersion) {
+    const std::wstring dir = diagnosticsDir();
+    SYSTEM_INFO info{};
+    GetNativeSystemInfo(&info);
+    const wchar_t* arch = info.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64
+                              ? L"x64"
+                          : info.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_ARM64
+                              ? L"arm64"
+                              : L"other";
+    const std::vector<std::wstring> dumps = dir.empty()
+                                                ? std::vector<std::wstring>{}
+                                                : crashDumps(dir);
+    std::wstring result = L"Liney: " + std::wstring(appVersion ? appVersion : L"unknown") +
+                          L"\r\nWindows: " + windowsVersion() +
+                          L"\r\nArchitecture: " + arch +
+                          L"\r\nCrash dumps: " + std::to_wstring(dumps.size()) + L"\r\n";
+    if (!dumps.empty()) result += L"Latest dump: " + dumps.front() + L"\r\n";
+    result += L"Diagnostics: " + (dir.empty() ? std::wstring(L"unavailable") : dir) +
+              L"\r\n\r\nNo terminal contents or command history are included.";
+    return result;
+}
+
+void initializeDiagnostics(const wchar_t* appVersion) {
+    const std::wstring dir = diagnosticsDir();
+    if (!dir.empty()) pruneCrashDumps(dir);
     SetUnhandledExceptionFilter(crashFilter);
-    diagnosticLog("application starting");
+    std::string version;
+    if (appVersion) {
+        for (const wchar_t* p = appVersion; *p; ++p)
+            version.push_back(*p < 128 ? static_cast<char>(*p) : '?');
+    }
+    diagnosticLog("application starting; version=" + version);
 }
 
 } // namespace liney
