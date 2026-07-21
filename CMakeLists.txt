@@ -76,6 +76,13 @@ target_link_libraries(liney_win PRIVATE
   d2d1 dwrite d3d11 dxgi imm32 winhttp bcrypt windowscodecs ole32 oleaut32
   comdlg32 shell32 dbghelp wintrust crypt32 uiautomationcore)
 
+# resource.rc already embeds our compatibility/DPI/long-path manifest. MSVC's
+# default linker manifest would create a second RT_MANIFEST/1 resource and make
+# cvtres fail with CVT1100.
+if(MSVC)
+  target_link_options(liney_win PRIVATE /MANIFEST:NO)
+endif()
+
 # Ship the MSVC runtime app-locally. A clean Windows 10/11 installation is not
 # guaranteed to have the Visual C++ Redistributable, and both Liney and the
 # Ghostty DLL depend on these files. Keeping them next to Liney.exe makes the
