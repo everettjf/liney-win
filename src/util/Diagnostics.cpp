@@ -8,6 +8,7 @@
 #include <fstream>
 #include <mutex>
 #include <vector>
+#include <cstdint>
 
 #include "core/Config.h"
 
@@ -17,6 +18,10 @@ namespace {
 std::mutex g_logMutex;
 constexpr ULONGLONG kMaxLogBytes = 1024ULL * 1024ULL;
 constexpr size_t kMaxCrashDumps = 5;
+std::wstring g_runMarker;
+std::wstring g_recoveryLayout;
+std::wstring g_previousRecoveryLayout;
+bool g_previousRunCrashed = false;
 
 using RtlGetVersionFn = LONG(WINAPI*)(PRTL_OSVERSIONINFOW);
 
@@ -53,6 +58,65 @@ void pruneCrashDumps(const std::wstring& dir) {
     const std::vector<std::wstring> files = crashDumps(dir);
     for (size_t i = kMaxCrashDumps; i < files.size(); ++i)
         DeleteFileW((dir + L"\\" + files[i]).c_str());
+}
+
+bool processAlive(DWORD pid) {
+    HANDLE process = OpenProcess(SYNCHRONIZE, FALSE, pid);
+    if (!process) return false;
+    const bool alive = WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
+    CloseHandle(process);
+    return alive;
+}
+
+void findStaleRun(const std::wstring& dir) {
+    WIN32_FIND_DATAW data{};
+    HANDLE find = FindFirstFileW((dir + L"\\run-*.active").c_str(), &data);
+    if (find == INVALID_HANDLE_VALUE) return;
+    do {
+        std::wstring name = data.cFileName;
+        const size_t begin = 4, end = name.find(L".active");
+        if (end == std::wstring::npos) continue;
+        const DWORD pid = wcstoul(name.substr(begin, end - begin).c_str(), nullptr, 10);
+        if (!pid || processAlive(pid)) continue;
+        g_previousRunCrashed = true;
+        const std::wstring recovery = dir + L"\\recovery-" +
+                                      std::to_wstring(pid) + L".json";
+        if (GetFileAttributesW(recovery.c_str()) != INVALID_FILE_ATTRIBUTES)
+            g_previousRecoveryLayout = recovery;
+        DeleteFileW((dir + L"\\" + name).c_str());
+    } while (FindNextFileW(find, &data));
+    FindClose(find);
+}
+
+uint32_t crc32(const std::vector<unsigned char>& bytes) {
+    uint32_t crc = 0xffffffffu;
+    for (unsigned char b : bytes) {
+        crc ^= b;
+        for (int i = 0; i < 8; ++i)
+            crc = (crc >> 1) ^ (0xedb88320u & (0u - (crc & 1u)));
+    }
+    return ~crc;
+}
+
+void put16(std::ofstream& out, uint16_t value) {
+    out.put(static_cast<char>(value)); out.put(static_cast<char>(value >> 8));
+}
+void put32(std::ofstream& out, uint32_t value) {
+    put16(out, static_cast<uint16_t>(value));
+    put16(out, static_cast<uint16_t>(value >> 16));
+}
+
+std::vector<unsigned char> readBounded(const std::wstring& path,
+                                       size_t maxBytes = 64u * 1024u * 1024u) {
+    std::ifstream in(path.c_str(), std::ios::binary);
+    if (!in) return {};
+    in.seekg(0, std::ios::end);
+    const auto size = in.tellg();
+    if (size < 0 || static_cast<uint64_t>(size) > maxBytes) return {};
+    in.seekg(0);
+    std::vector<unsigned char> bytes(static_cast<size_t>(size));
+    if (!bytes.empty()) in.read(reinterpret_cast<char*>(bytes.data()), bytes.size());
+    return in || bytes.empty() ? bytes : std::vector<unsigned char>{};
 }
 
 std::wstring timestamp(bool fileSafe) {
@@ -153,9 +217,78 @@ std::wstring diagnosticSummary(const wchar_t* appVersion) {
     return result;
 }
 
+bool previousRunCrashed() { return g_previousRunCrashed; }
+std::wstring recoveryLayoutPath() { return g_recoveryLayout; }
+std::wstring previousRecoveryLayoutPath() { return g_previousRecoveryLayout; }
+
+void markCleanShutdown() {
+    if (!g_runMarker.empty()) DeleteFileW(g_runMarker.c_str());
+    if (!g_recoveryLayout.empty()) DeleteFileW(g_recoveryLayout.c_str());
+}
+
+bool exportDiagnosticBundle(const std::wstring& path,
+                            const wchar_t* appVersion) {
+    struct Entry { std::string name; std::vector<unsigned char> bytes; uint32_t crc; uint32_t offset; };
+    std::vector<Entry> entries;
+    const std::wstring summary = diagnosticSummary(appVersion);
+    const int n = WideCharToMultiByte(CP_UTF8, 0, summary.data(),
+        static_cast<int>(summary.size()), nullptr, 0, nullptr, nullptr);
+    Entry summaryEntry{"summary.txt", std::vector<unsigned char>(static_cast<size_t>(n)), 0, 0};
+    if (n) WideCharToMultiByte(CP_UTF8, 0, summary.data(),
+        static_cast<int>(summary.size()), reinterpret_cast<char*>(summaryEntry.bytes.data()),
+        n, nullptr, nullptr);
+    entries.push_back(std::move(summaryEntry));
+    const std::wstring dir = diagnosticsDir();
+    for (const std::wstring& name : {std::wstring(L"liney.log"),
+                                     std::wstring(L"liney.previous.log")}) {
+        auto bytes = readBounded(dir + L"\\" + name, 2u * 1024u * 1024u);
+        if (!bytes.empty()) entries.push_back({std::string(name.begin(), name.end()),
+                                               std::move(bytes), 0, 0});
+    }
+    for (const std::wstring& name : crashDumps(dir)) {
+        auto bytes = readBounded(dir + L"\\" + name);
+        if (!bytes.empty()) entries.push_back({std::string(name.begin(), name.end()),
+                                               std::move(bytes), 0, 0});
+    }
+    std::ofstream out(path.c_str(), std::ios::binary | std::ios::trunc);
+    if (!out) return false;
+    for (Entry& e : entries) {
+        e.crc = crc32(e.bytes); e.offset = static_cast<uint32_t>(out.tellp());
+        put32(out, 0x04034b50); put16(out, 20); put16(out, 0); put16(out, 0);
+        put16(out, 0); put16(out, 0); put32(out, e.crc);
+        put32(out, static_cast<uint32_t>(e.bytes.size()));
+        put32(out, static_cast<uint32_t>(e.bytes.size()));
+        put16(out, static_cast<uint16_t>(e.name.size())); put16(out, 0);
+        out.write(e.name.data(), e.name.size());
+        if (!e.bytes.empty()) out.write(reinterpret_cast<const char*>(e.bytes.data()), e.bytes.size());
+    }
+    const uint32_t central = static_cast<uint32_t>(out.tellp());
+    for (const Entry& e : entries) {
+        put32(out, 0x02014b50); put16(out, 20); put16(out, 20); put16(out, 0); put16(out, 0);
+        put16(out, 0); put16(out, 0); put32(out, e.crc);
+        put32(out, static_cast<uint32_t>(e.bytes.size())); put32(out, static_cast<uint32_t>(e.bytes.size()));
+        put16(out, static_cast<uint16_t>(e.name.size())); put16(out, 0); put16(out, 0);
+        put16(out, 0); put16(out, 0); put32(out, 0); put32(out, e.offset);
+        out.write(e.name.data(), e.name.size());
+    }
+    const uint32_t end = static_cast<uint32_t>(out.tellp());
+    put32(out, 0x06054b50); put16(out, 0); put16(out, 0);
+    put16(out, static_cast<uint16_t>(entries.size())); put16(out, static_cast<uint16_t>(entries.size()));
+    put32(out, end - central); put32(out, central); put16(out, 0);
+    return static_cast<bool>(out);
+}
+
 void initializeDiagnostics(const wchar_t* appVersion) {
     const std::wstring dir = diagnosticsDir();
-    if (!dir.empty()) pruneCrashDumps(dir);
+    if (!dir.empty()) {
+        pruneCrashDumps(dir);
+        findStaleRun(dir);
+        const std::wstring pid = std::to_wstring(GetCurrentProcessId());
+        g_runMarker = dir + L"\\run-" + pid + L".active";
+        g_recoveryLayout = dir + L"\\recovery-" + pid + L".json";
+        std::ofstream marker(g_runMarker.c_str(), std::ios::binary | std::ios::trunc);
+        marker << "active\n";
+    }
     SetUnhandledExceptionFilter(crashFilter);
     std::string version;
     if (appVersion) {

@@ -28,6 +28,8 @@ constexpr PaletteAction kActions[] = {
     {12, L"Toggle keep awake", L"Ctrl+Shift+K"},
     {14, L"New window", L""},
     {15, L"New administrator window", L""},
+    {16, L"Search command history", L""},
+    {17, L"Export diagnostic bundle", L""},
 };
 
 std::wstring lower(std::wstring value) {
@@ -84,6 +86,8 @@ void Window::executePaletteAction(int id) {
     case 12: toggleKeepAwake(); break;
     case 14: openNewWindow(false); break;
     case 15: openNewWindow(true); break;
+    case 16: searchHistory(); break;
+    case 17: exportDiagnostics(); break;
     default: break;
     }
 }

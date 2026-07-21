@@ -5,6 +5,7 @@
 #include <cstdlib>
 
 #include "core/RenderSignal.h"
+#include "core/CommandHistory.h"
 
 namespace liney {
 
@@ -139,6 +140,11 @@ void TerminalSession::processSemanticEvents() {
                     std::chrono::steady_clock::now() - block.startedAt);
                 block.endRow = event.row;
                 commandNavigation_ = commandBlocks_.size();
+                FILETIME ft{}; GetSystemTimeAsFileTime(&ft);
+                ULARGE_INTEGER ticks{}; ticks.HighPart = ft.dwHighDateTime;
+                ticks.LowPart = ft.dwLowDateTime;
+                appendCommandHistory({block.command, block.cwd, block.exitCode,
+                                      ticks.QuadPart});
             }
             break;
         case SemanticEventType::ClipboardRequest:

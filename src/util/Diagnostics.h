@@ -8,6 +8,17 @@ namespace liney {
 // log under %USERPROFILE%\.liney\diagnostics. Nothing is uploaded.
 void initializeDiagnostics(const wchar_t* appVersion);
 
+// True when startup found a stale run marker from a process that is no longer
+// alive. The matching recovery layout is retained until the UI accepts or
+// dismisses it.
+bool previousRunCrashed();
+std::wstring recoveryLayoutPath();
+std::wstring previousRecoveryLayoutPath();
+
+// Remove this process' active marker and recovery snapshot after an orderly
+// shutdown. Crash/power-loss paths intentionally never reach this call.
+void markCleanShutdown();
+
 // Append a timestamped UTF-8 line to the local diagnostic log.
 void diagnosticLog(const std::string& message);
 
@@ -18,5 +29,10 @@ std::wstring diagnosticsDir();
 // It contains Liney/Windows/architecture details and dump/log filenames, but no
 // terminal contents, command history, environment variables, or file contents.
 std::wstring diagnosticSummary(const wchar_t* appVersion);
+
+// Create a privacy-conscious ZIP containing the summary, rotating logs and
+// minidumps. Terminal contents, history, config and environment are excluded.
+bool exportDiagnosticBundle(const std::wstring& path,
+                            const wchar_t* appVersion);
 
 } // namespace liney

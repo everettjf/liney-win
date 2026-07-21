@@ -17,7 +17,9 @@
 #include "app/WindowInternal.h"
 #include "util/AccessibilityProvider.h"
 #include "util/Diagnostics.h"
+#include "util/InputBox.h"
 #include "core/Config.h"
+#include "core/CommandHistory.h"
 #include "core/RenderSignal.h"
 #include "render/D2DRenderer.h"
 #include "util/Process.h"  // runDetached (lifecycle hooks)
@@ -35,6 +37,7 @@ static constexpr UINT kIdleRenderMs = 100;
 // One-shot timer id for keep-awake auto-expiry (see setKeepAwake).
 static constexpr UINT_PTR kKeepAwakeTimerId = 0x4B41;  // 'KA'
 static constexpr UINT_PTR kHeadlessCloseTimerId = 0x4843; // 'HC'
+static constexpr UINT_PTR kRecoveryTimerId = 0x5243; // 'RC'
 
 // Monitor DPI as a 96-relative scale. GetDpiForWindow is Win10 1607+, so load it
 // dynamically and fall back to the device caps.
@@ -244,7 +247,19 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     // default — a fresh window each launch is less surprising). A fresh window
     // opens its first terminal in the user's home directory, not wherever the
     // app happened to be launched from.
-    if (!(rememberLayout_ && restoreLayout())) newTab(homeDir());
+    bool restored = false;
+    const std::wstring crashedLayout = previousRecoveryLayoutPath();
+    wchar_t recoveryTest[8]{};
+    const bool suppressRecoveryPrompt = GetEnvironmentVariableW(
+        L"LINEY_HEADLESS", recoveryTest, static_cast<DWORD>(_countof(recoveryTest))) > 0;
+    if (!suppressRecoveryPrompt && previousRunCrashed() && !crashedLayout.empty()) {
+        const int choice = MessageBoxW(hwnd_,
+            L"Liney did not shut down cleanly last time. Restore its window, tabs, panes and working directories?",
+            L"Liney recovery", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON1);
+        if (choice == IDYES) restored = restoreLayoutFrom(crashedLayout);
+        DeleteFileW(crashedLayout.c_str());
+    }
+    if (!restored && !(rememberLayout_ && restoreLayout())) newTab(homeDir());
     if (tabs_.empty()) {
         // No session could start — almost always the terminal core DLL is
         // missing/incompatible, or the configured shell doesn't exist. Tell the
@@ -261,6 +276,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     }
 
     initTray();  // for OSC 9/777 balloon notifications
+    SetTimer(hwnd_, kRecoveryTimerId, 2000, nullptr);
     wchar_t headlessMode[8]{};
     const bool headless = GetEnvironmentVariableW(
         L"LINEY_HEADLESS", headlessMode,
@@ -445,6 +461,13 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
             setKeepAwake(0);
             return 0;
         }
+        if (wParam == kRecoveryTimerId) {
+            const std::wstring path = recoveryLayoutPath();
+            if (!path.empty() && !tabs_.empty()) {
+                writeLayoutTo(path);
+            }
+            return 0;
+        }
         return DefWindowProcW(hwnd_, msg, wParam, lParam);
     case WM_DESTROY:
         removeTray();
@@ -516,34 +539,8 @@ void Window::renderFrame() {
 
 
 void Window::reapExitedPanes() {
-    // Scan every tab, not just the active one — a shell that exits in a
-    // background tab should be reaped too, not linger until it's focused.
-    for (size_t ti = 0; ti < tabs_.size(); ++ti) {
-        Tab* t = tabs_[ti].get();
-        for (Pane* leaf : t->leaves()) {
-            if (!leaf->session || !leaf->session->exited()) continue;
-            // Completed Agent panes are durable review artifacts: keep their
-            // output/diff context until the user closes them explicitly.
-            if (leaf->session->context().role == SessionRole::Agent) continue;
-            Tab* prevActive =
-                (activeTab_ < tabs_.size()) ? tabs_[activeTab_].get() : nullptr;
-            activeTab_ = ti;
-            t->setActive(leaf);
-            closeActivePane();  // may erase the tab and shift indices
-            // Put focus back on the tab the user was on (found by identity —
-            // the erase above may have shifted indices).
-            if (prevActive && prevActive != t) {
-                for (size_t k = 0; k < tabs_.size(); ++k) {
-                    if (tabs_[k].get() == prevActive) {
-                        activeTab_ = k;
-                        break;
-                    }
-                }
-                updateTitle();
-            }
-            return;  // tree changed; revisit next frame
-        }
-    }
+    // Preserve exited shells as review/recovery artifacts. The pane context
+    // menu offers an explicit restart in the same shell and directory.
 }
 
 // ---------------------------------------------------------------------------
@@ -1066,6 +1063,82 @@ void Window::copyDiagnosticSummary() {
     showBalloon(L"Liney", L"Diagnostic summary copied");
 }
 
+void Window::exportDiagnostics() {
+    wchar_t path[MAX_PATH] = L"Liney-diagnostics.zip";
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hwnd_;
+    ofn.lpstrFilter = L"ZIP archive (*.zip)\0*.zip\0All files (*.*)\0*.*\0";
+    ofn.lpstrFile = path;
+    ofn.nMaxFile = static_cast<DWORD>(_countof(path));
+    ofn.lpstrDefExt = L"zip";
+    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+    if (!GetSaveFileNameW(&ofn)) return;
+    if (exportDiagnosticBundle(path, kAppVersion)) {
+        showBalloon(L"Liney", L"Diagnostic bundle exported");
+        ShellExecuteW(hwnd_, L"open", L"explorer.exe",
+                      (L"/select,\"" + std::wstring(path) + L"\"").c_str(),
+                      nullptr, SW_SHOWNORMAL);
+    } else {
+        MessageBoxW(hwnd_, L"The diagnostic bundle could not be created.",
+                    L"Liney", MB_OK | MB_ICONERROR);
+    }
+}
+
+void Window::searchHistory() {
+    const std::wstring query = inputBox(hwnd_, L"Command history",
+                                        L"Search local command history:", L"");
+    if (query.empty()) return;
+    const std::vector<HistoryEntry> results = searchCommandHistory(query, 20);
+    if (results.empty()) {
+        showBalloon(L"Liney", L"No matching commands");
+        return;
+    }
+    HMENU menu = CreatePopupMenu();
+    for (size_t i = 0; i < results.size(); ++i) {
+        std::wstring label = results[i].command;
+        std::replace(label.begin(), label.end(), L'\t', L' ');
+        if (label.size() > 120) label = label.substr(0, 117) + L"...";
+        AppendMenuW(menu, MF_STRING, static_cast<UINT>(500 + i), label.c_str());
+    }
+    POINT pt{}; GetCursorPos(&pt);
+    const int selected = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
+                                        pt.x, pt.y, 0, hwnd_, nullptr);
+    DestroyMenu(menu);
+    const size_t index = selected >= 500 ? static_cast<size_t>(selected - 500)
+                                         : results.size();
+    if (index < results.size()) {
+        // Insert for review; history search never executes a command directly.
+        sendUtf16(results[index].command.c_str(), results[index].command.size());
+    }
+}
+
+void Window::restartSession(TerminalSession* session) {
+    if (!session || !session->exited()) return;
+    Tab* tab = activeTab();
+    if (!tab) return;
+    Pane* target = nullptr;
+    for (Pane* leaf : tab->leaves())
+        if (leaf->session.get() == session) { target = leaf; break; }
+    if (!target) return;
+    const std::wstring shell = session->shellCommand();
+    const std::wstring cwd = session->cwd();
+    const SessionContext context = session->context();
+    int cols = 80, rows = 24;
+    cellsForRect(target->rect, cols, rows);
+    auto replacement = std::make_unique<TerminalSession>();
+    if (!replacement->start(shell, cwd, cols, rows, scrollback_)) {
+        MessageBoxW(hwnd_, L"The shell could not be restarted.", L"Liney",
+                    MB_OK | MB_ICONERROR);
+        return;
+    }
+    replacement->setContext(context);
+    replacement->setTheme(theme_);
+    target->session = std::move(replacement);
+    runStartHook(target->session.get());
+    updateTitle();
+}
+
 void Window::openKeepAwakeMenu() {
     POINT pt{ static_cast<int>(awakeButtonRect_.right()),
               static_cast<int>(awakeButtonRect_.bottom()) };
@@ -1132,6 +1205,8 @@ void Window::openMainMenu() {
     item(12, L"Report an issue…");
     item(18, L"Open diagnostics folder");
     item(19, L"Copy diagnostic summary");
+    item(20, L"Export diagnostic bundle...");
+    item(21, L"Search command history...");
     item(8, L"Check for updates\tCtrl+Shift+U");
 
     const int cmd = TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTALIGN, pt.x, pt.y,
@@ -1160,6 +1235,8 @@ void Window::openMainMenu() {
     case 17: openNewWindow(true); break;
     case 18: openDiagnosticsFolder(); break;
     case 19: copyDiagnosticSummary(); break;
+    case 20: exportDiagnostics(); break;
+    case 21: searchHistory(); break;
     case 12:
         ShellExecuteW(hwnd_, L"open",
                       L"https://github.com/everettjf/liney-win/issues/new",

@@ -68,6 +68,26 @@ if ($processTest.ExitCode -ne 0) {
 }
 Write-Host 'Bounded child-process capture/timeout self-test passed.'
 
+$stability = [Diagnostics.Process]::Start($resolved, 'stability-self-test')
+if (-not $stability.WaitForExit(50000)) {
+    $stability.Kill()
+    throw 'Large-output/long-running/network-path stability self-test timed out.'
+}
+if ($stability.ExitCode -ne 0) {
+    throw "Stability self-test failed with exit code $($stability.ExitCode)."
+}
+Write-Host 'Large-output, long-running process cleanup, and unavailable network path self-test passed.'
+
+$recovery = [Diagnostics.Process]::Start($resolved, 'recovery-self-test')
+if (-not $recovery.WaitForExit(15000)) {
+    $recovery.Kill()
+    throw 'Crash recovery/diagnostic bundle self-test timed out.'
+}
+if ($recovery.ExitCode -ne 0) {
+    throw "Crash recovery/diagnostic bundle self-test failed with exit code $($recovery.ExitCode)."
+}
+Write-Host 'Crash marker, recovery snapshot discovery, and diagnostic ZIP self-test passed.'
+
 $semanticTest = [Diagnostics.Process]::Start($resolved, 'semantic-self-test')
 if (-not $semanticTest.WaitForExit(15000)) {
     $semanticTest.Kill()

@@ -3,6 +3,34 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
+## [0.8.0] - 2026-07-21
+
+### Added
+- Per-process crash markers and continuously refreshed recovery layouts restore
+  window geometry, tabs, split panes, shells and working directories after an
+  abnormal exit, independently of the normal remember-layout preference.
+- One-click privacy-conscious diagnostic ZIP export containing system summary,
+  bounded logs and minidumps, never terminal contents, configuration, command
+  history or environment variables.
+- Exited and disconnected shells retain their scrollback and command blocks;
+  users can explicitly restart them with the same shell, role and directory.
+- A bounded, local-only, secret-redacted command history with search-and-insert
+  UI. Selecting a result inserts it for review and never executes it.
+- Dedicated large-output, long-running cleanup, unavailable network path,
+  recovery marker and diagnostic archive smoke tests.
+
+### Changed
+- Failed commands expose a dedicated AI diagnosis action while retaining the
+  existing bounded context, secret redaction and two-stage execution consent.
+- Installer updates are transactional: the prior executable and terminal core
+  are retained until the new build passes an actual ConPTY/VT startup check;
+  failed installs restore the known-good pair automatically.
+
+### Security
+- Stable release publication requires Authenticode credentials. Application,
+  terminal-core and installer signatures are timestamped and verified before
+  release assets can be published.
+
 ## [0.7.0] - 2026-07-21
 
 ### Added

@@ -698,6 +698,10 @@ void Window::openPaneMenu(int xi, int yi) {
     AppendMenuW(m, MF_STRING, 2, L"Paste\tShift+Insert");
     AppendMenuW(m, MF_STRING, 3, L"Select all\tCtrl+Shift+A");
     TerminalSession* menuSession = activeSession();
+    if (menuSession && menuSession->exited()) {
+        AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(m, MF_STRING, 41, L"Restart shell in this directory");
+    }
     const bool agentSession = menuSession &&
         menuSession->context().role == SessionRole::Agent;
     if (agentSession) {
@@ -742,7 +746,9 @@ void Window::openPaneMenu(int xi, int yi) {
                          (aiProvider_ == L"off" || aiBusy_ ||
                                   lastCommand->state == CommandState::Running
                               ? MF_GRAYED : 0),
-                    40, L"Explain last command with AI…");
+                    40, lastCommand->state == CommandState::Failed
+                            ? L"Diagnose failed command with AI..."
+                            : L"Explain last command with AI...");
     }
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING, 4, L"Find…\tCtrl+F");
@@ -845,6 +851,9 @@ void Window::openPaneMenu(int xi, int yi) {
         break;
     case 40:
         requestAiForLastCommand(menuSession);
+        break;
+    case 41:
+        restartSession(menuSession);
         break;
     default: break;
     }

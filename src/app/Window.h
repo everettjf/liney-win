@@ -101,6 +101,9 @@ private:
     void openNewWindow(bool elevated);
     void openDiagnosticsFolder();
     void copyDiagnosticSummary();
+    void exportDiagnostics();
+    void searchHistory();
+    void restartSession(TerminalSession* session);
     void openKeepAwakeMenu();          // duration picker beside the coffee button
     void openTabMenu(int x, int y);  // right-click a tab: close / open in explorer…
     void closeTab(size_t idx);       // close an entire tab (all its panes)

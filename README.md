@@ -96,10 +96,13 @@ nothing but the OS.
   secrets, exclude full history, classify command risk, and always require
   confirmation before execution.
 - **Reliability tooling**: atomic configuration recovery, rotating diagnostics,
-  bounded crash dumps, a copyable privacy-safe diagnostic summary,
-  signed-update verification, and reproducible Ghostty pinning
+  bounded crash dumps, one-click privacy-safe diagnostic ZIP export, abnormal
+  exit tab/pane/cwd recovery, restartable exited shells, transactional update
+  rollback, mandatory signed releases, and reproducible Ghostty pinning
 - **Command blocks** from OSC 133: jump, copy command/output, rerun, bookmark,
   and inspect exit status/duration from the pane menu
+- **Searchable local command history**: bounded, secret-redacted, and inserts a
+  selected result for review without executing it
 - **Named workspace snapshots** and isolated Agent worktrees with Git/test/review
   actions; Agent sessions remain available after exit for inspection
 
