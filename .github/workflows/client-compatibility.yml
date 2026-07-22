@@ -1,5 +1,8 @@
 name: Windows Client Certification
 
+permissions:
+  contents: read
+
 on:
   workflow_dispatch:
     inputs:
@@ -14,6 +17,7 @@ on:
 
 jobs:
   certify:
+    environment: client-certification
     strategy:
       fail-fast: false
       matrix:

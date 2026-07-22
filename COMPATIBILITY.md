@@ -39,3 +39,5 @@ labels: `liney-windows-10` (Windows 10 22H2/build 19045) and
 `liney-windows-11` (current Windows 11 with at least two active monitors). Both
 machines must have an operational WSL distro. The workflow retains JSON evidence
 and fails rather than silently skipping a missing OS, WSL, or display requirement.
+Provisioning, isolation and evidence-retention instructions are in
+[`docs/CLIENT_CERTIFICATION.md`](docs/CLIENT_CERTIFICATION.md).
