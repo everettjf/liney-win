@@ -41,7 +41,9 @@ SetCompressor /SOLID lzma
 ; Close a running instance so files can be replaced (used for in-place updates).
 Function .onInit
   nsExec::Exec 'taskkill /IM Liney.exe /F'
+  Pop $0
   nsExec::Exec 'taskkill /IM liney_win.exe /F'
+  Pop $0
 FunctionEnd
 
 Section "Liney" SecMain
@@ -72,7 +74,10 @@ Section "Liney" SecMain
   ${If} ${Errors}
     Goto rollback_update
   ${EndIf}
-  ExecWait '"$INSTDIR\Liney.exe" self-test' $0
+  ; A corrupted or incompatible build can display a modal loader error instead
+  ; of exiting. Bound the health probe so even that failure reaches rollback.
+  nsExec::Exec /TIMEOUT=15000 '"$INSTDIR\Liney.exe" self-test'
+  Pop $0
   ${If} $0 != 0
     Goto rollback_update
   ${EndIf}

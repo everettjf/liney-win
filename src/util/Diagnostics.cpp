@@ -72,6 +72,7 @@ void findStaleRun(const std::wstring& dir) {
     WIN32_FIND_DATAW data{};
     HANDLE find = FindFirstFileW((dir + L"\\run-*.active").c_str(), &data);
     if (find == INVALID_HANDLE_VALUE) return;
+    ULARGE_INTEGER newestRecovery{};
     do {
         std::wstring name = data.cFileName;
         const size_t begin = 4, end = name.find(L".active");
@@ -81,8 +82,18 @@ void findStaleRun(const std::wstring& dir) {
         g_previousRunCrashed = true;
         const std::wstring recovery = dir + L"\\recovery-" +
                                       std::to_wstring(pid) + L".json";
-        if (GetFileAttributesW(recovery.c_str()) != INVALID_FILE_ATTRIBUTES)
-            g_previousRecoveryLayout = recovery;
+        WIN32_FILE_ATTRIBUTE_DATA recoveryData{};
+        if (GetFileAttributesExW(recovery.c_str(), GetFileExInfoStandard,
+                                 &recoveryData)) {
+            ULARGE_INTEGER modified{};
+            modified.HighPart = recoveryData.ftLastWriteTime.dwHighDateTime;
+            modified.LowPart = recoveryData.ftLastWriteTime.dwLowDateTime;
+            if (g_previousRecoveryLayout.empty() ||
+                modified.QuadPart > newestRecovery.QuadPart) {
+                newestRecovery = modified;
+                g_previousRecoveryLayout = recovery;
+            }
+        }
         DeleteFileW((dir + L"\\" + name).c_str());
     } while (FindNextFileW(find, &data));
     FindClose(find);
@@ -133,6 +144,18 @@ std::wstring timestamp(bool fileSafe) {
                    st.wMilliseconds);
     }
     return value;
+}
+
+std::string utf8(const std::wstring& value) {
+    if (value.empty()) return {};
+    const int size = WideCharToMultiByte(CP_UTF8, 0, value.data(),
+        static_cast<int>(value.size()), nullptr, 0, nullptr, nullptr);
+    if (size <= 0) return {};
+    std::string result(static_cast<size_t>(size), '\0');
+    if (!WideCharToMultiByte(CP_UTF8, 0, value.data(),
+                            static_cast<int>(value.size()), result.data(), size,
+                            nullptr, nullptr)) return {};
+    return result;
 }
 
 LONG WINAPI crashFilter(EXCEPTION_POINTERS* info) {
@@ -242,14 +265,13 @@ bool exportDiagnosticBundle(const std::wstring& path,
     for (const std::wstring& name : {std::wstring(L"liney.log"),
                                      std::wstring(L"liney.previous.log")}) {
         auto bytes = readBounded(dir + L"\\" + name, 2u * 1024u * 1024u);
-        if (!bytes.empty()) entries.push_back({std::string(name.begin(), name.end()),
+        if (!bytes.empty()) entries.push_back({utf8(name),
                                                std::move(bytes), 0, 0});
     }
-    for (const std::wstring& name : crashDumps(dir)) {
-        auto bytes = readBounded(dir + L"\\" + name);
-        if (!bytes.empty()) entries.push_back({std::string(name.begin(), name.end()),
-                                               std::move(bytes), 0, 0});
-    }
+    // Do not include minidumps automatically. Unlike logs, a process-memory
+    // dump may contain terminal scrollback, environment values or credentials.
+    // The summary reports dump filenames so support can explicitly request one
+    // after warning the user about its sensitivity.
     std::ofstream out(path.c_str(), std::ios::binary | std::ios::trunc);
     if (!out) return false;
     for (Entry& e : entries) {

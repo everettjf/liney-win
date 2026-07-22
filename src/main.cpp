@@ -102,6 +102,27 @@ bool runCliIfRequested(int& exitCode) {
         return true;
     }
     if (cmd == L"self-test") {
+        // A package manager may launch this GUI-subsystem executable with
+        // redirected standard handles. Console children otherwise inherit
+        // those handles and bypass ConPTY, producing a false health-check
+        // failure. The real GUI has no standard streams, so mirror that launch
+        // environment for this single-threaded CLI probe and restore it before
+        // returning to the caller.
+        struct ScopedStandardHandles {
+            HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
+            HANDLE output = GetStdHandle(STD_OUTPUT_HANDLE);
+            HANDLE error = GetStdHandle(STD_ERROR_HANDLE);
+            ScopedStandardHandles() {
+                SetStdHandle(STD_INPUT_HANDLE, nullptr);
+                SetStdHandle(STD_OUTPUT_HANDLE, nullptr);
+                SetStdHandle(STD_ERROR_HANDLE, nullptr);
+            }
+            ~ScopedStandardHandles() {
+                SetStdHandle(STD_INPUT_HANDLE, input);
+                SetStdHandle(STD_OUTPUT_HANDLE, output);
+                SetStdHandle(STD_ERROR_HANDLE, error);
+            }
+        } isolatedStandardHandles;
         liney::TerminalSession session;
         if (!session.start(L"cmd.exe /d /s /c \"echo liney-self-test\"",
                            L"", 80, 24, 100)) {
@@ -114,11 +135,22 @@ bool runCliIfRequested(int& exitCode) {
             exitCode = 11;
             return true;
         }
-        session.snapshot();
-        std::string output;
-        const bool rendered = session.dumpBufferUtf8(output);
-        exitCode = rendered && output.find("liney-self-test") != std::string::npos
-                       ? 0 : 12;
+        // Process exit and ConPTY pipe drain are separate events. Under a
+        // redirected launcher such as NSIS nsExec, the process can exit before
+        // the reader thread has delivered its final output. Give the bounded
+        // health probe a short drain window instead of reporting a false
+        // installation failure.
+        const ULONGLONG drainDeadline = GetTickCount64() + 2000;
+        bool rendered = false;
+        do {
+            session.snapshot();
+            std::string output;
+            rendered = session.dumpBufferUtf8(output) &&
+                       output.find("liney-self-test") != std::string::npos;
+            if (rendered) break;
+            Sleep(10);
+        } while (GetTickCount64() < drainDeadline);
+        exitCode = rendered ? 0 : 12;
         return true;
     }
     if (cmd == L"config-self-test") {
@@ -228,6 +260,9 @@ bool runCliIfRequested(int& exitCode) {
         { std::ofstream f(recovery.c_str()); f << "{\"tabs\":[]}"; }
         liney::initializeDiagnostics(L"self-test");
         liney::diagnosticLog("self-test log");
+        const std::wstring sensitiveDump = diag + L"\\crash-self-test.dmp";
+        { std::ofstream f(sensitiveDump.c_str(), std::ios::binary);
+          f << "terminal-memory-secret"; }
         liney::appendCommandHistory({L"echo history-ok sk-super-secret", L"C:\\test", 0, 1});
         const auto history = liney::searchCommandHistory(L"history-ok", 5);
         const std::wstring zip = std::wstring(unique) + L"\\diagnostics.zip";
@@ -243,9 +278,18 @@ bool runCliIfRequested(int& exitCode) {
             passed = bytes.size() >= 22 && bytes.compare(0, 4, "PK\x03\x04", 4) == 0 &&
                      bytes.compare(bytes.size() - 22, 4, "PK\x05\x06", 4) == 0 &&
                      bytes.find("history-ok") == std::string::npos &&
-                     bytes.find("super-secret") == std::string::npos;
+                     bytes.find("super-secret") == std::string::npos &&
+                     bytes.find("terminal-memory-secret") == std::string::npos;
         }
         liney::markCleanShutdown();
+        DeleteFileW(zip.c_str());
+        DeleteFileW(sensitiveDump.c_str());
+        DeleteFileW((diag + L"\\liney.log").c_str());
+        DeleteFileW((diag + L"\\liney.previous.log").c_str());
+        DeleteFileW((std::wstring(unique) + L"\\command-history.jsonl").c_str());
+        DeleteFileW(recovery.c_str());
+        RemoveDirectoryW(diag.c_str());
+        RemoveDirectoryW(unique);
         exitCode = passed ? 0 : 68;
         return true;
     }

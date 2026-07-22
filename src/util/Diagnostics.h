@@ -30,8 +30,10 @@ std::wstring diagnosticsDir();
 // terminal contents, command history, environment variables, or file contents.
 std::wstring diagnosticSummary(const wchar_t* appVersion);
 
-// Create a privacy-conscious ZIP containing the summary, rotating logs and
-// minidumps. Terminal contents, history, config and environment are excluded.
+// Create a privacy-conscious ZIP containing the summary and rotating logs.
+// Minidumps are intentionally left in the local diagnostics directory because
+// process memory can contain terminal text, tokens and other user data.
+// Terminal contents, history, config and environment are also excluded.
 bool exportDiagnosticBundle(const std::wstring& path,
                             const wchar_t* appVersion);
 
