@@ -46,6 +46,15 @@ jobs:
       - name: Startup regression budget
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\perf-smoke.ps1 -Exe build-ghostty\Liney.exe
+      - name: GPU recovery, WARP, and DPI matrix
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools\display-smoke.ps1 -Exe build-ghostty\Liney.exe
+      - name: Windows compatibility report
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools\compatibility-smoke.ps1 -Exe build-ghostty\Liney.exe -Output compatibility-${{ matrix.os }}.json
+      - name: UI Automation and keyboard accessibility
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools\accessibility-smoke.ps1 -Exe build-ghostty\Liney.exe
       - name: ConPTY and VT lifecycle soak
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\soak-smoke.ps1 -Exe build-ghostty\Liney.exe -Iterations 50
@@ -61,3 +70,10 @@ jobs:
             build-ghostty/CMakeFiles/CMakeConfigureLog.yaml
             build-ghostty/**/*.log
           if-no-files-found: ignore
+      - name: Upload compatibility report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compatibility-${{ matrix.os }}
+          path: compatibility-${{ matrix.os }}.json
+          if-no-files-found: warn

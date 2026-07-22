@@ -1,5 +1,6 @@
 #include "app/Tab.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace liney {
@@ -128,6 +129,49 @@ bool Tab::closeActive() {
     return true;
 }
 
+std::unique_ptr<TerminalSession> Tab::detachActive() {
+    Pane* p = active_;
+    if (!p || !p->leaf() || !p->parent) return nullptr;
+    zoom_ = nullptr;
+    std::unique_ptr<TerminalSession> detached = std::move(p->session);
+    Pane* parent = p->parent;
+    std::unique_ptr<Pane> sibling =
+        std::move(parent->a.get() == p ? parent->b : parent->a);
+    parent->isSplit = sibling->isSplit;
+    parent->dir = sibling->dir;
+    parent->ratio = sibling->ratio;
+    parent->session = std::move(sibling->session);
+    parent->a = std::move(sibling->a);
+    parent->b = std::move(sibling->b);
+    if (parent->a) parent->a->parent = parent;
+    if (parent->b) parent->b->parent = parent;
+    active_ = firstLeaf(parent);
+    return detached;
+}
+
+void Tab::swapActiveWithNext() {
+    std::vector<Pane*> list = leaves();
+    if (!active_ || list.size() < 2) return;
+    auto it = std::find(list.begin(), list.end(), active_);
+    if (it == list.end()) return;
+    const size_t index = static_cast<size_t>(it - list.begin());
+    Pane* next = list[(index + 1) % list.size()];
+    std::swap(active_->session, next->session);
+    zoom_ = nullptr;
+}
+
+void Tab::moveActiveForward() {
+    std::vector<Pane*> list = leaves();
+    if (!active_ || list.size() < 2) return;
+    auto it = std::find(list.begin(), list.end(), active_);
+    if (it == list.end()) return;
+    Pane* from = active_;
+    Pane* next = list[(static_cast<size_t>(it - list.begin()) + 1) % list.size()];
+    std::swap(from->session, next->session);
+    active_ = next;
+    zoom_ = nullptr;
+}
+
 void Tab::layout(const Rect& area, const Metrics& m) {
     if (!root_) return;
     // If a pane is zoomed, give it the whole area and collapse the rest to
@@ -248,6 +292,7 @@ std::vector<Pane*> Tab::leaves() const {
 }
 
 std::wstring Tab::title() const {
+    if (!customTitle_.empty()) return customTitle_;
     if (active_ && active_->session) return active_->session->title();
     Pane* f = firstLeaf(root_.get());
     return (f && f->session) ? f->session->title() : L"shell";

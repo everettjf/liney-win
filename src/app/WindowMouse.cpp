@@ -760,6 +760,12 @@ void Window::openPaneMenu(int xi, int yi) {
     AppendMenuW(m, MF_STRING | (split ? 0 : MF_GRAYED), 9,
                 L"Zoom pane\tCtrl+Shift+Z");
     AppendMenuW(m, MF_STRING | (split ? 0 : MF_GRAYED), 10, L"Equalize panes");
+    AppendMenuW(m, MF_STRING | (split ? 0 : MF_GRAYED), 11,
+                L"Swap with next pane");
+    AppendMenuW(m, MF_STRING | (split ? 0 : MF_GRAYED), 12,
+                L"Move pane to new tab");
+    AppendMenuW(m, MF_STRING | (split ? 0 : MF_GRAYED), 13,
+                L"Move pane forward");
     AppendMenuW(m, MF_STRING, 5, L"Close pane\tCtrl+Shift+W");
     AppendMenuW(m, MF_STRING | (split ? 0 : MF_GRAYED), 6,
                 L"Close other panes");
@@ -777,6 +783,9 @@ void Window::openPaneMenu(int xi, int yi) {
     case 8: splitActive(SplitDir::Rows); break;
     case 9: toggleZoom(); break;
     case 10: equalizePanes(); break;
+    case 11: executePaletteAction(21); break;
+    case 12: executePaletteAction(22); break;
+    case 13: executePaletteAction(23); break;
     case 20:
         if (menuSession) {
             const std::wstring cwd = !menuSession->context().worktreePath.empty()

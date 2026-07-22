@@ -8,6 +8,7 @@
 #include "util/Base64.h"
 #include "util/Authenticode.h"
 #include "core/Update.h"
+#include "core/WindowGeometry.h"
 #include "workspace/Workspace.h"
 
 #include <fstream>
@@ -172,11 +173,16 @@ void Window::startDownloadAndInstall(const std::wstring& url,
         wchar_t currentExe[32768]{};
         const DWORD currentLen = GetModuleFileNameW(
             nullptr, currentExe, static_cast<DWORD>(_countof(currentExe)));
-        if (dl && currentLen > 0 && currentLen < _countof(currentExe) &&
-            verifyAuthenticode(currentExe) &&
-            !sameAuthenticodePublisher(currentExe, out)) {
-            dl = false;
-            DeleteFileW(out.c_str());
+        if (dl && currentLen > 0 && currentLen < _countof(currentExe)) {
+            const bool currentSigned = verifyAuthenticode(currentExe);
+            const bool candidateSigned = verifyAuthenticode(out);
+            const bool samePublisher = currentSigned && candidateSigned &&
+                                       sameAuthenticodePublisher(currentExe, out);
+            if (!updatePreservesPublisherTrust(currentSigned, candidateSigned,
+                                               samePublisher)) {
+                dl = false;
+                DeleteFileW(out.c_str());
+            }
         }
         {
             std::lock_guard<std::mutex> lk(updateMutex_);
@@ -300,6 +306,8 @@ bool Window::writeLayoutTo(const std::wstring& path) const {
     for (const auto& tab : tabs_) {
         Json t = Json::object();
         t.set("root", paneToJson(tab->root()));
+        t.set("title", Json::str(wideToUtf8(tab->customTitle())));
+        t.set("pinned", Json::boolean(tab->pinned()));
         tabs.push(std::move(t));
     }
     root.set("tabs", std::move(tabs));
@@ -487,10 +495,11 @@ bool Window::restoreLayoutFrom(const std::wstring& path) {
             mi.cbSize = sizeof(mi);
             if (GetMonitorInfoW(mon, &mi)) {
                 const RECT& wa = mi.rcWork;
-                if (x + ww > wa.right) x = wa.right - ww;
-                if (y + hh > wa.bottom) y = wa.bottom - hh;
-                if (x < wa.left) x = wa.left;
-                if (y < wa.top) y = wa.top;
+                const WindowRect clamped = clampWindowToWorkArea(
+                    {x, y, ww, hh},
+                    {wa.left, wa.top, wa.right - wa.left, wa.bottom - wa.top});
+                x = clamped.x;
+                y = clamped.y;
             }
             MoveWindow(hwnd_, x, y, ww, hh, FALSE);
         }
@@ -507,7 +516,12 @@ bool Window::restoreLayoutFrom(const std::wstring& path) {
 
     for (const Json& t : tabsJ.items()) {
         auto pane = paneFromJson(t["root"], cols, rows);
-        if (pane) tabs_.push_back(std::make_unique<Tab>(std::move(pane)));
+        if (pane) {
+            auto tab = std::make_unique<Tab>(std::move(pane));
+            tab->setCustomTitle(utf8ToWide(t["title"].asString()));
+            tab->setPinned(t["pinned"].asBool(false));
+            tabs_.push_back(std::move(tab));
+        }
     }
     if (tabs_.empty()) return false;
 
@@ -536,8 +550,28 @@ void Window::addWorkspaceFolder() {
     for (const std::wstring& p : projects_)
         if (p == dir) return;  // already added
     projects_.push_back(dir);
+    rememberRecentProject(dir);
     persistWorkspaceConfig();
     rescanWorkspace();
+}
+
+void Window::rememberRecentProject(const std::wstring& path) {
+    if (path.empty()) return;
+    recentProjects_.erase(
+        std::remove_if(recentProjects_.begin(), recentProjects_.end(),
+                       [&](const std::wstring& item) {
+                           return _wcsicmp(item.c_str(), path.c_str()) == 0;
+                       }),
+        recentProjects_.end());
+    recentProjects_.insert(recentProjects_.begin(), path);
+    if (recentProjects_.size() > 10) recentProjects_.resize(10);
+    const auto values = recentProjects_;
+    updateConfigJson([&](Json& j) {
+        Json recent = Json::array();
+        for (const auto& value : values)
+            recent.push(Json::str(wideToUtf8(value)));
+        j.set("recentProjects", std::move(recent));
+    });
 }
 
 void Window::removeProject(const Repo& repo) {

@@ -27,6 +27,7 @@ enum class Osc52Policy { Deny, Ask, Allow };
 // User settings, loaded from %USERPROFILE%\.liney\config.json. A default file is
 // written on first run. Mirrors macOS liney's ~/.liney/ persistence directory.
 struct Config {
+    bool firstRun = false;                    // ephemeral; config was created now
     int schemaVersion = 1;
     std::wstring shell = L"cmd.exe";        // default shell for new tabs
     std::wstring fontFamily = L"Cascadia Mono";
@@ -57,6 +58,7 @@ struct Config {
     std::vector<std::pair<std::wstring, std::wstring>> projectIcons;
     // Explicit project folders added to the sidebar (besides scanned ones).
     std::vector<std::wstring> projects;
+    std::vector<std::wstring> recentProjects;
 };
 
 // %USERPROFILE%\.liney (created if missing). Empty if USERPROFILE is unset.

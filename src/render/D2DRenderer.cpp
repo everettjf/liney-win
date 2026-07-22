@@ -17,8 +17,13 @@ bool D2DRenderer::initialize(void* hwnd) {
 bool D2DRenderer::createDeviceResources() {
     UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
     D3D_FEATURE_LEVEL featureLevel{};
+    wchar_t forceWarp[8]{};
+    const bool warp = GetEnvironmentVariableW(
+        L"LINEY_FORCE_WARP", forceWarp,
+        static_cast<DWORD>(_countof(forceWarp))) > 0;
     HRESULT hr = D3D11CreateDevice(
-        nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags,
+        nullptr, warp ? D3D_DRIVER_TYPE_WARP : D3D_DRIVER_TYPE_HARDWARE,
+        nullptr, flags,
         nullptr, 0, D3D11_SDK_VERSION,
         d3dDevice_.GetAddressOf(), &featureLevel, d3dContext_.GetAddressOf());
     if (FAILED(hr)) {
@@ -250,6 +255,13 @@ void D2DRenderer::endFrame() {
     frameOpen_ = false;
     const HRESULT hrDraw = d2dContext_->EndDraw();
     const HRESULT hrPresent = swapChain_->Present(1, 0);
+    wchar_t simulate[8]{};
+    if (!simulatedDeviceLoss_ && GetEnvironmentVariableW(
+            L"LINEY_SIMULATE_DEVICE_LOSS", simulate,
+            static_cast<DWORD>(_countof(simulate))) > 0) {
+        simulatedDeviceLoss_ = true;
+        deviceLost_ = true;
+    }
     // A GPU driver update / TDR reset / RDP GPU switch removes the device;
     // without recovery every later Present fails silently and the window
     // freezes forever. Flag it and rebuild everything next frame.

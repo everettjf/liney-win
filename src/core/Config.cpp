@@ -124,6 +124,10 @@ std::string defaultJson(const Config& c) {
     for (const auto& project : c.projects)
         projects.push(Json::str(wideToUtf8(project)));
     j.set("projects", std::move(projects));
+    Json recent = Json::array();
+    for (const auto& project : c.recentProjects)
+        recent.push(Json::str(wideToUtf8(project)));
+    j.set("recentProjects", std::move(recent));
     Json icons = Json::object();
     for (const auto& icon : c.projectIcons)
         icons.set(wideToUtf8(icon.first), Json::str(wideToUtf8(icon.second)));
@@ -165,6 +169,7 @@ Config loadConfig() {
 
     const std::string text = readFile(path);
     if (text.empty()) {
+        cfg.firstRun = true;
         writeFile(path, defaultJson(cfg));  // first run: seed a default
         return cfg;
     }
@@ -253,11 +258,24 @@ Config loadConfig() {
             }
     const Json& keybindings = j["keybindings"];
     if (keybindings.isObject()) {
+        bool conflict = false;
         for (const auto& item : keybindings.members()) {
             KeyChord chord;
-            if (parseKeyChord(utf8ToWide(item.second.asString()), chord))
-                cfg.keybindings.push_back({utf8ToWide(item.first), chord});
+            if (parseKeyChord(utf8ToWide(item.second.asString()), chord)) {
+                bool duplicate = false;
+                for (const auto& existing : cfg.keybindings)
+                    if (sameKeyChord(existing.chord, chord)) {
+                        duplicate = true;
+                        conflict = true;
+                        break;
+                    }
+                if (!duplicate)
+                    cfg.keybindings.push_back({utf8ToWide(item.first), chord});
+            }
         }
+        if (conflict)
+            configWarning(L"Two custom actions use the same shortcut. The first binding was kept; resolve the duplicate in config.json.",
+                          L"Liney - shortcut conflict");
     }
     // theme: either a preset NAME (string, e.g. "Azure Night") that picks a
     // coordinated terminal + chrome look, or the legacy { background,
@@ -327,6 +345,11 @@ Config loadConfig() {
         for (const Json& p : j["projects"].items())
             if (p.type() == Json::Type::String && !p.asString().empty())
                 cfg.projects.push_back(utf8ToWide(p.asString()));
+    if (j["recentProjects"].isArray())
+        for (const Json& p : j["recentProjects"].items())
+            if (p.type() == Json::Type::String && !p.asString().empty() &&
+                cfg.recentProjects.size() < 10)
+                cfg.recentProjects.push_back(utf8ToWide(p.asString()));
 
     if (cfg.shell.empty()) cfg.shell = L"cmd.exe";
     if (cfg.fontFamily.empty()) cfg.fontFamily = L"Cascadia Mono";

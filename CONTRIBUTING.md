@@ -89,7 +89,7 @@ Both accept `-BuildDir <dir>` to package from an existing build.
 
 ## Releasing
 
-The current release workflow accepts an Authenticode code-signing certificate
+The release workflow optionally accepts an Authenticode code-signing certificate
 with its private key in PFX/P12 format. Configure it once from an authenticated
 GitHub CLI session; the script validates the private key, Code Signing EKU, and
 validity period before writing encrypted repository secrets directly from
@@ -99,9 +99,11 @@ memory (`C:\secure\...` below is an example path, not a bundled certificate):
 powershell -ExecutionPolicy Bypass -File tools\configure-signing.ps1 -PfxPath C:\secure\liney-signing.pfx
 ```
 
-Do not commit the certificate. The release workflow refuses to publish an
-unsigned stable build, timestamps and verifies `Liney.exe`, `ghostty-vt.dll`,
-and the installer, then publishes SHA-256 checksums and an SBOM.
+Do not commit the certificate. When both secrets are configured, the workflow
+timestamps and verifies `Liney.exe`, `ghostty-vt.dll`, and the installer. When
+neither secret is configured, it publishes an explicitly labelled unsigned
+release with a prominent SmartScreen warning. Every release still publishes
+SHA-256 checksums and an SBOM. A partially configured credential pair fails.
 
 For qualifying open-source projects, SignPath Foundation is a free alternative
 that keeps the private key in an HSM and signs artifacts through GitHub Actions.
@@ -115,8 +117,9 @@ organization, project, policy, and API-token values can be wired into CI.
 2. Add a section to `CHANGELOG.md`.
 3. Merge, then tag: `git tag v0.x.0 && git push origin v0.x.0`.
 4. The `Release` workflow builds `liney-setup.exe` + `liney-portable.zip`, runs
-   upgrade/rollback/package smoke tests, signs the artifacts, and publishes the
-   GitHub release (it fails if the tag doesn't match `resource.rc`).
+   upgrade/rollback/package smoke tests, signs the artifacts when credentials
+   are available, and publishes the GitHub release (it fails if the tag doesn't
+   match `resource.rc`).
 
 ## Style & PRs
 

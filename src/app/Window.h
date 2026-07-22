@@ -53,6 +53,7 @@ private:
     void removeProject(const Repo& repo);   // drop a project, persist
     void setProjectIcon(const Repo& repo);  // pick an icon for a project, persist
     void persistWorkspaceConfig();   // write projects_ + projectIcons_ to config
+    void rememberRecentProject(const std::wstring& path);
     void drawTabBar(const Rect& r);
     void drawPanes(const Rect& r);
     void reapExitedPanes();
@@ -107,6 +108,7 @@ private:
     void openKeepAwakeMenu();          // duration picker beside the coffee button
     void openTabMenu(int x, int y);  // right-click a tab: close / open in explorer…
     void closeTab(size_t idx);       // close an entire tab (all its panes)
+    void togglePinActiveTab();
     // Close a tab, but confirm first if any of its shells is running a command
     // (a child process is alive). Used by the tab × button and the tab menu.
     void closeTabConfirming(size_t idx);
@@ -211,6 +213,7 @@ private:
     bool onPaletteKey(WPARAM key);
     void executePaletteAction(int id);
     std::vector<int> filteredPaletteActions() const;
+    std::wstring paletteActionLabel(int id) const;
     bool executeConfiguredBinding(int virtualKey, bool ctrl, bool shift, bool alt);
 
     HWND hwnd_ = nullptr;
@@ -243,6 +246,7 @@ private:
     std::vector<AgentDef> agents_;
     std::vector<std::pair<std::wstring, std::wstring>> projectIcons_;
     std::vector<std::wstring> projects_;   // explicit sidebar project folders
+    std::vector<std::wstring> recentProjects_;
     std::wstring workspaceRoot_;           // scanned root (empty = explicit only)
     Theme theme_;                  // terminal palette
     UiTheme uiTheme_;              // chrome palette (sidebar/tabs/accent/border)

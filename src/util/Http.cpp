@@ -74,7 +74,8 @@ bool validSha256(std::string digest) {
 
 } // namespace
 
-std::string httpsGet(const std::wstring& host, const std::wstring& path) {
+std::string httpsGet(const std::wstring& host, const std::wstring& path,
+                     const std::wstring& bearerToken) {
     std::string result;
     HINTERNET session = WinHttpOpen(L"liney-win/1.0",
                                     WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
@@ -98,7 +99,12 @@ std::string httpsGet(const std::wstring& host, const std::wstring& path) {
         return result;
     }
 
-    bool ok = WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+    const std::wstring headers = bearerToken.empty()
+        ? L"" : L"Authorization: Bearer " + bearerToken + L"\r\n";
+    bool ok = WinHttpSendRequest(request,
+                                 headers.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS
+                                                 : headers.c_str(),
+                                 headers.empty() ? 0 : static_cast<DWORD>(-1L),
                                  WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
               WinHttpReceiveResponse(request, nullptr);
     if (ok) {

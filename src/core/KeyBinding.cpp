@@ -82,4 +82,9 @@ std::wstring formatKeyChord(const KeyChord& chord) {
     return result;
 }
 
+bool sameKeyChord(const KeyChord& a, const KeyChord& b) {
+    return a.key != 0 && a.key == b.key && a.ctrl == b.ctrl &&
+           a.shift == b.shift && a.alt == b.alt;
+}
+
 } // namespace liney

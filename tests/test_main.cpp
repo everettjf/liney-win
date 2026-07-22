@@ -16,6 +16,7 @@
 #include "core/KeyBinding.h"
 #include "core/SshProfiles.h"
 #include "core/Update.h"
+#include "core/WindowGeometry.h"
 #include "core/Ai.h"
 
 namespace {
@@ -29,6 +30,23 @@ void check(bool cond, const char* what) {
         ++g_failures;
         std::printf("  FAIL: %s\n", what);
     }
+}
+
+void testWindowGeometry() {
+    std::printf("Window restore geometry\n");
+    using liney::WindowRect;
+    WindowRect r = liney::clampWindowToWorkArea(
+        {-3000, 100, 900, 700}, {-1920, 0, 1920, 1040});
+    check(r.x == -1920 && r.y == 100,
+          "off-left window returns to secondary monitor");
+    r = liney::clampWindowToWorkArea(
+        {1500, 900, 800, 600}, {0, 0, 1920, 1040});
+    check(r.x == 1120 && r.y == 440,
+          "off-right/bottom window remains reachable");
+    r = liney::clampWindowToWorkArea(
+        {400, 300, 2400, 1400}, {0, 0, 1920, 1040});
+    check(r.x == 0 && r.y == 0,
+          "oversized window anchors at work-area origin");
 }
 
 void testUpdatePolicy() {
@@ -47,6 +65,16 @@ void testUpdatePolicy() {
     check(!liney::parseTrustedInstallerUrl(
               L"https://github.com/other/repo/releases/download/v1/a.exe", host, path),
           "foreign GitHub repository rejected");
+    check(liney::updatePreservesPublisherTrust(false, false, false),
+          "unsigned install may receive checksum-verified unsigned update");
+    check(liney::updatePreservesPublisherTrust(false, true, false),
+          "unsigned install may upgrade to a signed update");
+    check(!liney::updatePreservesPublisherTrust(true, false, false),
+          "signed install never downgrades to unsigned update");
+    check(!liney::updatePreservesPublisherTrust(true, true, false),
+          "signed install rejects a different publisher");
+    check(liney::updatePreservesPublisherTrust(true, true, true),
+          "signed install accepts the same publisher");
 }
 
 void testAiSafety() {
@@ -288,6 +316,10 @@ void testKeyBindings() {
           "parses function key");
     check(liney::parseKeyChord(L"Ctrl+Comma", chord) && chord.key == 0xBC,
           "parses punctuation name");
+    liney::KeyChord duplicate;
+    check(liney::parseKeyChord(L"Ctrl+Comma", duplicate) &&
+              liney::sameKeyChord(chord, duplicate),
+          "detects conflicting shortcut chords");
     check(!liney::parseKeyChord(L"Ctrl+Hyper", chord), "rejects unknown key");
 }
 
@@ -315,6 +347,7 @@ void testSshProfiles() {
 } // namespace
 
 int main() {
+    testWindowGeometry();
     testJson();
     testJsonHardening();
     testOscParser();

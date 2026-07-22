@@ -21,5 +21,6 @@ struct KeyBinding {
 
 bool parseKeyChord(const std::wstring& text, KeyChord& chord);
 std::wstring formatKeyChord(const KeyChord& chord);
+bool sameKeyChord(const KeyChord& a, const KeyChord& b);
 
 } // namespace liney

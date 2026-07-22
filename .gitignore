@@ -21,6 +21,7 @@ build-ghostty/
 build-tests/
 build-zig*/
 build-tests-zig/
+compatibility-*.json
 
 # Local toolchain (e.g. pinned Zig)
 .toolchain/

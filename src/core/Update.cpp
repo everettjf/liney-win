@@ -43,4 +43,9 @@ bool parseTrustedInstallerUrl(const std::wstring& url, std::wstring& host,
            path.find(L'\\') == std::wstring::npos;
 }
 
+bool updatePreservesPublisherTrust(bool currentSigned, bool candidateSigned,
+                                   bool samePublisher) {
+    return !currentSigned || (candidateSigned && samePublisher);
+}
+
 } // namespace liney

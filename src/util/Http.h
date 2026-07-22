@@ -7,7 +7,8 @@ namespace liney {
 // Minimal HTTPS GET via WinHTTP. Returns the response body as a UTF-8 string
 // (empty on any failure). `host` is a bare host (e.g. L"api.github.com"); `path`
 // begins with '/'. A User-Agent is sent (GitHub requires one).
-std::string httpsGet(const std::wstring& host, const std::wstring& path);
+std::string httpsGet(const std::wstring& host, const std::wstring& path,
+                     const std::wstring& bearerToken = L"");
 
 // HTTPS JSON POST for OpenAI-compatible APIs. The bearer token is kept in
 // memory and sent as an Authorization header; it is never logged or persisted.

@@ -29,6 +29,10 @@
 #include "vt/Terminal.h"
 #include "util/Diagnostics.h"
 #include "util/Process.h"
+#include "util/Http.h"
+#include "util/Json.h"
+#include "util/Authenticode.h"
+#include "core/Update.h"
 #include "app/WindowInternal.h"
 
 namespace {
@@ -99,6 +103,53 @@ bool runCliIfRequested(int& exitCode) {
         }
         emitRaw("\x1b]777;agent-status;" + sanitizeOsc(value, true) + "\x07");
         exitCode = 0;
+        return true;
+    }
+    if (cmd == L"update-self-test" && __argc >= 3) {
+        wchar_t token[4096]{};
+        GetEnvironmentVariableW(L"LINEY_UPDATE_TEST_TOKEN", token,
+                                static_cast<DWORD>(_countof(token)));
+        const std::string body = liney::httpsGet(
+            L"api.github.com", L"/repos/everettjf/liney-win/releases/latest",
+            token);
+        bool parsed = false;
+        const liney::Json release = liney::Json::parse(body, &parsed);
+        const std::string expected = cliWideToUtf8(__wargv[2]);
+        if (!parsed || release["tag_name"].asString() != "v" + expected) {
+            exitCode = 73; return true;
+        }
+        std::wstring url;
+        std::string digest;
+        for (const liney::Json& asset : release["assets"].items()) {
+            if (asset["name"].asString() == "liney-setup.exe") {
+                url = liney::utf8ToWide(asset["browser_download_url"].asString());
+                const std::string value = asset["digest"].asString();
+                if (value.rfind("sha256:", 0) == 0 && value.size() == 71)
+                    digest = value.substr(7);
+                break;
+            }
+        }
+        std::wstring host, path;
+        if (url.empty() || digest.empty() ||
+            !liney::parseTrustedInstallerUrl(url, host, path)) {
+            exitCode = 74; return true;
+        }
+        wchar_t temp[MAX_PATH]{}, file[MAX_PATH]{};
+        if (!GetTempPathW(MAX_PATH, temp) ||
+            !GetTempFileNameW(temp, L"lnu", 0, file)) {
+            exitCode = 75; return true;
+        }
+        const bool downloaded = liney::httpsDownload(host, path, file, digest);
+        wchar_t current[MAX_PATH]{};
+        GetModuleFileNameW(nullptr, current, static_cast<DWORD>(_countof(current)));
+        const bool currentSigned = liney::verifyAuthenticode(current);
+        const bool candidateSigned = downloaded && liney::verifyAuthenticode(file);
+        const bool same = currentSigned && candidateSigned &&
+                          liney::sameAuthenticodePublisher(current, file);
+        const bool trusted = downloaded && liney::updatePreservesPublisherTrust(
+            currentSigned, candidateSigned, same);
+        DeleteFileW(file);
+        exitCode = trusted ? 0 : 76;
         return true;
     }
     if (cmd == L"self-test") {
@@ -239,6 +290,31 @@ bool runCliIfRequested(int& exitCode) {
             L"cmd.exe", L"\\\\liney-invalid-host\\missing-share", 80, 24, 100);
         if (unexpectedlyStarted || GetTickCount64() - networkStarted > 5000) {
             exitCode = 64; return true;
+        }
+        // A remote shell can disappear at any time. Preserve the exited
+        // session, then prove a replacement ConPTY can start and produce
+        // output without restarting the application process.
+        liney::TerminalSession disconnected;
+        if (!disconnected.start(L"cmd.exe /d /s /c \"exit 7\"", L"", 80, 24, 100)) {
+            exitCode = 69; return true;
+        }
+        const ULONGLONG disconnectDeadline = GetTickCount64() + 5000;
+        while (!disconnected.exited() && GetTickCount64() < disconnectDeadline)
+            Sleep(5);
+        if (!disconnected.exited()) { exitCode = 70; return true; }
+        liney::TerminalSession reconnected;
+        if (!reconnected.start(L"cmd.exe /d /s /c \"echo reconnect-ok\"",
+                               L"", 80, 24, 100)) {
+            exitCode = 71; return true;
+        }
+        const ULONGLONG reconnectDeadline = GetTickCount64() + 5000;
+        while (!reconnected.exited() && GetTickCount64() < reconnectDeadline)
+            Sleep(5);
+        Sleep(100);
+        std::string reconnectOutput;
+        if (!reconnected.dumpBufferUtf8(reconnectOutput) ||
+            reconnectOutput.find("reconnect-ok") == std::string::npos) {
+            exitCode = 72; return true;
         }
         exitCode = GetTickCount64() - started < 45000 ? 0 : 65;
         return true;

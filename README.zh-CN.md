@@ -165,6 +165,7 @@ powershell -ExecutionPolicy Bypass -File tools\build.ps1
 |---|---|
 | `shell` | 新标签的 shell(`powershell.exe` / `pwsh.exe` / `wsl.exe`;`wsl tmux` 跑 tmux) |
 | `workspaceRoot` | 侧边栏扫描根目录；留空则不自动扫描，只显示手动添加的项目 |
+| `keybindings` | 操作名到快捷键（如 `Ctrl+Shift+P`）的映射；重复快捷键会提示并忽略 |
 | `unixTools` | 把 Git 的 `usr\bin` 加进 PATH,使 `ls`/`cat`/`grep`/… 可用 |
 | `copyOnSelect` | 选择结束即复制到剪贴板(PuTTY 风格) |
 | `fontSize` | 终端字号;`Ctrl +/-/0` 与 `Ctrl+滚轮` 会更新并记忆 |

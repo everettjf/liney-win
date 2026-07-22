@@ -30,6 +30,12 @@ public:
     // the tab has no panes left (caller should drop the tab).
     bool closeActive();
 
+    // Move the active session out of this split, collapsing its former parent.
+    // Returns null for a single-pane tab (which callers can duplicate instead).
+    std::unique_ptr<TerminalSession> detachActive();
+    void swapActiveWithNext();
+    void moveActiveForward();
+
     // Close every pane except the active one, collapsing the tab back to a
     // single pane. No-op when already a single pane.
     void closeOthers();
@@ -53,11 +59,17 @@ public:
     void focusDir(SplitDir axis, bool positive);     // move focus geometrically
     std::vector<Pane*> leaves() const;
     std::wstring title() const;
+    void setCustomTitle(std::wstring value) { customTitle_ = std::move(value); }
+    const std::wstring& customTitle() const { return customTitle_; }
+    void setPinned(bool value) { pinned_ = value; }
+    bool pinned() const { return pinned_; }
 
 private:
     std::unique_ptr<Pane> root_;
     Pane* active_ = nullptr;
     Pane* zoom_ = nullptr;  // zoomed leaf (fills the tab), or nullptr
+    std::wstring customTitle_;
+    bool pinned_ = false;
 };
 
 } // namespace liney

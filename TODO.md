@@ -2,7 +2,7 @@
 
 ## Deferred: Windows code signing and Store distribution
 
-Code signing is intentionally excluded from the current v0.8.0 stability goal.
+Code signing is intentionally excluded from the current v0.8.x stability goal.
 Unsigned GitHub release artifacts remain acceptable until one of the following
 distribution paths is ready.
 
@@ -23,4 +23,3 @@ distribution paths is ready.
     Actions release workflow for `Liney.exe` and `liney-setup.exe`.
   - Verify Authenticode signatures and retain installer upgrade/uninstall smoke
     tests before publishing each release.
-

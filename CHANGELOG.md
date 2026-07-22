@@ -3,6 +3,43 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
+## [0.9.0] - 2026-07-22
+
+### Added
+- The command palette now uses fuzzy matching across built-in actions, local
+  shell profiles, workspaces, worktrees, recent projects, SSH hosts and agents.
+- Recent projects persist locally and can be reopened directly from the command
+  palette.
+- Tabs can be pinned, renamed and duplicated. Pinned tabs stay grouped first,
+  and their metadata is preserved in layouts and workspace snapshots.
+- Split panes can be swapped or moved into a new tab from the pane menu or the
+  command palette.
+- First launch now explains the main workflow and offers to open Settings.
+- Headless display tests cover WARP fallback, simulated GPU device loss and
+  100%-300% DPI scaling. Stability soak tests enforce memory peak and growth
+  budgets and exercise remote-session disconnect/reconnect behavior.
+
+### Changed
+- Custom shortcuts detect duplicate chords, keep the first safe binding and
+  report the conflict. New tab and pane actions are also bindable.
+- The UI Automation root exposes a stable name, automation ID, keyboard focus,
+  help text and the command-palette accelerator for assistive tools.
+
+## [0.8.1] - 2026-07-22
+
+### Changed
+- Stable releases can be published without Authenticode credentials while code
+  signing enrollment is pending. Unsigned releases carry a prominent Windows
+  SmartScreen warning; SHA-256 checksums, SPDX SBOM generation, clean install,
+  upgrade, portable and uninstall smoke tests remain mandatory.
+- Update trust is monotonic: an unsigned installation may consume an official
+  repository update verified by its GitHub SHA-256 digest, but a signed running
+  installation rejects unsigned installers and installers from another signer.
+
+### Fixed
+- Release metadata, MSIX/NSIS manifests and WinGet templates now agree on the
+  v0.8.1 version and current portable executable layout.
+
 ## [0.8.0] - 2026-07-22
 
 ### Added
@@ -30,9 +67,9 @@ All notable changes to liney-win. Versioning follows [SemVer](https://semver.org
   dismissal; failed restores keep it for another attempt.
 
 ### Security
-- Stable release publication requires Authenticode credentials. Application,
-  terminal-core and installer signatures are timestamped and verified before
-  release assets can be published.
+- Release artifacts support optional Authenticode signing. When credentials are
+  configured, application, terminal-core and installer signatures are
+  timestamped and verified before release assets can be published.
 
 ## [0.7.0] - 2026-07-21
 

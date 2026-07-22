@@ -40,6 +40,7 @@ public:
 
     const std::wstring& root() const { return root_; }
     std::vector<Repo>& repos() { return repos_; }
+    const std::vector<Repo>& repos() const { return repos_; }
 
     // Populate repo.worktrees via `git worktree list` (no-op if already loaded).
     void loadWorktrees(Repo& repo);

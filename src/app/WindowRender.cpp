@@ -254,6 +254,7 @@ void Window::drawTabBar(const Rect& r) {
     float x = r.x + toggleW;
     for (size_t i = 0; i < tabs_.size(); ++i) {
         std::wstring title = tabs_[i]->title();
+        if (tabs_[i]->pinned()) title = L"● " + title;
         if (title.size() > 18) {
             size_t cut = 17;
             // Don't split a surrogate pair (emoji / non-BMP CJK in titles).

@@ -98,13 +98,17 @@ nothing but the OS.
 - **Reliability tooling**: atomic configuration recovery, rotating diagnostics,
   bounded crash dumps, one-click privacy-safe diagnostic ZIP export, abnormal
   exit tab/pane/cwd recovery, restartable exited shells, transactional update
-  rollback, mandatory signed releases, and reproducible Ghostty pinning
+  rollback, signed-install downgrade protection, and reproducible Ghostty pinning
 - **Command blocks** from OSC 133: jump, copy command/output, rerun, bookmark,
   and inspect exit status/duration from the pane menu
 - **Searchable local command history**: bounded, secret-redacted, and inserts a
   selected result for review without executing it
 - **Named workspace snapshots** and isolated Agent worktrees with Git/test/review
   actions; Agent sessions remain available after exit for inspection
+- **Fuzzy command palette** (`Ctrl+Shift+P`) searches actions, shell profiles,
+  workspaces, worktrees, recent projects, SSH hosts and agents
+- **Flexible tabs and panes**: pin, rename or duplicate tabs; swap panes or move
+  a pane into its own tab, with tab metadata preserved in workspace snapshots
 
 ## 📸 Screenshots
 
@@ -193,6 +197,7 @@ The first run writes `%USERPROFILE%\.liney\config.json` (mirroring macOS liney's
 |---|---|
 | `shell` | Shell for new tabs (`powershell.exe` / `pwsh.exe` / `wsl.exe`; `wsl tmux` for tmux) |
 | `workspaceRoot` | Directory scanned for repos; empty disables discovery and shows explicit projects only |
+| `keybindings` | Object mapping action names to chords such as `Ctrl+Shift+P`; duplicate chords are reported and ignored |
 | `unixTools` | Append Git's `usr\bin` to PATH so `ls`/`cat`/`grep`/… work |
 | `copyOnSelect` | Copy to the clipboard as soon as a selection ends (PuTTY-style) |
 | `multiLinePasteWarning` | Confirm before pasting text with line breaks (each break runs as Enter) |
@@ -213,6 +218,12 @@ uses `OPENAI_API_KEY`; custom compatible APIs use `LINEY_AI_API_KEY`; Codex CLI
 uses the user's existing Codex sign-in. Keys are read from the process
 environment and are never stored by Liney. The request includes only the last
 command block after redaction, never the full terminal history.
+
+Custom shortcut action names include `newTab`, `splitRight`, `splitDown`,
+`toggleSidebar`, `toggleFiles`, `zoomPane`, `equalize`, `find`, `settings`,
+`workspaceSnapshots`, `checkUpdates`, `keepAwake`, `commandPalette`,
+`newWindow`, `newAdminWindow`, `searchHistory`, `exportDiagnostics`,
+`renameTab`, `pinTab`, `duplicateTab`, `swapPane`, `movePane`, and `detachPane`.
 
 The window layout is saved to `%USERPROFILE%\.liney\layout.json` and restored on
 the next launch.

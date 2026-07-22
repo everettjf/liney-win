@@ -51,6 +51,25 @@ public:
             value->vt = VT_BSTR;
             value->bstrVal = SysAllocString(L"Liney.MainWindow");
             break;
+        case UIA_HelpTextPropertyId:
+            value->vt = VT_BSTR;
+            value->bstrVal = SysAllocString(
+                L"Terminal workspace. Press Ctrl+Shift+P to search commands, "
+                L"profiles, workspaces, SSH hosts and agents.");
+            break;
+        case UIA_AcceleratorKeyPropertyId:
+            value->vt = VT_BSTR;
+            value->bstrVal = SysAllocString(L"Ctrl+Shift+P");
+            break;
+        case UIA_LocalizedControlTypePropertyId:
+            value->vt = VT_BSTR;
+            value->bstrVal = SysAllocString(L"terminal workspace");
+            break;
+        case UIA_IsControlElementPropertyId:
+        case UIA_IsContentElementPropertyId:
+            value->vt = VT_BOOL;
+            value->boolVal = VARIANT_TRUE;
+            break;
         case UIA_IsKeyboardFocusablePropertyId:
             value->vt = VT_BOOL;
             value->boolVal = VARIANT_TRUE;

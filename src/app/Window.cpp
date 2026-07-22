@@ -42,6 +42,18 @@ static constexpr UINT_PTR kRecoveryTimerId = 0x5243; // 'RC'
 // Monitor DPI as a 96-relative scale. GetDpiForWindow is Win10 1607+, so load it
 // dynamically and fall back to the device caps.
 static float queryDpiScale(HWND hwnd) {
+    wchar_t simulated[16]{};
+    wchar_t headless[8]{};
+    if (GetEnvironmentVariableW(L"LINEY_HEADLESS", headless,
+                                static_cast<DWORD>(_countof(headless))) > 0) {
+        const DWORD count = GetEnvironmentVariableW(
+            L"LINEY_TEST_DPI", simulated,
+            static_cast<DWORD>(_countof(simulated)));
+        if (count > 0 && count < _countof(simulated)) {
+            const unsigned long dpi = wcstoul(simulated, nullptr, 10);
+            if (dpi >= 96 && dpi <= 480) return static_cast<float>(dpi) / 96.0f;
+        }
+    }
     using GetDpiFn = UINT(WINAPI*)(HWND);
     static GetDpiFn fn = []() -> GetDpiFn {
         if (HMODULE u = GetModuleHandleW(L"user32.dll"))
@@ -218,6 +230,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     agents_ = cfg.agents;
     projectIcons_ = cfg.projectIcons;
     projects_ = cfg.projects;
+    recentProjects_ = cfg.recentProjects;
     workspaceRoot_ = cfg.workspaceRoot;
     theme_ = cfg.theme;
     uiTheme_ = cfg.uiTheme;
@@ -292,6 +305,16 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     const bool headless = GetEnvironmentVariableW(
         L"LINEY_HEADLESS", headlessMode,
         static_cast<DWORD>(_countof(headlessMode))) > 0;
+    if (cfg.firstRun && !headless) {
+        const int configure = MessageBoxW(
+            hwnd_,
+            L"Welcome to Liney.\n\n"
+            L"Use Ctrl+Shift+P to search every command, workspace, shell, SSH "
+            L"host and agent. Use the + menu to start PowerShell, CMD or WSL.\n\n"
+            L"Open Settings now to choose your default shell, theme and workspace?",
+            L"Welcome to Liney", MB_YESNO | MB_ICONINFORMATION | MB_DEFBUTTON1);
+        if (configure == IDYES) openSettingsDialog();
+    }
     if (checkForUpdatesOnStartup_ && !headless) checkForUpdates(true);
     return true;
 }
@@ -1267,6 +1290,11 @@ void Window::openTabMenu(int xi, int yi) {
     AppendMenuW(m, MF_STRING, 2, L"Open in Explorer");
     AppendMenuW(m, MF_STRING, 3, L"Copy path");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m, MF_STRING | (tabs_[idx]->pinned() ? MF_CHECKED : 0), 9,
+                L"Pin tab");
+    AppendMenuW(m, MF_STRING, 10, L"Rename tab…");
+    AppendMenuW(m, MF_STRING, 11, L"Duplicate tab");
+    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING, 4, L"Close tab\tCtrl+Shift+W");
     // Close-multiple, each disabled when it would be a no-op.
     const UINT dR = (idx + 1 < n) ? 0u : MF_GRAYED;
@@ -1300,6 +1328,17 @@ void Window::openTabMenu(int xi, int yi) {
             CloseClipboard();
         }
         break;
+    case 9: togglePinActiveTab(); break;
+    case 10: {
+        const std::wstring title = inputBox(hwnd_, L"Rename tab", L"Tab title:",
+                                            tabs_[idx]->customTitle());
+        tabs_[idx]->setCustomTitle(title);
+        updateTitle();
+        break;
+    }
+    case 11:
+        if (s) newTabShell(s->shellCommand(), cwd.empty() ? homeDir() : cwd);
+        break;
     case 4: closeTabConfirming(idx); break;
     case 5: {  // tabs to the right
         std::vector<size_t> v;
@@ -1327,6 +1366,17 @@ void Window::openTabMenu(int xi, int yi) {
     }
     default: break;
     }
+}
+
+void Window::togglePinActiveTab() {
+    if (activeTab_ >= tabs_.size()) return;
+    Tab* selected = tabs_[activeTab_].get();
+    selected->setPinned(!selected->pinned());
+    std::stable_sort(tabs_.begin(), tabs_.end(), [](const auto& a, const auto& b) {
+        return a->pinned() && !b->pinned();
+    });
+    for (size_t i = 0; i < tabs_.size(); ++i)
+        if (tabs_[i].get() == selected) { activeTab_ = i; break; }
 }
 
 bool Window::tabHasRunningProcess(size_t idx) const {

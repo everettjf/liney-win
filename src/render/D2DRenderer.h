@@ -112,6 +112,7 @@ private:
     bool deviceLost_ = false;   // EndDraw/Present reported device removal
     bool frameOpen_ = false;    // BeginDraw issued; endFrame may EndDraw
     bool atlasNeedsReset_ = false;  // atlas overflowed mid-frame; wipe between frames
+    bool simulatedDeviceLoss_ = false; // one-shot headless recovery test hook
     // Per-cell find-highlight overlay, rebuilt at the top of drawGrid
     // (0 none, 1 match, 2 active match). Member to avoid per-frame realloc.
     std::vector<uint8_t> findOverlay_;
