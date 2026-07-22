@@ -255,6 +255,45 @@ bool runCliIfRequested(int& exitCode) {
         exitCode = !ok && GetTickCount64() - started < 3000 ? 0 : 24;
         return true;
     }
+    if (cmd == L"remote-self-test") {
+        auto waitForExit = [](liney::TerminalSession& session, DWORD timeout) {
+            const ULONGLONG deadline = GetTickCount64() + timeout;
+            while (!session.exited() && GetTickCount64() < deadline) Sleep(10);
+            return session.exited();
+        };
+
+        wchar_t sshPath[MAX_PATH]{};
+        if (SearchPathW(nullptr, L"ssh.exe", nullptr,
+                        static_cast<DWORD>(_countof(sshPath)), sshPath,
+                        nullptr)) {
+            const wchar_t* sshFailure =
+                L"ssh.exe -o BatchMode=yes -o ConnectTimeout=2 "
+                L"-o ConnectionAttempts=1 -o StrictHostKeyChecking=no "
+                L"-o UserKnownHostsFile=NUL liney@192.0.2.1 exit";
+            for (int attempt = 0; attempt < 2; ++attempt) {
+                liney::TerminalSession ssh;
+                if (!ssh.start(sshFailure, L"", 80, 24, 100) ||
+                    !waitForExit(ssh, 8000)) {
+                    exitCode = 77; return true;
+                }
+            }
+        }
+
+        liney::TerminalSession wsl;
+        bool wslAvailable = wsl.start(
+            L"wsl.exe -e sh -lc \"printf liney-wsl-ok\"", L"", 80, 24, 100);
+        if (wslAvailable) {
+            wslAvailable = waitForExit(wsl, 10000);
+            Sleep(100);
+            std::string output;
+            wslAvailable = wslAvailable && wsl.dumpBufferUtf8(output) &&
+                           output.find("liney-wsl-ok") != std::string::npos;
+        }
+        const bool requireWsl = __argc >= 3 &&
+                                std::wstring(__wargv[2]) == L"require-wsl";
+        exitCode = (!requireWsl || wslAvailable) ? 0 : 78;
+        return true;
+    }
     if (cmd == L"stability-self-test") {
         const ULONGLONG started = GetTickCount64();
         liney::TerminalSession large;

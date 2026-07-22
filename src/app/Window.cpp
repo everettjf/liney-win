@@ -418,6 +418,28 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
         markRenderDirty();
         return 0;
     }
+    case WM_POWERBROADCAST:
+        if (wParam == PBT_APMSUSPEND) {
+            // Stop relying on any queued frame while the graphics stack and
+            // monitors are transitioning into sleep.
+            markRenderDirty();
+            return TRUE;
+        }
+        if (wParam == PBT_APMRESUMEAUTOMATIC ||
+            wParam == PBT_APMRESUMESUSPEND) {
+            // A resume can replace the D3D device, monitor, or effective DPI.
+            // Re-read all display-dependent state; present() will recreate a
+            // lost device through the renderer's normal recovery path.
+            dpiScale_ = queryDpiScale(hwnd_);
+            applyFont();
+            RECT rc{};
+            if (GetClientRect(hwnd_, &rc) && renderer_)
+                renderer_->resize(rc.right - rc.left, rc.bottom - rc.top);
+            markRenderDirty();
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            return TRUE;
+        }
+        return DefWindowProcW(hwnd_, msg, wParam, lParam);
     case WM_SETTINGCHANGE:
         applyHighContrastIfEnabled();
         if (renderer_) renderer_->setColors(uiTheme_.workspaceBg, theme_.background);

@@ -1,0 +1,66 @@
+name: Windows Client Certification
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_ref:
+        description: Candidate tag or commit
+        required: true
+        default: main
+      previous_tag:
+        description: Previous release used for upgrade testing
+        required: true
+        default: v0.9.0
+
+jobs:
+  certify:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: Windows10
+            runner_label: liney-windows-10
+          - target: Windows11
+            runner_label: liney-windows-11
+    runs-on: [self-hosted, Windows, X64, "${{ matrix.runner_label }}"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_ref }}
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Set up Zig 0.15.2
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+      - name: Ensure NSIS
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis.exe -ErrorAction SilentlyContinue)) {
+            winget install --id NSIS.NSIS --exact --silent --accept-package-agreements --accept-source-agreements
+          }
+      - name: Build candidate packages
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools\make-installer.ps1
+      - name: Download previous installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download '${{ inputs.previous_tag }}' --pattern liney-setup.exe --dir previous
+      - name: Certify client
+        shell: pwsh
+        run: >-
+          powershell -ExecutionPolicy Bypass -File tools\client-certification.ps1
+          -Target '${{ matrix.target }}'
+          -Exe build-ghostty\Liney.exe
+          -Installer dist\liney-setup.exe
+          -PortableZip dist\liney-portable.zip
+          -PreviousInstaller previous\liney-setup.exe
+          -Output client-${{ matrix.target }}.json
+      - name: Upload certification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-${{ matrix.target }}-${{ inputs.candidate_ref }}
+          path: client-${{ matrix.target }}.json
+          if-no-files-found: warn

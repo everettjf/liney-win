@@ -9,6 +9,7 @@ $ErrorActionPreference = 'Stop'
 $resolved = (Resolve-Path -LiteralPath $Exe).Path
 $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(10, $DurationSeconds))
 $iterations = 0
+$crashes = 0
 $peak = 0L
 $firstPeak = 0L
 $lastPeak = 0L
@@ -22,6 +23,7 @@ while ([DateTime]::UtcNow -lt $deadline) {
         if (-not $process.WaitForExit(100)) { continue }
     }
     if ($process.ExitCode -ne 0) {
+        ++$crashes
         throw "Stability soak iteration $iterations failed with $($process.ExitCode)"
     }
     if ($iterations -eq 0) { $firstPeak = $iterationPeak }
@@ -37,4 +39,6 @@ if ($peakMB -gt $MaxPeakWorkingSetMB) {
 if ($growthMB -gt $MaxGrowthMB) {
     throw "Stability working-set growth ${growthMB}MB exceeds budget ${MaxGrowthMB}MB"
 }
-Write-Host "Stability soak passed: iterations=$iterations duration=${DurationSeconds}s peak=${peakMB}MB growth=${growthMB}MB"
+if ($crashes -ne 0) { throw "Crash-rate gate failed: $crashes crashes." }
+$crashRate = if ($iterations) { $crashes / $iterations } else { 0 }
+Write-Host "Stability soak passed: iterations=$iterations duration=${DurationSeconds}s peak=${peakMB}MB growth=${growthMB}MB crashes=$crashes crashRate=$crashRate"

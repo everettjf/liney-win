@@ -68,6 +68,16 @@ if ($processTest.ExitCode -ne 0) {
 }
 Write-Host 'Bounded child-process capture/timeout self-test passed.'
 
+$remoteTest = [Diagnostics.Process]::Start($resolved, 'remote-self-test')
+if (-not $remoteTest.WaitForExit(20000)) {
+    $remoteTest.Kill()
+    throw 'WSL/SSH disconnect and reconnect self-test timed out.'
+}
+if ($remoteTest.ExitCode -ne 0) {
+    throw "WSL/SSH disconnect and reconnect self-test failed with exit code $($remoteTest.ExitCode)."
+}
+Write-Host 'WSL/SSH disconnect and reconnect self-test passed (WSL when installed).'
+
 $stability = [Diagnostics.Process]::Start($resolved, 'stability-self-test')
 if (-not $stability.WaitForExit(50000)) {
     $stability.Kill()

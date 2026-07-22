@@ -3,6 +3,21 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
+## [Unreleased]
+
+### Added
+- Suspend/resume handling now rebuilds display-dependent state after Windows
+  power transitions, with a message-level recovery smoke test in CI.
+- Remote-session smoke tests exercise real bounded OpenSSH failures and require
+  WSL during Windows 10/11 client certification.
+- A self-hosted Windows client certification workflow enforces Windows 10 22H2
+  and current Windows 11 evidence, including multi-monitor coverage on Windows
+  11, package lifecycle tests and machine-readable reports.
+
+### Changed
+- Stability soak output now records a zero-crash rate gate alongside peak and
+  growth memory budgets.
+
 ## [0.9.0] - 2026-07-22
 
 ### Added

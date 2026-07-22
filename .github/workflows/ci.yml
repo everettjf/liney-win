@@ -49,6 +49,9 @@ jobs:
       - name: GPU recovery, WARP, and DPI matrix
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\display-smoke.ps1 -Exe build-ghostty\Liney.exe
+      - name: Suspend and resume display recovery
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools\power-resume-smoke.ps1 -Exe build-ghostty\Liney.exe
       - name: Windows compatibility report
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\compatibility-smoke.ps1 -Exe build-ghostty\Liney.exe -Output compatibility-${{ matrix.os }}.json
