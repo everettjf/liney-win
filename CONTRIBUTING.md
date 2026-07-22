@@ -89,11 +89,11 @@ Both accept `-BuildDir <dir>` to package from an existing build.
 
 ## Releasing
 
-Stable releases require an Authenticode code-signing certificate with its
-private key in PFX/P12 format. Configure it once from an authenticated GitHub
-CLI session; the script validates the private key, Code Signing EKU, and
+The current release workflow accepts an Authenticode code-signing certificate
+with its private key in PFX/P12 format. Configure it once from an authenticated
+GitHub CLI session; the script validates the private key, Code Signing EKU, and
 validity period before writing encrypted repository secrets directly from
-memory:
+memory (`C:\secure\...` below is an example path, not a bundled certificate):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\configure-signing.ps1 -PfxPath C:\secure\liney-signing.pfx
@@ -102,6 +102,11 @@ powershell -ExecutionPolicy Bypass -File tools\configure-signing.ps1 -PfxPath C:
 Do not commit the certificate. The release workflow refuses to publish an
 unsigned stable build, timestamps and verifies `Liney.exe`, `ghostty-vt.dll`,
 and the installer, then publishes SHA-256 checksums and an SBOM.
+
+For qualifying open-source projects, SignPath Foundation is a free alternative
+that keeps the private key in an HSM and signs artifacts through GitHub Actions.
+Enrollment and project approval must be completed with SignPath before its
+organization, project, policy, and API-token values can be wired into CI.
 
 1. Bump the version in `res\resource.rc` (FILEVERSION/PRODUCTVERSION + the two
    string values), `src\app\WindowInternal.h` (`kAppVersion`),
