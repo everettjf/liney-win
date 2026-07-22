@@ -97,6 +97,7 @@ private:
     void applyTheme(const std::wstring& presetName, const Color& accent);
     void applyHighContrastIfEnabled();
     void openMainMenu();              // overflow menu (top-right three dots)
+    void setScheduledShutdown(int hours); // 0 cancels; otherwise supported preset
     void openDirectoryMenu();         // app picker for the active pane cwd
     void openCurrentDirectory(UINT);  // 30 Explorer, 31 PowerShell, 32.. editors
     void openNewWindow(bool elevated);

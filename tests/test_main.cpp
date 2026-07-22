@@ -15,6 +15,7 @@
 #include "util/Base64.h"
 #include "core/KeyBinding.h"
 #include "core/SshProfiles.h"
+#include "core/Shutdown.h"
 #include "core/Update.h"
 #include "core/WindowGeometry.h"
 #include "core/Ai.h"
@@ -47,6 +48,24 @@ void testWindowGeometry() {
         {400, 300, 2400, 1400}, {0, 0, 1920, 1040});
     check(r.x == 0 && r.y == 0,
           "oversized window anchors at work-area origin");
+}
+
+void testScheduledShutdown() {
+    std::printf("Scheduled shutdown commands\n");
+    struct Preset { int hours; const wchar_t* seconds; };
+    static const Preset presets[] = {
+        {1, L"3600"}, {2, L"7200"}, {3, L"10800"},
+        {6, L"21600"}, {12, L"43200"}, {24, L"86400"},
+    };
+    for (const Preset& preset : presets) {
+        check(liney::scheduledShutdownCommand(preset.hours) ==
+                  L"shutdown.exe -s -t " + std::wstring(preset.seconds),
+              "shutdown preset maps to exact seconds");
+    }
+    check(liney::scheduledShutdownCommand(4).empty(),
+          "unsupported shutdown duration is rejected");
+    check(liney::cancelShutdownCommand() == L"shutdown.exe -a",
+          "cancel command uses shutdown abort");
 }
 
 void testUpdatePolicy() {
@@ -347,6 +366,7 @@ void testSshProfiles() {
 } // namespace
 
 int main() {
+    testScheduledShutdown();
     testWindowGeometry();
     testJson();
     testJsonHardening();

@@ -3,9 +3,12 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
-## [Unreleased]
+## [0.9.1] - 2026-07-22
 
 ### Added
+- The overflow menu now offers scheduled Windows shutdown after 1, 2, 3, 6,
+  12 or 24 hours, plus cancellation. Scheduling uses `shutdown.exe -s -t`
+  with an explicit confirmation and fixed, injection-safe duration presets.
 - Suspend/resume handling now rebuilds display-dependent state after Windows
   power transitions, with a message-level recovery smoke test in CI.
 - Remote-session smoke tests exercise real bounded OpenSSH failures and require
@@ -15,6 +18,8 @@ All notable changes to liney-win. Versioning follows [SemVer](https://semver.org
   11, package lifecycle tests and machine-readable reports.
 
 ### Changed
+- Report issue and diagnostic actions are grouped under a compact
+  **Support & diagnostics** submenu.
 - Stability soak output now records a zero-crash rate gate alongside peak and
   growth memory budgets.
 

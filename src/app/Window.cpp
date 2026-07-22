@@ -21,6 +21,7 @@
 #include "core/Config.h"
 #include "core/CommandHistory.h"
 #include "core/RenderSignal.h"
+#include "core/Shutdown.h"
 #include "render/D2DRenderer.h"
 #include "util/Process.h"  // runDetached (lifecycle hooks)
 
@@ -1219,6 +1220,43 @@ void Window::openKeepAwakeMenu() {
         if (o.id == static_cast<UINT>(cmd)) { setKeepAwake(o.hours); break; }
 }
 
+void Window::setScheduledShutdown(int hours) {
+    if (hours == 0) {
+        bool ok = false;
+        runCapture(cancelShutdownCommand(), L"", &ok, 5000);
+        if (ok) {
+            showBalloon(L"Liney", L"Scheduled shutdown cancelled");
+        } else {
+            MessageBoxW(hwnd_,
+                        L"There is no scheduled shutdown to cancel, or Windows rejected the request.",
+                        L"Liney", MB_OK | MB_ICONINFORMATION);
+        }
+        return;
+    }
+
+    const std::wstring command = scheduledShutdownCommand(hours);
+    if (command.empty()) return;
+    const std::wstring question =
+        L"Shut down Windows in " + std::to_wstring(hours) +
+        (hours == 1 ? L" hour?" : L" hours?") +
+        L"\n\nYou can cancel it later from this menu.";
+    if (MessageBoxW(hwnd_, question.c_str(), L"Schedule shutdown",
+                    MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
+        return;
+
+    bool ok = false;
+    runCapture(command, L"", &ok, 5000);
+    if (ok) {
+        showBalloon(L"Liney", L"Windows shutdown scheduled in " +
+                                std::to_wstring(hours) +
+                                (hours == 1 ? L" hour" : L" hours"));
+    } else {
+        MessageBoxW(hwnd_,
+                    L"Windows could not schedule the shutdown. If another shutdown is already pending, cancel it first.",
+                    L"Liney", MB_OK | MB_ICONERROR);
+    }
+}
+
 void Window::openMainMenu() {
     POINT pt{ static_cast<int>(menuButtonRect_.right()),
               static_cast<int>(menuButtonRect_.bottom()) };
@@ -1257,11 +1295,26 @@ void Window::openMainMenu() {
     AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(view), L"View");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     item(11, L"Settings…\tCtrl+,");
+    HMENU shutdown = CreatePopupMenu();
+    AppendMenuW(shutdown, MF_STRING, 300, L"Cancel scheduled shutdown");
+    AppendMenuW(shutdown, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(shutdown, MF_STRING, 301, L"Shut down in 1 hour");
+    AppendMenuW(shutdown, MF_STRING, 302, L"Shut down in 2 hours");
+    AppendMenuW(shutdown, MF_STRING, 303, L"Shut down in 3 hours");
+    AppendMenuW(shutdown, MF_STRING, 304, L"Shut down in 6 hours");
+    AppendMenuW(shutdown, MF_STRING, 305, L"Shut down in 12 hours");
+    AppendMenuW(shutdown, MF_STRING, 306, L"Shut down in 24 hours");
+    AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(shutdown),
+                L"Scheduled shutdown");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    item(12, L"Report an issue…");
-    item(18, L"Open diagnostics folder");
-    item(19, L"Copy diagnostic summary");
-    item(20, L"Export diagnostic bundle...");
+    HMENU support = CreatePopupMenu();
+    AppendMenuW(support, MF_STRING, 12, L"Report an issue…");
+    AppendMenuW(support, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(support, MF_STRING, 18, L"Open diagnostics folder");
+    AppendMenuW(support, MF_STRING, 19, L"Copy diagnostic summary");
+    AppendMenuW(support, MF_STRING, 20, L"Export diagnostic bundle...");
+    AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(support),
+                L"Support & diagnostics");
     item(21, L"Search command history...");
     item(8, L"Check for updates\tCtrl+Shift+U");
 
@@ -1271,6 +1324,11 @@ void Window::openMainMenu() {
     if (cmd >= 200 && cmd < 200 + static_cast<int>(shellProfiles_.size())) {
         newTabShell(shellProfiles_[static_cast<size_t>(cmd - 200)].command,
                     activeSession() ? activeSession()->cwd() : homeDir());
+        return;
+    }
+    if (cmd >= 300 && cmd <= 306) {
+        static constexpr int kShutdownHours[] = { 0, 1, 2, 3, 6, 12, 24 };
+        setScheduledShutdown(kShutdownHours[cmd - 300]);
         return;
     }
     switch (cmd) {

@@ -79,13 +79,16 @@ nothing but the OS.
 - **Layout persistence** — tabs + split tree + per-pane cwd restored next launch
 
 **⚡ Built-in tooling**
-- A top-right **☰ menu**: keep-awake · settings · check-for-updates · report-an-issue
+- A top-right **☰ menu**: settings · scheduled shutdown · command history ·
+  updates · a compact support/diagnostics submenu
 - **Settings… dialog** — click-to-configure shell, font & size, theme &
   accent, scrollback, workspace root, copy-on-select, paste warning, Unix
   tools; applied live and saved without disturbing hand-edited keys
   (config.json stays fully editable too)
 - **Keep awake** (`Ctrl+Shift+K`) — block system/display sleep for **1 / 2 / 3 /
   6 / 24 hours or until turned off**, with the remaining time in the menu
+- **Scheduled shutdown** — ask Windows to shut down after **1 / 2 / 3 / 6 / 12 /
+  24 hours**, or cancel a pending shutdown from the same menu
 - **Git**: `Ctrl+Shift+L/G` open `git log` / `git diff` in a new tab
 - **Notifications**: a `liney notify` CLI + OSC `9`/`777` → Windows tray balloons
 - **Lifecycle hooks** on session start/exit and app exit

@@ -42,6 +42,7 @@ add_executable(liney_win WIN32
   src/core/TerminalSession.cpp
   src/core/Config.cpp
   src/core/ShellProfiles.cpp
+  src/core/Shutdown.cpp
   src/core/KeyBinding.cpp
   src/core/SshProfiles.cpp
   src/core/Update.cpp
