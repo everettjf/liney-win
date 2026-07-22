@@ -47,6 +47,9 @@ if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
     throw 'GitHub CLI (gh) is required.'
 }
 
+if (-not (Test-Path -LiteralPath $PfxPath -PathType Leaf)) {
+    throw "Signing certificate not found: $PfxPath`nThe path in the documentation is an example. Supply the path to a real CA-issued PFX/P12 file; a self-signed certificate does not improve SmartScreen reputation."
+}
 $resolvedPfx = (Resolve-Path -LiteralPath $PfxPath).Path
 if ([IO.Path]::GetExtension($resolvedPfx) -notin @('.pfx', '.p12')) {
     throw 'The signing certificate must be a .pfx or .p12 file.'
