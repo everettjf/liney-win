@@ -44,12 +44,18 @@ jobs:
             throw "Tag v$tag != resource.rc version $ver. Bump res\resource.rc, src\app\WindowInternal.h and packaging manifests first."
           }
 
-      - name: Require Authenticode credentials for stable releases
+      - name: Detect optional Authenticode credentials
+        id: signing
         shell: pwsh
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:LINEY_SIGNING_CERT_BASE64) -or
-              [string]::IsNullOrWhiteSpace($env:LINEY_SIGNING_CERT_PASSWORD)) {
-            throw 'Stable releases must be Authenticode-signed. Configure LINEY_SIGNING_CERT_BASE64 and LINEY_SIGNING_CERT_PASSWORD repository secrets.'
+          $hasCert = -not [string]::IsNullOrWhiteSpace($env:LINEY_SIGNING_CERT_BASE64)
+          $hasPassword = -not [string]::IsNullOrWhiteSpace($env:LINEY_SIGNING_CERT_PASSWORD)
+          if ($hasCert -ne $hasPassword) {
+            throw 'Incomplete signing configuration: configure both Authenticode secrets or neither.'
+          }
+          "enabled=$($hasCert.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          if (-not $hasCert) {
+            Write-Warning 'Publishing an unsigned release. Windows SmartScreen may warn users.'
           }
 
       - name: Ensure NSIS
@@ -66,6 +72,7 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File tools\build.ps1
 
       - name: Sign application binaries
+        if: steps.signing.outputs.enabled == 'true'
         shell: pwsh
         run: |
           $cert = Join-Path $env:RUNNER_TEMP 'liney-signing.pfx'
@@ -105,6 +112,7 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File tools\installer-smoke.ps1 -Installer dist\liney-setup.exe -PreviousInstaller previous-release\liney-setup.exe -PortableZip dist\liney-portable.zip -ScratchRoot $env:RUNNER_TEMP\liney-package-smoke
 
       - name: Sign installer
+        if: steps.signing.outputs.enabled == 'true'
         shell: pwsh
         run: |
           $cert = Join-Path $env:RUNNER_TEMP 'liney-signing.pfx'
@@ -133,17 +141,41 @@ jobs:
           format: spdx-json
           output-file: dist/liney-win.spdx.json
 
+      - name: Generate release security notice
+        shell: pwsh
+        run: |
+          $lines = @(
+            'See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for the full list of changes.',
+            ''
+          )
+          if ('${{ steps.signing.outputs.enabled }}' -eq 'true') {
+            $lines += @(
+              '> [!NOTE]',
+              '> This release is Authenticode-signed. SHA-256 checksums and an SPDX SBOM are attached.',
+              ''
+            )
+          } else {
+            $lines += @(
+              '> [!WARNING]',
+              '> **This release is not code-signed.** Windows SmartScreen may display an `Unknown publisher` warning. Download only from this official repository and verify the attached `SHA256SUMS.txt` before running the installer.',
+              ''
+            )
+          }
+          $lines += @(
+            '| File | Description |',
+            '|---|---|',
+            '| `liney-setup.exe` | Per-user installer, Start Menu shortcut and uninstaller |',
+            '| `liney-portable.zip` | Portable archive; unzip and run `Liney.exe` |',
+            '| `SHA256SUMS.txt` | SHA-256 checksums for downloadable artifacts |',
+            '| `liney-win.spdx.json` | SPDX software bill of materials |'
+          )
+          $lines | Set-Content -Encoding utf8 release-body.md
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           name: liney-win ${{ github.ref_name }}
-          body: |
-            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for the full list of changes.
-
-            | File | Description |
-            |---|---|
-            | `liney-setup.exe` | Installer — per-user, no admin, Start Menu + uninstall |
-            | `liney-portable.zip` | Portable — unzip and run `Liney.exe` |
+          body_path: release-body.md
           generate_release_notes: true
           files: |
             dist/liney-setup.exe

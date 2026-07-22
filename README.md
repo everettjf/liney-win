@@ -98,7 +98,7 @@ nothing but the OS.
 - **Reliability tooling**: atomic configuration recovery, rotating diagnostics,
   bounded crash dumps, one-click privacy-safe diagnostic ZIP export, abnormal
   exit tab/pane/cwd recovery, restartable exited shells, transactional update
-  rollback, mandatory signed releases, and reproducible Ghostty pinning
+  rollback, signed-install downgrade protection, and reproducible Ghostty pinning
 - **Command blocks** from OSC 133: jump, copy command/output, rerun, bookmark,
   and inspect exit status/duration from the pane menu
 - **Searchable local command history**: bounded, secret-redacted, and inserts a

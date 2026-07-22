@@ -172,11 +172,16 @@ void Window::startDownloadAndInstall(const std::wstring& url,
         wchar_t currentExe[32768]{};
         const DWORD currentLen = GetModuleFileNameW(
             nullptr, currentExe, static_cast<DWORD>(_countof(currentExe)));
-        if (dl && currentLen > 0 && currentLen < _countof(currentExe) &&
-            verifyAuthenticode(currentExe) &&
-            !sameAuthenticodePublisher(currentExe, out)) {
-            dl = false;
-            DeleteFileW(out.c_str());
+        if (dl && currentLen > 0 && currentLen < _countof(currentExe)) {
+            const bool currentSigned = verifyAuthenticode(currentExe);
+            const bool candidateSigned = verifyAuthenticode(out);
+            const bool samePublisher = currentSigned && candidateSigned &&
+                                       sameAuthenticodePublisher(currentExe, out);
+            if (!updatePreservesPublisherTrust(currentSigned, candidateSigned,
+                                               samePublisher)) {
+                dl = false;
+                DeleteFileW(out.c_str());
+            }
         }
         {
             std::lock_guard<std::mutex> lk(updateMutex_);

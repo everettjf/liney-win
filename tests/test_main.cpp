@@ -47,6 +47,16 @@ void testUpdatePolicy() {
     check(!liney::parseTrustedInstallerUrl(
               L"https://github.com/other/repo/releases/download/v1/a.exe", host, path),
           "foreign GitHub repository rejected");
+    check(liney::updatePreservesPublisherTrust(false, false, false),
+          "unsigned install accepts checksum-verified unsigned update");
+    check(liney::updatePreservesPublisherTrust(false, true, false),
+          "unsigned install may upgrade to signed update");
+    check(!liney::updatePreservesPublisherTrust(true, false, false),
+          "signed install rejects unsigned update");
+    check(!liney::updatePreservesPublisherTrust(true, true, false),
+          "signed install rejects another publisher");
+    check(liney::updatePreservesPublisherTrust(true, true, true),
+          "signed install accepts same publisher");
 }
 
 void testAiSafety() {

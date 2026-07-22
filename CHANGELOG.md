@@ -3,6 +3,21 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
+## [0.8.1] - 2026-07-22
+
+### Changed
+- Stable releases can be published without Authenticode credentials while code
+  signing enrollment is pending. Unsigned releases carry a prominent Windows
+  SmartScreen warning; SHA-256 checksums, SPDX SBOM generation, clean install,
+  upgrade, portable and uninstall smoke tests remain mandatory.
+- Update trust is monotonic: an unsigned installation may consume an official
+  repository update verified by its GitHub SHA-256 digest, but a signed running
+  installation rejects unsigned installers and installers from another signer.
+
+### Fixed
+- Release metadata, MSIX/NSIS manifests and WinGet templates now agree on the
+  v0.8.1 version and current portable executable layout.
+
 ## [0.8.0] - 2026-07-22
 
 ### Added
@@ -30,9 +45,9 @@ All notable changes to liney-win. Versioning follows [SemVer](https://semver.org
   dismissal; failed restores keep it for another attempt.
 
 ### Security
-- Stable release publication requires Authenticode credentials. Application,
-  terminal-core and installer signatures are timestamped and verified before
-  release assets can be published.
+- Release artifacts support optional Authenticode signing. When credentials are
+  configured, application, terminal-core and installer signatures are
+  timestamped and verified before release assets can be published.
 
 ## [0.7.0] - 2026-07-21
 
