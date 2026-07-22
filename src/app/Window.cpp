@@ -256,8 +256,19 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
         const int choice = MessageBoxW(hwnd_,
             L"Liney did not shut down cleanly last time. Restore its window, tabs, panes and working directories?",
             L"Liney recovery", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON1);
-        if (choice == IDYES) restored = restoreLayoutFrom(crashedLayout);
-        DeleteFileW(crashedLayout.c_str());
+        if (choice == IDYES) {
+            restored = restoreLayoutFrom(crashedLayout);
+            if (restored) {
+                DeleteFileW(crashedLayout.c_str());
+            } else {
+                MessageBoxW(hwnd_,
+                    L"The recovery snapshot could not be restored. It has been kept in the diagnostics folder so you can retry or export diagnostics.",
+                    L"Liney recovery", MB_OK | MB_ICONWARNING);
+            }
+        } else {
+            // Choosing No explicitly dismisses this recovery attempt.
+            DeleteFileW(crashedLayout.c_str());
+        }
     }
     if (!restored && !(rememberLayout_ && restoreLayout())) newTab(homeDir());
     if (tabs_.empty()) {
