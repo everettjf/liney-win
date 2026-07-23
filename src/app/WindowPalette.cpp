@@ -344,14 +344,19 @@ void Window::drawCommandPalette() {
     const float y = metrics_.tabBarH() + 24.0f;
     const std::vector<int> visible = filteredPaletteActions();
     const size_t count = std::min<size_t>(visible.size(), 8);
+    const size_t displayRows = std::max<size_t>(count, 1);
     const size_t start = paletteSelected_ >= count && count > 0
         ? paletteSelected_ - count + 1 : 0;
-    const float height = row * static_cast<float>(count + 1) + 12.0f;
+    const float height = row * static_cast<float>(displayRows + 2) + 12.0f;
     renderer_->fillRect(x, y, width, height, uiTheme_.sidebarBg);
     renderer_->strokeRect(x, y, width, height, uiTheme_.accent, 1.5f);
-    const std::wstring prompt = L"> " + paletteQuery_;
+    const std::wstring prompt = paletteQuery_.empty()
+        ? L"Search commands, projects, SSH and agents…"
+        : L"> " + paletteQuery_;
     renderer_->drawText(prompt, x + 12.0f, y + 6.0f, width - 24.0f,
-                        metrics_.cellH, uiTheme_.text, true);
+                        metrics_.cellH,
+                        paletteQuery_.empty() ? uiTheme_.dim : uiTheme_.text,
+                        !paletteQuery_.empty());
     for (size_t i = 0; i < count; ++i) {
         const size_t visibleIndex = start + i;
         const PaletteAction* action = nullptr;
@@ -369,6 +374,18 @@ void Window::drawCommandPalette() {
         renderer_->drawText(action ? action->shortcut : L"", x + width * 0.70f, ry + 4.0f,
                             width * 0.27f, metrics_.cellH, uiTheme_.dim, false);
     }
+    if (visible.empty()) {
+        renderer_->drawText(L"No matching commands", x + 14.0f, y + row + 10.0f,
+                            width - 28.0f, metrics_.cellH, uiTheme_.dim, false);
+    }
+    const float footerY = y + height - row;
+    renderer_->fillRect(x + 8.0f, footerY - 1.0f, width - 16.0f, 1.0f,
+                        uiTheme_.border);
+    const std::wstring footer = std::to_wstring(visible.size()) +
+        (visible.size() == 1 ? L" result" : L" results") +
+        L"    ↑↓ navigate   Enter open   Esc close";
+    renderer_->drawText(footer, x + 14.0f, footerY + 4.0f, width - 28.0f,
+                        metrics_.cellH, uiTheme_.sidebarHdr, false);
 }
 
 } // namespace liney
