@@ -13,9 +13,12 @@ try {
     '{"checkForUpdatesOnStartup":false}' |
         Set-Content -Encoding utf8 (Join-Path $testConfig 'config.json')
     $env:LINEY_CONFIG_DIR = $testConfig
-    $env:LINEY_AUTOCLOSE_MS = '5000'
+    # Keep the window alive well beyond discovery. On a busy hosted runner the
+    # old 5-second autoclose could race AutomationElement.FromHandle after a
+    # valid MainWindowHandle had just been observed.
+    $env:LINEY_AUTOCLOSE_MS = '15000'
     $process = Start-Process -FilePath $resolved -PassThru
-    $deadline = [DateTime]::UtcNow.AddSeconds(5)
+    $deadline = [DateTime]::UtcNow.AddSeconds(10)
     do {
         Start-Sleep -Milliseconds 50
         $process.Refresh()
@@ -25,8 +28,25 @@ try {
     if ($process.HasExited -or $window -eq 0) {
         throw 'Liney did not expose a main window for UI Automation.'
     }
-    $element = [System.Windows.Automation.AutomationElement]::FromHandle(
-        $window)
+    $element = $null
+    $uiaDeadline = [DateTime]::UtcNow.AddSeconds(5)
+    do {
+        try {
+            $element = [System.Windows.Automation.AutomationElement]::FromHandle(
+                $window)
+        } catch [System.Windows.Automation.ElementNotAvailableException] {
+            Start-Sleep -Milliseconds 100
+            $process.Refresh()
+            if (-not $process.HasExited -and
+                $process.MainWindowHandle -ne [IntPtr]::Zero) {
+                $window = $process.MainWindowHandle
+            }
+        }
+    } while (-not $element -and -not $process.HasExited -and
+             [DateTime]::UtcNow -lt $uiaDeadline)
+    if (-not $element) {
+        throw 'Liney UI Automation element was not available before timeout.'
+    }
     if ($element.Current.Name -ne 'Liney terminal workspace') {
         throw "Unexpected accessible name: $($element.Current.Name)"
     }

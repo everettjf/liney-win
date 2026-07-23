@@ -3,6 +3,18 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
+## [0.9.2] - 2026-07-23
+
+### Changed
+- Refined hover and selected states across workspace, worktree, SSH, agent,
+  file, tab and top-toolbar controls while preserving every built-in theme.
+- Improved sidebar section hierarchy, panel boundaries and the empty-workspace
+  guidance shown before a project is added.
+- The command palette now includes an instructional empty prompt, result count,
+  keyboard hints and a dedicated no-results state.
+- The new-tab button remains visible when the tab strip is crowded, and tab
+  titles no longer paint underneath the fixed top-right toolbar.
+
 ## [0.9.1] - 2026-07-22
 
 ### Added

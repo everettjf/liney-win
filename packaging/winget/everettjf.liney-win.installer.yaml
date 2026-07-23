@@ -2,7 +2,7 @@
 # submit to https://github.com/microsoft/winget-pkgs. Pairs with the .locale and
 # version manifests of the same PackageIdentifier/PackageVersion.
 PackageIdentifier: everettjf.liney-win
-PackageVersion: 0.9.1
+PackageVersion: 0.9.2
 InstallerType: zip
 NestedInstallerType: portable
 NestedInstallerFiles:
@@ -10,7 +10,7 @@ NestedInstallerFiles:
     PortableCommandAlias: liney-win
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/everettjf/liney-win/releases/download/v0.9.1/liney-portable.zip
+    InstallerUrl: https://github.com/everettjf/liney-win/releases/download/v0.9.2/liney-portable.zip
     InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
 ManifestType: installer
 ManifestVersion: 1.6.0
