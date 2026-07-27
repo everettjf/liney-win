@@ -196,6 +196,7 @@ The first run writes `%USERPROFILE%\.liney\config.json` (mirroring macOS liney's
   "shell": "cmd.exe",
   "fontFamily": "Cascadia Mono",
   "fontSize": 16,
+  "fontLigatures": false,
   "workspaceRoot": "",
   "unixTools": true,
   "copyOnSelect": false,
@@ -220,6 +221,7 @@ The first run writes `%USERPROFILE%\.liney\config.json` (mirroring macOS liney's
 | `copyOnSelect` | Copy to the clipboard as soon as a selection ends (PuTTY-style) |
 | `multiLinePasteWarning` | Confirm before pasting text with line breaks (each break runs as Enter) |
 | `fontFamily` / `fontSize` | Terminal font; the ☰ → **Font…** picker, `Ctrl +/-/0` and `Ctrl+Wheel` update and persist them |
+| `fontLigatures` | Opt-in DirectWrite shaping for common programming operators; off by default for strict cell compatibility |
 | `scrollback` | History lines retained per session (default 10000) |
 | `sshHosts` / `agents` | Entries in the sidebar SSH / AGENTS sections |
 | `projectIcons` | Per-repo sidebar icons (else a repo-local `icon.png`/`logo.png`) |
@@ -265,6 +267,11 @@ finishes. The terminal also parses OSC `0/2` (title), `7` (cwd), `9` and
 companion command so the workspace sidebar reports meaningful task state
 without binding Liney to a particular AI provider.
 
+Inline images support the bounded iTerm2 `OSC 1337;File=...` subset. Requests
+must set `inline=1`; bare numeric `width` and `height` are interpreted as
+terminal cells. PNG, JPEG and GIF are accepted up to 3 MiB decoded, dimensions
+are capped at 200×200 cells, and each session retains at most 16 images.
+
 ## 🏗️ Architecture
 
 ```
@@ -274,21 +281,25 @@ TerminalSession = Terminal + ConPty + Grid
    ConPty      — Windows pseudoconsole (spawn shell, read/write, resize)
    Terminal    — wraps libghostty-vt (Ghostty's VT engine): PTY bytes → render
                  snapshot → Grid; selection / find / mouse encoding via its C API
-   D2DRenderer — Direct2D/DirectWrite draws the Grid + chrome; glyphs rasterize
-                 once into an atlas and draw as tinted opacity masks
+   D2DRenderer — Direct2D/DirectWrite draws chrome and color fonts; ordinary
+                 glyphs rasterize once into a D3D11 atlas and draw in one
+                 tinted shader batch per frame; opt-in operator runs use
+                 DirectWrite ligature shaping
 ```
 
 Source map in [`src/`](src). Design / research notes: [`RESEARCH.md`](RESEARCH.md),
 [`ALT_PLAN_SELFBUILT.md`](ALT_PLAN_SELFBUILT.md),
 [`TERMINAL_LANDSCAPE.md`](TERMINAL_LANDSCAPE.md); rendering plan:
-[`RENDERING.md`](RENDERING.md).
+[`RENDERING.md`](RENDERING.md). Quality gates and reproducible local benchmark
+evidence live in [`docs/QUALITY_GATES.md`](docs/QUALITY_GATES.md) and
+[`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
 
 ## 🗺️ Roadmap
 
 Done & remaining items (with a macOS-liney comparison) live in
 [`ROADMAP.md`](ROADMAP.md); per-release changes in [`CHANGELOG.md`](CHANGELOG.md).
-Still pending: SFTP remote file tree, native tmux control-mode, a D3D11
-shader-based renderer. (Mouse reporting needs a ConPTY that passes mouse-mode
+Still pending: SFTP remote file tree and native tmux control-mode.
+(Mouse reporting needs a ConPTY that passes mouse-mode
 requests through — Windows 11 / recent Windows 10.)
 
 ## 🤝 Contributing

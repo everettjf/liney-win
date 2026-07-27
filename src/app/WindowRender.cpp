@@ -563,6 +563,25 @@ void Window::drawPanes(const Rect& r) {
         renderer_->pushClip(pr.x, pr.y, pr.w, pr.h);
         const float pad = metrics_.panePad();
         renderer_->drawGrid(leaf->session->grid(), pr.x + pad, pr.y + pad);
+        const uint64_t viewportTop = leaf->session->viewportRow();
+        for (const InlineImage& image : leaf->session->inlineImages()) {
+            if (image.row < viewportTop) continue;
+            const uint64_t relativeRow = image.row - viewportTop;
+            if (relativeRow >= static_cast<uint64_t>(
+                                   leaf->session->grid().rows))
+                continue;
+            const float ix =
+                pr.x + pad + static_cast<float>(image.column) * metrics_.cellW;
+            const float iy =
+                pr.y + pad + static_cast<float>(relativeRow) * metrics_.cellH;
+            const float iw =
+                static_cast<float>(image.widthCells) * metrics_.cellW;
+            const float ih =
+                static_cast<float>(image.heightCells) * metrics_.cellH;
+            if (renderer_->drawImage(image.path, ix, iy, iw, ih))
+                SetPropW(hwnd_, L"Liney.InlineImageActive",
+                         reinterpret_cast<HANDLE>(1));
+        }
         renderer_->popClip();
         if (leaf->session->exited()) {
             const float bh = metrics_.cellH + 10.0f;

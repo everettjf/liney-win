@@ -6,6 +6,7 @@
 #include <string>
 
 #include "core/RenderSignal.h"
+#include "vt/KeyEncoder.h"
 
 namespace liney {
 
@@ -291,33 +292,37 @@ bool Window::onKeyDown(WPARAM vk) {
         break;
     default: break;
     }
-    const char* seq = nullptr;
+    TerminalKey key{};
+    bool special = true;
     switch (vk) {
-    case VK_UP:     seq = app ? "\x1bOA" : "\x1b[A"; break;
-    case VK_DOWN:   seq = app ? "\x1bOB" : "\x1b[B"; break;
-    case VK_RIGHT:  seq = app ? "\x1bOC" : "\x1b[C"; break;
-    case VK_LEFT:   seq = app ? "\x1bOD" : "\x1b[D"; break;
-    case VK_HOME:   seq = app ? "\x1bOH" : "\x1b[H"; break;
-    case VK_END:    seq = app ? "\x1bOF" : "\x1b[F"; break;
-    case VK_PRIOR:  seq = "\x1b[5~"; break;
-    case VK_NEXT:   seq = "\x1b[6~"; break;
-    case VK_INSERT: seq = "\x1b[2~"; break;
-    case VK_DELETE: seq = "\x1b[3~"; break;
-    case VK_F1:  seq = "\x1bOP"; break;
-    case VK_F2:  seq = "\x1bOQ"; break;
-    case VK_F3:  seq = "\x1bOR"; break;
-    case VK_F4:  seq = "\x1bOS"; break;
-    case VK_F5:  seq = "\x1b[15~"; break;
-    case VK_F6:  seq = "\x1b[17~"; break;
-    case VK_F7:  seq = "\x1b[18~"; break;
-    case VK_F8:  seq = "\x1b[19~"; break;
-    case VK_F9:  seq = "\x1b[20~"; break;
-    case VK_F10: seq = "\x1b[21~"; break;
-    case VK_F11: seq = "\x1b[23~"; break;
-    case VK_F12: seq = "\x1b[24~"; break;
-    default: return false;  // let WM_CHAR handle character keys
+    case VK_UP: key = TerminalKey::Up; break;
+    case VK_DOWN: key = TerminalKey::Down; break;
+    case VK_RIGHT: key = TerminalKey::Right; break;
+    case VK_LEFT: key = TerminalKey::Left; break;
+    case VK_HOME: key = TerminalKey::Home; break;
+    case VK_END: key = TerminalKey::End; break;
+    case VK_PRIOR: key = TerminalKey::PageUp; break;
+    case VK_NEXT: key = TerminalKey::PageDown; break;
+    case VK_INSERT: key = TerminalKey::Insert; break;
+    case VK_DELETE: key = TerminalKey::DeleteKey; break;
+    case VK_F1: key = TerminalKey::F1; break;
+    case VK_F2: key = TerminalKey::F2; break;
+    case VK_F3: key = TerminalKey::F3; break;
+    case VK_F4: key = TerminalKey::F4; break;
+    case VK_F5: key = TerminalKey::F5; break;
+    case VK_F6: key = TerminalKey::F6; break;
+    case VK_F7: key = TerminalKey::F7; break;
+    case VK_F8: key = TerminalKey::F8; break;
+    case VK_F9: key = TerminalKey::F9; break;
+    case VK_F10: key = TerminalKey::F10; break;
+    case VK_F11: key = TerminalKey::F11; break;
+    case VK_F12: key = TerminalKey::F12; break;
+    default: special = false; break;
     }
-    sendToActive(seq, std::char_traits<char>::length(seq));
+    if (!special) return false;  // let WM_CHAR handle character keys
+    const std::string seq =
+        encodeTerminalKey(key, {shift, alt, ctrl}, app);
+    if (!seq.empty()) sendToActive(seq.data(), seq.size());
     return true;
 }
 

@@ -28,7 +28,10 @@ void OscParser::feed(const char* data, size_t len) {
             } else if (ch == 0x1b) {
                 state_ = State::OscEscape;
             } else if (!overflow_) {
-                if (payload_.size() < kMaxPayload) payload_.push_back(data[i]);
+                const size_t limit =
+                    payload_.rfind("1337;File=", 0) == 0
+                        ? kMaxImagePayload : kMaxPayload;
+                if (payload_.size() < limit) payload_.push_back(data[i]);
                 else { overflow_ = true; payload_.clear(); }
             }
             break;
@@ -39,7 +42,10 @@ void OscParser::feed(const char* data, size_t len) {
             } else {
                 // ESC inside an OSC that is not ST. Keep observing but never
                 // let the bounded payload grow without limit.
-                if (!overflow_ && payload_.size() + 2 <= kMaxPayload) {
+                const size_t limit =
+                    payload_.rfind("1337;File=", 0) == 0
+                        ? kMaxImagePayload : kMaxPayload;
+                if (!overflow_ && payload_.size() + 2 <= limit) {
                     payload_.push_back('\x1b');
                     payload_.push_back(data[i]);
                 } else {
@@ -55,7 +61,7 @@ void OscParser::feed(const char* data, size_t len) {
 
 void OscParser::emit(SemanticEventType type, std::string value) {
     if (events_.size() >= kMaxQueuedEvents) events_.erase(events_.begin());
-    events_.push_back({type, std::move(value), streamOffset_, 0});
+    events_.push_back({type, std::move(value), streamOffset_, 0, 0});
 }
 
 void OscParser::finishOsc() {
@@ -92,6 +98,16 @@ void OscParser::finishOsc() {
         // Keep only the encoded data; selection target is intentionally not
         // trusted. Decoding and permission policy belong to the UI layer.
         emit(SemanticEventType::ClipboardRequest, payload_.substr(second + 1));
+        return;
+    }
+    static constexpr char kImagePrefix[] = "1337;File=";
+    if (payload_.rfind(kImagePrefix, 0) == 0) {
+        const size_t colon = payload_.find(':', sizeof(kImagePrefix) - 1);
+        if (colon == std::string::npos || colon + 1 >= payload_.size()) return;
+        // Preserve only the bounded metadata and encoded bytes. The session
+        // layer validates dimensions, base64, file signature and WIC decode.
+        emit(SemanticEventType::InlineImage,
+             payload_.substr(sizeof(kImagePrefix) - 1));
         return;
     }
     static constexpr char kAgentPrefix[] = "777;agent-status;";

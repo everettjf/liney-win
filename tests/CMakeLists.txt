@@ -12,7 +12,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_executable(liney_tests
   test_main.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/app/TabStripLayout.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../src/app/ResponsiveLayout.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/vt/OscParser.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../src/vt/KeyEncoder.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/workspace/GitStatusParser.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/util/Base64.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/core/KeyBinding.cpp

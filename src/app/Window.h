@@ -237,6 +237,7 @@ private:
     size_t activeTab_ = 0;
     bool sidebarVisible_ = true;      // left WORKSPACE/SSH/AGENTS panel
     bool filesPanelVisible_ = false;  // right FILES (folder tree) panel (Ctrl+Shift+F)
+    int headlessExitCode_ = 0; // nonzero when a required visual test path was absent
     bool keepAwake_ = false;          // SetThreadExecutionState keep-awake state
     int keepAwakeHours_ = 0;          // active preset (-1 forever, 0 off, else hours)
     ULONGLONG keepAwakeUntil_ = 0;    // GetTickCount64 deadline (0 = no deadline)
@@ -246,6 +247,7 @@ private:
     std::wstring shell_ = L"cmd.exe";
     std::wstring fontFamily_ = L"Cascadia Mono";
     float fontSize_ = 16.0f;          // logical (DPI-independent) point size
+    bool fontLigatures_ = false;
     float defaultFontSize_ = 16.0f;
     float dpiScale_ = 1.0f;           // device px per logical px (monitor DPI / 96)
     int scrollback_ = 10000;          // history lines retained per session

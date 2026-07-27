@@ -10,8 +10,10 @@
 #include <string>
 
 #include "app/TabStripLayout.h"
+#include "app/ResponsiveLayout.h"
 #include "util/Json.h"
 #include "vt/OscParser.h"
+#include "vt/KeyEncoder.h"
 #include "workspace/GitStatusParser.h"
 #include "util/Base64.h"
 #include "core/KeyBinding.h"
@@ -33,6 +35,63 @@ void check(bool cond, const char* what) {
         ++g_failures;
         std::printf("  FAIL: %s\n", what);
     }
+}
+
+void testKeyEncoder() {
+    std::printf("Terminal special-key encoding\n");
+    using liney::KeyModifiers;
+    using liney::TerminalKey;
+    using liney::encodeTerminalKey;
+    check(encodeTerminalKey(TerminalKey::Up, {}, false) == "\x1b[A",
+          "normal cursor key uses CSI");
+    check(encodeTerminalKey(TerminalKey::Up, {}, true) == "\x1bOA",
+          "DECCKM cursor key uses SS3");
+    check(encodeTerminalKey(TerminalKey::Left, {false, false, true}, true) ==
+              "\x1b[1;5D",
+          "Ctrl+Left uses xterm modifier encoding even under DECCKM");
+    check(encodeTerminalKey(TerminalKey::Home, {true, false, true}, false) ==
+              "\x1b[1;6H",
+          "Ctrl+Shift+Home preserves both modifiers");
+    check(encodeTerminalKey(TerminalKey::DeleteKey,
+                            {false, true, false}, false) == "\x1b[3;3~",
+          "Alt+Delete uses tilde modifier form");
+    check(encodeTerminalKey(TerminalKey::F1, {false, false, true}, false) ==
+              "\x1b[1;5P",
+          "Ctrl+F1 uses CSI function-key modifier form");
+    check(encodeTerminalKey(TerminalKey::F12,
+                            {true, false, false}, false) == "\x1b[24;2~",
+          "Shift+F12 uses numbered function-key modifier form");
+}
+
+void testResponsivePanels() {
+    std::printf("Responsive workspace panels\n");
+    using liney::layoutResponsivePanels;
+    auto layout = layoutResponsivePanels(1200.0f, true, true, 224.0f, 144.0f,
+                                         400.0f);
+    check(layout.leftWidth == 224.0f && layout.rightWidth == 224.0f &&
+              layout.centerWidth == 752.0f,
+          "wide windows retain both full panels");
+    layout = layoutResponsivePanels(800.0f, true, true, 224.0f, 144.0f,
+                                    400.0f);
+    check(layout.leftWidth == 200.0f && layout.rightWidth == 200.0f &&
+              layout.centerWidth == 400.0f && layout.leftCompact &&
+              layout.rightCompact,
+          "medium windows shrink both panels symmetrically");
+    layout = layoutResponsivePanels(650.0f, true, true, 224.0f, 144.0f,
+                                    400.0f);
+    check(layout.leftWidth == 224.0f && layout.rightWidth == 0.0f &&
+              layout.centerWidth == 426.0f && layout.rightCompact,
+          "narrow windows collapse files before workspace");
+    layout = layoutResponsivePanels(480.0f, true, true, 224.0f, 144.0f,
+                                    400.0f);
+    check(layout.leftWidth == 80.0f && layout.rightWidth == 0.0f &&
+              layout.centerWidth == 400.0f,
+          "very narrow windows preserve the terminal grid");
+    layout = layoutResponsivePanels(500.0f, false, true, 224.0f, 144.0f,
+                                    400.0f);
+    check(layout.leftWidth == 0.0f && layout.rightWidth == 100.0f &&
+              layout.centerWidth == 400.0f,
+          "single visible panel also yields to terminal space");
 }
 
 void testWindowGeometry() {
@@ -384,6 +443,24 @@ void testOscParser() {
               events[0].value == "waiting",
           "bounded Agent status protocol");
 
+    const std::string image =
+        "\x1b]1337;File=inline=1;width=8;height=4:iVBORw0KGgo=\x07";
+    parser.feed(image.data(), image.size());
+    events = parser.drain();
+    check(events.size() == 1 &&
+              events[0].type == SemanticEventType::InlineImage &&
+              events[0].value ==
+                  "inline=1;width=8;height=4:iVBORw0KGgo=",
+          "OSC 1337 inline image request is surfaced without decoding");
+
+    const std::string notInline =
+        "\x1b]1337;File=name=dGVzdA==:SGVsbG8=\x07";
+    parser.feed(notInline.data(), notInline.size());
+    events = parser.drain();
+    check(events.size() == 1 &&
+              events[0].type == SemanticEventType::InlineImage,
+          "OSC 1337 file payload remains policy-gated in the session");
+
     std::string oversized = "\x1b]52;c;" + std::string(70 * 1024, 'A') + "\x07";
     parser.feed(oversized.data(), oversized.size());
     check(parser.drain().empty(), "oversized OSC payload is dropped");
@@ -480,6 +557,8 @@ void testSshProfiles() {
 
 int main() {
     testScheduledShutdown();
+    testKeyEncoder();
+    testResponsivePanels();
     testWindowGeometry();
     testCommandPalette();
     testTabStripLayout();

@@ -59,6 +59,10 @@ try {
     if ($element.Current.AcceleratorKey -ne 'Ctrl+Shift+P') {
         throw "Command-palette accelerator is not exposed to UIA."
     }
+    if (-not $element.GetCurrentPropertyValue(
+            [System.Windows.Automation.AutomationElement]::IsTextPatternAvailableProperty)) {
+        throw 'The active terminal does not expose UI Automation TextPattern.'
+    }
     $expectedButtons = @{
         'Liney.Toolbar.Sidebar' = 'Alt+B'
         'Liney.Toolbar.NewTab' = 'Alt+N'
@@ -97,6 +101,21 @@ try {
     if ($process.HasExited) { throw 'UI Automation Invoke caused the app to exit.' }
 
     [void][Microsoft.VisualBasic.Interaction]::AppActivate($process.Id)
+    [System.Windows.Forms.SendKeys]::SendWait(
+        'echo liney-accessibility-text{ENTER}')
+    $textPattern = $element.GetCurrentPattern(
+        [System.Windows.Automation.TextPattern]::Pattern)
+    $textDeadline = [DateTime]::UtcNow.AddSeconds(5)
+    $accessibleText = ''
+    do {
+        Start-Sleep -Milliseconds 100
+        $accessibleText = $textPattern.DocumentRange.GetText(-1)
+    } while ($accessibleText -notmatch 'liney-accessibility-text' -and
+             -not $process.HasExited -and
+             [DateTime]::UtcNow -lt $textDeadline)
+    if ($accessibleText -notmatch 'liney-accessibility-text') {
+        throw 'UI Automation TextPattern did not expose live terminal text.'
+    }
     [System.Windows.Forms.SendKeys]::SendWait('^+p')
     Start-Sleep -Milliseconds 150
     [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
@@ -117,4 +136,4 @@ try {
     Remove-Item -LiteralPath (Join-Path $testConfig 'config.json') -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath (Join-Path $testConfig 'config.json.bak') -Force -ErrorAction SilentlyContinue
 }
-Write-Host 'UI Automation toolbar identity, Invoke, access keys and command-palette smoke passed.'
+Write-Host 'UI Automation terminal TextPattern, toolbar identity, Invoke, access keys and command-palette smoke passed.'

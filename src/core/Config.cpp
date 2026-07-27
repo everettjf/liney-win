@@ -73,6 +73,7 @@ std::string defaultJson(const Config& c) {
     j.set("shell", Json::str(wideToUtf8(c.shell)));
     j.set("fontFamily", Json::str(wideToUtf8(c.fontFamily)));
     j.set("fontSize", Json::number(c.fontSize));
+    j.set("fontLigatures", Json::boolean(c.fontLigatures));
     j.set("scrollback", Json::number(c.scrollback));
     j.set("workspaceRoot", Json::str(wideToUtf8(c.workspaceRoot)));
     j.set("unixTools", Json::boolean(c.unixTools));
@@ -220,6 +221,8 @@ Config loadConfig() {
         cfg.fontFamily = utf8ToWide(j["fontFamily"].asString());
     if (j.contains("fontSize"))
         cfg.fontSize = static_cast<float>(j["fontSize"].asNumber(cfg.fontSize));
+    if (j.contains("fontLigatures"))
+        cfg.fontLigatures = j["fontLigatures"].asBool(cfg.fontLigatures);
     if (j.contains("scrollback"))
         cfg.scrollback = static_cast<int>(j["scrollback"].asNumber(cfg.scrollback));
     if (j.contains("workspaceRoot"))

@@ -40,6 +40,7 @@ add_executable(liney_win WIN32
   src/app/SettingsDialog.cpp
   src/app/Tab.cpp
   src/app/TabStripLayout.cpp
+  src/app/ResponsiveLayout.cpp
   src/core/TerminalSession.cpp
   src/core/Config.cpp
   src/core/ShellProfiles.cpp
@@ -55,6 +56,7 @@ add_executable(liney_win WIN32
   src/pty/ConPty.cpp
   src/vt/Terminal.cpp
   src/vt/OscParser.cpp
+  src/vt/KeyEncoder.cpp
   src/workspace/Workspace.cpp
   src/workspace/GitStatusParser.cpp
   src/util/Process.cpp
@@ -81,7 +83,7 @@ target_compile_definitions(liney_win PRIVATE
   WINVER=0x0A00 _WIN32_WINNT=0x0A00)
 
 target_link_libraries(liney_win PRIVATE
-  d2d1 dwrite d3d11 dxgi imm32 winhttp bcrypt windowscodecs ole32 oleaut32
+  d2d1 dwrite d3d11 d3dcompiler dxgi imm32 winhttp bcrypt windowscodecs ole32 oleaut32
   comctl32 comdlg32 shell32 dbghelp wintrust crypt32 uiautomationcore)
 
 # resource.rc already embeds our compatibility/DPI/long-path manifest. MSVC's
