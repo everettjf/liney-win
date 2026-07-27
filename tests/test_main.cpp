@@ -85,14 +85,14 @@ void testResponsivePanels() {
           "narrow windows collapse files before workspace");
     layout = layoutResponsivePanels(480.0f, true, true, 224.0f, 144.0f,
                                     400.0f);
-    check(layout.leftWidth == 80.0f && layout.rightWidth == 0.0f &&
-              layout.centerWidth == 400.0f,
-          "very narrow windows preserve the terminal grid");
+    check(layout.leftWidth == 0.0f && layout.rightWidth == 0.0f &&
+              layout.centerWidth == 480.0f,
+          "very narrow windows collapse unreadable panel slivers");
     layout = layoutResponsivePanels(500.0f, false, true, 224.0f, 144.0f,
                                     400.0f);
-    check(layout.leftWidth == 0.0f && layout.rightWidth == 100.0f &&
-              layout.centerWidth == 400.0f,
-          "single visible panel also yields to terminal space");
+    check(layout.leftWidth == 0.0f && layout.rightWidth == 0.0f &&
+              layout.centerWidth == 500.0f,
+          "single visible panel collapses below its readable width");
 }
 
 void testUiMetrics() {

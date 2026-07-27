@@ -81,7 +81,8 @@ void Window::showToast(const std::wstring& message, bool error) {
     if (message.empty()) return;
     toastMessage_ = message;
     toastError_ = error;
-    toastUntil_ = GetTickCount64() + (error ? 6500 : 3500);
+    toastStarted_ = GetTickCount64();
+    toastUntil_ = toastStarted_ + (error ? 6500 : 3500);
     markRenderDirty();
     InvalidateRect(hwnd_, nullptr, FALSE);
 }

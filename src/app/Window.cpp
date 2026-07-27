@@ -4,6 +4,7 @@
 #include <windowsx.h>  // GET_X_LPARAM / GET_WHEEL_DELTA_WPARAM
 #include <commdlg.h>   // ChooseFontW (the Font… picker)
 #include <commctrl.h>  // native tooltips for the self-drawn toolbar
+#include <dwmapi.h>
 #include <tlhelp32.h>  // process snapshot for the running-command check
 
 #include <algorithm>
@@ -205,6 +206,18 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     hwnd_ = CreateWindowExW(0, kClassName, title, windowStyle,
                             x, y, w, h, nullptr, nullptr, hInstance, this);
     if (!hwnd_) return false;
+    // Ask Windows 11 for native frame treatment. The client remains opaque so
+    // terminal contrast is unchanged; unsupported attributes are harmless on
+    // Windows 10.
+    BOOL darkFrame = TRUE;
+    DwmSetWindowAttribute(hwnd_, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */,
+                          &darkFrame, sizeof(darkFrame));
+    const DWM_WINDOW_CORNER_PREFERENCE rounded = DWMWCP_ROUND;
+    DwmSetWindowAttribute(hwnd_, DWMWA_WINDOW_CORNER_PREFERENCE,
+                          &rounded, sizeof(rounded));
+    const int backdrop = 2; // DWMSBT_MAINWINDOW (Mica)
+    DwmSetWindowAttribute(hwnd_, 38 /* DWMWA_SYSTEMBACKDROP_TYPE */,
+                          &backdrop, sizeof(backdrop));
     accessibilityProvider_ = createAccessibilityProvider(hwnd_);
     initializeTooltips();
 

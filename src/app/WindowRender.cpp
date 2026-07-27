@@ -516,6 +516,10 @@ void Window::drawTabBar(const Rect& r) {
     renderer_->drawIcon(IconKind::Coffee, bx + (bw - isz) * 0.5f,
                         r.y + (r.h - isz) * 0.5f, isz,
                         keepAwake_ ? uiTheme_.accent : uiTheme_.text);
+    if (keepAwake_)
+        renderer_->fillRoundedRect(
+            bx + bw * 0.32f, r.bottom() - 4.0f, bw * 0.36f, 3.0f,
+            1.5f, uiTheme_.accent);
     bx -= bw;
     openButtonRect_ = { bx, r.y, bw, r.h };
     if (openButtonRect_.contains(static_cast<float>(lastMouseX_),
@@ -622,9 +626,16 @@ void Window::drawPanes(const Rect& r) {
     if (t->isSplit() && !findActive_ && t->active()) {
         const Rect& pr = t->active()->rect;
         const size_t count = t->leaves().size();
+        if (t->compactLayout() && !compactLayoutNotified_) {
+            showToast(L"Some panes are hidden");
+            compactLayoutNotified_ = true;
+        } else if (!t->compactLayout()) {
+            compactLayoutNotified_ = false;
+        }
         const float h = std::max(metrics_.cellH + 6.0f,
                                  26.0f * dpiScale_);
-        const bool showCount = !t->zoom() && pr.w >= 150.0f * dpiScale_;
+        const bool showCount = !t->zoom() && !t->compactLayout() &&
+                               pr.w >= 150.0f * dpiScale_;
         const std::wstring countLabel =
             (t->compactLayout() ? L"Compact  ·  " : L"") +
             std::to_wstring(count) + (count == 1 ? L" pane" : L" panes");
@@ -703,14 +714,33 @@ void Window::drawToast() {
         std::max(220.0f * dpiScale_,
                  metrics_.cellW * (static_cast<float>(toastMessage_.size()) + 4.0f)));
     const float x = (static_cast<float>(client.right) - width) * 0.5f;
-    const float y = static_cast<float>(client.bottom) - height - margin;
-    const Color border = toastError_ ? Color{220, 90, 90} : uiTheme_.accent;
+    const ULONGLONG now = GetTickCount64();
+    BOOL animationsEnabled = TRUE;
+    SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0,
+                          &animationsEnabled, 0);
+    const float enter = animationsEnabled
+                            ? std::clamp(
+                                  static_cast<float>(now - toastStarted_) /
+                                      180.0f,
+                                  0.0f, 1.0f)
+                            : 1.0f;
+    // A short ease-out lift gives transient feedback without animating the
+    // terminal or looping. The idle render cadence naturally stops afterward.
+    const float eased = 1.0f - (1.0f - enter) * (1.0f - enter);
+    const float y = static_cast<float>(client.bottom) - height - margin +
+                    (1.0f - eased) * 10.0f * dpiScale_;
+    const Color border = toastError_ ? Color{220, 90, 90} : uiTheme_.border;
     renderer_->fillRoundedRect(x + 2.0f, y + 3.0f, width, height,
                                7.0f * dpiScale_, uiTheme_.workspaceBg);
     renderer_->fillRoundedRect(x, y, width, height, 7.0f * dpiScale_,
                                uiTheme_.tabActiveBg);
     renderer_->strokeRoundedRect(x, y, width, height, 7.0f * dpiScale_,
                                  border, 1.0f);
+    renderer_->fillRoundedRect(x + 5.0f * dpiScale_,
+                               y + 8.0f * dpiScale_, 3.0f * dpiScale_,
+                               height - 16.0f * dpiScale_,
+                               1.5f * dpiScale_,
+                               toastError_ ? border : uiTheme_.accent);
     renderer_->drawText(toastMessage_, x + 12.0f * dpiScale_,
                         y + 8.0f * dpiScale_, width - 24.0f * dpiScale_,
                         metrics_.cellH, uiTheme_.text, false);

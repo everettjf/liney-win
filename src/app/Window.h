@@ -276,8 +276,10 @@ private:
     NOTIFYICONDATAW nid_{};
     bool trayAdded_ = false;
     std::wstring toastMessage_;
+    ULONGLONG toastStarted_ = 0;
     ULONGLONG toastUntil_ = 0;
     bool toastError_ = false;
+    bool compactLayoutNotified_ = false;
     std::atomic<bool> updateReady_{ false };
     std::atomic<bool> installerReady_{ false };
     std::mutex updateMutex_;

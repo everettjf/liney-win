@@ -6,6 +6,7 @@
 #include <uxtheme.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -34,6 +35,10 @@ constexpr int kIdAiProvider = 114;
 constexpr int kIdAiModel = 115;
 constexpr int kIdAiCwd = 116;
 constexpr int kIdLigatures = 117;
+constexpr int kIdPageAppearance = 201;
+constexpr int kIdPageTerminal = 202;
+constexpr int kIdPageWorkspace = 203;
+constexpr int kIdPageAi = 204;
 
 struct State {
     HWND shell = nullptr;
@@ -62,7 +67,23 @@ struct State {
     int themeInitialSel = 0;      // selection when the dialog opened
     bool done = false;
     bool accepted = false;
+    int buildingPage = -1;
+    int activePage = 0;
+    std::array<std::vector<HWND>, 4> pageControls;
+    std::array<HWND, 4> pageButtons{};
 };
+
+void showPage(State* st, int page) {
+    if (!st || page < 0 || page >= 4) return;
+    st->activePage = page;
+    for (int p = 0; p < 4; ++p) {
+        for (HWND control : st->pageControls[p])
+            ShowWindow(control, p == page ? SW_SHOW : SW_HIDE);
+        if (st->pageButtons[p])
+            SendMessageW(st->pageButtons[p], BM_SETCHECK,
+                         p == page ? BST_CHECKED : BST_UNCHECKED, 0);
+    }
+}
 
 // Enumerate installed fixed-pitch (monospace) font families, deduped + sorted.
 std::vector<std::wstring> monospaceFonts() {
@@ -191,6 +212,10 @@ LRESULT CALLBACK proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_COMMAND:
         if (!st) break;
         switch (LOWORD(wParam)) {
+        case kIdPageAppearance: showPage(st, 0); return 0;
+        case kIdPageTerminal: showPage(st, 1); return 0;
+        case kIdPageWorkspace: showPage(st, 2); return 0;
+        case kIdPageAi: showPage(st, 3); return 0;
         case IDOK:
             if (!validateSettings(hwnd, st)) return 0;
             st->accepted = true;
@@ -277,11 +302,11 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
     auto S = [dpi](int px) { return MulDiv(px, static_cast<int>(dpi), 96); };
 
     // Logical layout grid.
-    const int W = 500;                 // client width
-    const int M = 16;                  // outer margin
-    const int labelX = M + 14;         // label column inside a group
-    const int ctrlX = M + 104;         // control column
-    const int ctrlR = W - M - 14;      // control right edge
+    const int W = 520;                 // client width
+    const int M = 20;                  // outer margin
+    const int labelX = M + 8;          // option column inside a page
+    const int ctrlX = M + 112;         // control column
+    const int ctrlR = W - M;           // control right edge
     const int ctrlW = ctrlR - ctrlX;
     const int ch = 24;                 // control height
 
@@ -291,7 +316,9 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
     st.fieldBrush = CreateSolidBrush(RGB(39, 42, 51));
 
     // Size the window so the *client* area is exactly W × contentH.
-    const int contentH = 700;
+    // Four focused pages keep the dialog short enough for 200% DPI laptops;
+    // the previous 700-DIP single page exceeded their working area.
+    const int contentH = 350;
     RECT wr{ 0, 0, S(W), S(contentH) };
     const DWORD style = WS_POPUP | WS_CAPTION | WS_SYSMENU;
     AdjustWindowRectExForDpi(&wr, style, FALSE, WS_EX_DLGMODALFRAME, dpi);
@@ -319,13 +346,16 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
     // Scaled control factory + a couple of shorthands.
     auto mk = [&](DWORD ex, const wchar_t* cls, const wchar_t* txt, DWORD s,
                   int lx, int ly, int lw, int lh, int id) -> HWND {
-        return CreateWindowExW(ex, cls, txt, s, S(lx), S(ly), S(lw), S(lh), dlg,
-                               reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
-                               inst, nullptr);
+        HWND control = CreateWindowExW(
+            ex, cls, txt, s, S(lx), S(ly), S(lw), S(lh), dlg,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), inst, nullptr);
+        if (control && st.buildingPage >= 0 && st.buildingPage < 4)
+            st.pageControls[st.buildingPage].push_back(control);
+        return control;
     };
-    auto group = [&](const wchar_t* title, int gy, int gh) {
-        mk(0, L"BUTTON", title, WS_CHILD | WS_VISIBLE | BS_GROUPBOX, M, gy,
-           W - 2 * M, gh, -1);
+    auto group = [&](const wchar_t* title, int gy, int) {
+        mk(0, L"STATIC", title, WS_CHILD | WS_VISIBLE, M, gy,
+           W - 2 * M, 24, -1);
     };
     auto label = [&](const wchar_t* text, int ly) {
         // Right-aligned in the column between the group's left edge and the
@@ -334,9 +364,26 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
            ctrlX - M - 12, 18, -1);
     };
 
+    // Page navigation keeps the dialog scannable instead of presenting one
+    // long control-panel form. BS_PUSHLIKE radio buttons provide native
+    // keyboard and high-contrast behavior while reading as a compact tab row.
+    const wchar_t* pageLabels[] = {L"Appearance", L"Terminal", L"Workspace", L"AI"};
+    const int pageIds[] = {kIdPageAppearance, kIdPageTerminal,
+                           kIdPageWorkspace, kIdPageAi};
+    for (int i = 0; i < 4; ++i) {
+        st.pageButtons[i] = CreateWindowExW(
+            0, L"BUTTON", pageLabels[i],
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON |
+                BS_PUSHLIKE,
+            S(M + i * 118), S(14), S(112), S(30), dlg,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(pageIds[i])),
+            inst, nullptr);
+    }
+
     // ---- Appearance -------------------------------------------------------
-    group(L"Appearance", 10, 132);
-    int r = 32;
+    st.buildingPage = 0;
+    group(L"Appearance", 58, 0);
+    int r = 86;
     // Font family (editable monospace dropdown) + size.
     label(L"Font", r);
     st.font = mk(0, L"COMBOBOX", L"",
@@ -353,7 +400,7 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
                      ctrlR - 46, r, 30, ch, kIdFontSize);
     SendMessageW(st.fontSize, EM_LIMITTEXT, 3, 0);
     mk(0, L"STATIC", L"pt", WS_CHILD | WS_VISIBLE, ctrlR - 12, r + 4, 16, 18, -1);
-    r += 32;
+    r += 30;
     // Theme preset.
     label(L"Theme", r);
     st.theme = mk(0, L"COMBOBOX", L"",
@@ -371,7 +418,7 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
         SendMessageW(st.theme, CB_SETCURSEL, sel, 0);
         st.themeInitialSel = sel;
     }
-    r += 32;
+    r += 30;
     // Accent color: a color chip + Choose… + hex caption.
     label(L"Accent", r);
     st.accentSwatch = mk(WS_EX_STATICEDGE, L"STATIC", L"",
@@ -383,8 +430,9 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
     setAccentSwatch(&st);
 
     // ---- Terminal ---------------------------------------------------------
-    group(L"Terminal", 152, 278);
-    r = 174;
+    st.buildingPage = 1;
+    group(L"Terminal", 58, 0);
+    r = 86;
     label(L"Shell", r);
     st.shell = mk(0, L"COMBOBOX", L"",
                   WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWN |
@@ -394,7 +442,7 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
         SendMessageW(st.shell, CB_ADDSTRING, 0,
                      reinterpret_cast<LPARAM>(s.c_str()));
     SetWindowTextW(st.shell, v.shell.c_str());
-    r += 32;
+    r += 30;
     label(L"Scrollback", r);
     st.scrollback = mk(WS_EX_CLIENTEDGE, L"EDIT",
                        std::to_wstring(v.scrollback).c_str(),
@@ -404,7 +452,7 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
     SendMessageW(st.scrollback, EM_LIMITTEXT, 7, 0);
     mk(0, L"STATIC", L"lines of history per pane", WS_CHILD | WS_VISIBLE,
        ctrlX + 100, r + 4, ctrlR - ctrlX - 100, 18, -1);
-    r += 32;
+    r += 30;
     auto checkbox = [&](int id, const wchar_t* text, bool checked, int cyRow) {
         HWND c = mk(0, L"BUTTON", text,
                     WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, labelX,
@@ -415,34 +463,35 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
     st.fontLigatures = checkbox(
         kIdLigatures, L"Enable programming ligatures (opt-in shaping)",
         v.fontLigatures, r);
-    r += 26;
+    r += 22;
     st.copyOnSelect = checkbox(kIdCopyOnSelect,
                                L"Copy to clipboard when a selection ends",
                                v.copyOnSelect, r);
-    r += 26;
+    r += 22;
     st.pasteWarn = checkbox(kIdPasteWarn,
                             L"Warn before pasting multiple lines",
                             v.multiLinePasteWarning, r);
-    r += 26;
+    r += 22;
     st.unixTools = checkbox(
         kIdUnixTools, L"Unix tools — add Git's ls / grep / sed … to PATH",
         v.unixTools, r);
-    r += 26;
+    r += 22;
     st.rememberLayout = checkbox(
         kIdRemember, L"Restore tabs & panes on launch", v.rememberLayout, r);
-    r += 26;
+    r += 22;
     st.splitWorkspaceDir = checkbox(
         kIdSplitDir,
         L"New splits open in the workspace / home dir (else inherit the pane's)",
         v.splitUseWorkspaceDir, r);
-    r += 26;
+    r += 22;
     st.autoUpdate = checkbox(
         kIdAutoUpdate, L"Check for stable updates when Liney starts",
         v.checkForUpdatesOnStartup, r);
 
     // ---- Workspace --------------------------------------------------------
-    group(L"Workspace", 440, 84);
-    r = 462;
+    st.buildingPage = 2;
+    group(L"Workspace", 58, 0);
+    r = 86;
     label(L"Root", r);
     st.root = mk(WS_EX_CLIENTEDGE, L"EDIT", v.workspaceRoot.c_str(),
                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, ctrlX, r,
@@ -454,8 +503,9 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
        WS_CHILD | WS_VISIBLE, ctrlX, r, ctrlW, 16, -1);
 
     // ---- AI ---------------------------------------------------------------
-    group(L"AI (terminal contents are sent only when you request it)", 534, 112);
-    r = 556;
+    st.buildingPage = 3;
+    group(L"AI - terminal contents are sent only when requested", 58, 0);
+    r = 86;
     label(L"Provider", r);
     st.aiProvider = mk(0, L"COMBOBOX", L"",
                        WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
@@ -481,12 +531,13 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
                         L"Include the current directory in AI requests",
                         v.aiIncludeCwd, r);
 
+    st.buildingPage = -1;
     // ---- OK / Cancel ------------------------------------------------------
     mk(0, L"BUTTON", L"OK",
-       WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, ctrlR - 178, 660,
+       WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, ctrlR - 178, 310,
        84, 28, IDOK);
     mk(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE | WS_TABSTOP, ctrlR - 84,
-       660, 84, 28, IDCANCEL);
+       310, 84, 28, IDCANCEL);
 
     // A real Segoe UI font at the monitor's DPI — the biggest single upgrade
     // over the legacy bitmap DEFAULT_GUI_FONT.
@@ -502,6 +553,7 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
         return TRUE;
     }, reinterpret_cast<LPARAM>(uiFont));
 
+    showPage(&st, 0);
     ShowWindow(dlg, SW_SHOW);
     SetFocus(st.font);
     if (owner) EnableWindow(owner, FALSE);

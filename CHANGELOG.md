@@ -1,18 +1,26 @@
 # Changelog
 
-## [0.10.2] - 2026-07-27
+## [0.10.2] - 2026-07-28
 
 - Decoupled Windows application chrome metrics from terminal font zoom, keeping
   tabs, sidebars, rows and pane padding stable while terminal text is resized.
+- Collapsed unreadable sidebar and files-panel slivers at narrow widths and
+  150%/200% DPI, preserving the terminal and toolbar instead of clipping labels.
 - Refined pane focus into a restrained edge marker instead of a full accent
   frame, and simplified the first-run workspace empty state.
 - Added an automatic compact presentation for restored layouts whose panes
   would otherwise collapse into unreadable slivers; directional focus still
   cycles through every hidden pane.
+- Replaced the persistent Compact pane overlay with a brief accessible status
+  toast that follows the Windows animation preference.
 - Updated first-run language around adding a project folder and clarified the
   command-palette shortcut.
+- Reorganized Settings into focused Appearance, Terminal, Workspace and AI
+  pages in a shorter high-DPI-safe window.
 - Added a dark Windows 11 Settings frame, dark native controls, rounded window
-  corners and consistent field colors.
+  corners, Mica frame treatment and consistent field colors.
+- Unified toolbar hover and active states, including a persistent Keep Awake
+  indicator and clearer native tooltips/accessibility scope.
 - Added unit coverage ensuring terminal zoom cannot resize application chrome.
 
 ## [0.10.1] - 2026-07-27

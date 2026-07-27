@@ -29,11 +29,16 @@ ResponsivePanelLayout layoutResponsivePanels(
             out.leftCompact = out.leftWidth < desiredPanelWidth;
             out.rightCompact = true;
         } else {
-            out.leftWidth = budget;
+            // A sliver of panel is worse than no panel: its labels are clipped
+            // and it steals the last usable terminal columns. Collapse both
+            // panels and leave their persistent toolbar toggles available.
             out.leftCompact = out.rightCompact = true;
         }
     } else if (showLeft || showRight) {
-        const float width = std::min(desiredPanelWidth, budget);
+        // Only expose a panel when it can reach its compact readable width.
+        const float width = budget >= compactPanelWidth
+                                ? std::min(desiredPanelWidth, budget)
+                                : 0.0f;
         if (showLeft) {
             out.leftWidth = width;
             out.leftCompact = width < desiredPanelWidth;
