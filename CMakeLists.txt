@@ -112,6 +112,12 @@ FetchContent_Declare(ghostty
   GIT_REPOSITORY https://github.com/ghostty-org/ghostty.git
   GIT_TAG ${LINEY_GHOSTTY_REVISION}
   GIT_SHALLOW FALSE)
+# Ghostty's native Zig target inherits the build host's CPU features. Hosted
+# runners can therefore emit instructions that are unavailable on another x64
+# machine (v0.9.2 exposed this as STATUS_ILLEGAL_INSTRUCTION during install).
+# Release artifacts must use Zig's generic x86_64 baseline instead.
+set(GHOSTTY_ZIG_BUILD_FLAGS "-Dtarget=x86_64-windows-msvc"
+    CACHE STRING "Additional flags passed to Ghostty's Zig build" FORCE)
 FetchContent_MakeAvailable(ghostty)
 
 # `ghostty-vt` is the target produced by Ghostty's CMake (delegates to
