@@ -54,6 +54,8 @@ private:
     void setProjectIcon(const Repo& repo);  // pick an icon for a project, persist
     void persistWorkspaceConfig();   // write projects_ + projectIcons_ to config
     void rememberRecentProject(const std::wstring& path);
+    void toggleFavoriteProject(const std::wstring& path);
+    void pollWorkspaceStatusRefresh();
     void drawTabBar(const Rect& r);
     void drawPanes(const Rect& r);
     void drawWelcome(const Rect& r);
@@ -240,6 +242,10 @@ private:
     size_t activeTab_ = 0;
     bool sidebarVisible_ = true;      // left WORKSPACE/SSH/AGENTS panel
     bool filesPanelVisible_ = false;  // right FILES (folder tree) panel (Ctrl+Shift+F)
+    mutable bool sidebarEffectiveVisible_ = true;
+    mutable bool filesPanelEffectiveVisible_ = false;
+    mutable bool sidebarAutoCollapsed_ = false;
+    mutable bool filesPanelAutoCollapsed_ = false;
     int headlessExitCode_ = 0; // nonzero when a required visual test path was absent
     bool keepAwake_ = false;          // SetThreadExecutionState keep-awake state
     int keepAwakeHours_ = 0;          // active preset (-1 forever, 0 off, else hours)
@@ -265,6 +271,14 @@ private:
     std::vector<std::wstring> projects_;   // explicit sidebar project folders
     std::vector<std::wstring> workspaceExclusions_;  // hidden scanned repos
     std::vector<std::wstring> recentProjects_;
+    std::vector<std::wstring> favoriteProjects_;
+    std::atomic<bool> workspaceRefreshBusy_{false};
+    std::atomic<bool> workspaceRefreshReady_{false};
+    ULONGLONG nextWorkspaceRefresh_ = 0;
+    std::mutex workspaceRefreshMutex_;
+    std::vector<std::pair<std::wstring, GitWorktreeStatus>>
+        workspaceRefreshResults_;
+    std::thread workspaceRefreshThread_;
     std::wstring workspaceRoot_;           // scanned root (empty = explicit only)
     Theme theme_;                  // terminal palette
     UiTheme uiTheme_;              // chrome palette (sidebar/tabs/accent/border)
@@ -298,6 +312,7 @@ private:
     std::wstring aiModel_ = L"gpt-5.6-luna";
     std::wstring aiEndpoint_;
     bool aiIncludeCwd_ = false;
+    int settingsPage_ = 0;
     std::atomic<bool> aiBusy_{ false };
     std::atomic<bool> aiReady_{ false };
     std::mutex aiMutex_;
@@ -308,7 +323,7 @@ private:
 
     // Hit-test rects rebuilt each frame.
     enum class RowKind { RepoHeader, Worktree, FileUp, FileDir, FileEntry,
-                         SshHost, Agent };
+                         SshHost, Agent, RecentProject };
     struct SidebarRow {
         Rect rect;
         RowKind kind = RowKind::RepoHeader;
@@ -343,6 +358,7 @@ private:
     std::wstring listedDir_;
     struct FileEntry { std::wstring name; std::wstring path; bool isDir; };
     std::vector<FileEntry> fileEntries_;
+    std::vector<std::pair<Rect, std::wstring>> fileBreadcrumbs_;
 
     // Selection gesture state (the selection itself is terminal-owned).
     bool selecting_ = false;       // a text-selection drag is in progress

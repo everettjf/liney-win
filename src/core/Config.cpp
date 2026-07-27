@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -133,6 +134,11 @@ std::string defaultJson(const Config& c) {
     for (const auto& project : c.recentProjects)
         recent.push(Json::str(wideToUtf8(project)));
     j.set("recentProjects", std::move(recent));
+    Json favorites = Json::array();
+    for (const auto& project : c.favoriteProjects)
+        favorites.push(Json::str(wideToUtf8(project)));
+    j.set("favoriteProjects", std::move(favorites));
+    j.set("settingsPage", Json::number(c.settingsPage));
     Json icons = Json::object();
     for (const auto& icon : c.projectIcons)
         icons.set(wideToUtf8(icon.first), Json::str(wideToUtf8(icon.second)));
@@ -362,6 +368,12 @@ Config loadConfig() {
             if (p.type() == Json::Type::String && !p.asString().empty() &&
                 cfg.recentProjects.size() < 10)
                 cfg.recentProjects.push_back(utf8ToWide(p.asString()));
+    if (j["favoriteProjects"].isArray())
+        for (const Json& p : j["favoriteProjects"].items())
+            if (p.type() == Json::Type::String && !p.asString().empty())
+                cfg.favoriteProjects.push_back(utf8ToWide(p.asString()));
+    cfg.settingsPage =
+        std::clamp(static_cast<int>(j["settingsPage"].asNumber(0)), 0, 3);
 
     if (cfg.shell.empty()) cfg.shell = L"cmd.exe";
     if (cfg.fontFamily.empty()) cfg.fontFamily = L"Cascadia Mono";

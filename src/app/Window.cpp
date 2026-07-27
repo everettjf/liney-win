@@ -143,6 +143,7 @@ std::wstring quoteArg(const std::wstring& value) {
 
 Window::Window() : renderer_(std::make_unique<D2DRenderer>()) {}
 Window::~Window() {
+    if (workspaceRefreshThread_.joinable()) workspaceRefreshThread_.join();
     // Wait for update-check/download workers: they capture `this` and would
     // otherwise write into a destroyed Window (bounded by the HTTP timeouts).
     for (std::thread& t : updateThreads_)
@@ -251,6 +252,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     aiModel_ = cfg.aiModel;
     aiEndpoint_ = cfg.aiEndpoint;
     aiIncludeCwd_ = cfg.aiIncludeCwd;
+    settingsPage_ = cfg.settingsPage;
     osc52Clipboard_ = cfg.osc52Clipboard;
     scrollback_ = cfg.scrollback;
     unixToolsEnabled_ = cfg.unixTools;
@@ -274,6 +276,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     projects_ = cfg.projects;
     workspaceExclusions_ = cfg.workspaceExclusions;
     recentProjects_ = cfg.recentProjects;
+    favoriteProjects_ = cfg.favoriteProjects;
     workspaceRoot_ = cfg.workspaceRoot;
     theme_ = cfg.theme;
     uiTheme_ = cfg.uiTheme;
@@ -556,6 +559,35 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
         case AccessibleElementId::ClosePane:
             closeActivePaneConfirming();
             break;
+        default: {
+            const int raw = static_cast<int>(wParam);
+            const int tabBase =
+                static_cast<int>(AccessibleElementId::TabBase);
+            const int rowBase =
+                static_cast<int>(AccessibleElementId::SidebarRowBase);
+            const int fileBase =
+                static_cast<int>(AccessibleElementId::FileRowBase);
+            if (raw >= tabBase && raw < rowBase) {
+                const size_t index = static_cast<size_t>(raw - tabBase);
+                if (index < tabs_.size()) activeTab_ = index;
+            } else if (raw >= rowBase && raw < fileBase) {
+                const size_t index = static_cast<size_t>(raw - rowBase);
+                if (index < sidebarRows_.size()) {
+                    const Rect& rect = sidebarRows_[index].rect;
+                    onMouseDown(static_cast<int>(rect.x + rect.w * 0.5f),
+                                static_cast<int>(rect.y + rect.h * 0.5f));
+                }
+            } else if (raw >= fileBase &&
+                       raw < static_cast<int>(AccessibleElementId::Toast)) {
+                const size_t index = static_cast<size_t>(raw - fileBase);
+                if (index < sidebarRows_.size()) {
+                    const Rect& rect = sidebarRows_[index].rect;
+                    onMouseDown(static_cast<int>(rect.x + rect.w * 0.5f),
+                                static_cast<int>(rect.y + rect.h * 0.5f));
+                }
+            }
+            break;
+        }
         }
         return 0;
     case WM_CLOSE: {
@@ -774,6 +806,11 @@ void Window::regions(Rect& leftBar, Rect& rightPanel, Rect& tabBar,
         metrics_.compactSidebarW(), metrics_.minimumTerminalW());
     const float sw = responsive.leftWidth;
     const float fw = responsive.rightWidth;
+    sidebarEffectiveVisible_ = sidebarVisible_ && sw > 0.0f;
+    filesPanelEffectiveVisible_ = filesPanelVisible_ && fw > 0.0f;
+    sidebarAutoCollapsed_ = sidebarVisible_ && !sidebarEffectiveVisible_;
+    filesPanelAutoCollapsed_ =
+        filesPanelVisible_ && !filesPanelEffectiveVisible_;
     const float tb = metrics_.tabBarH();
     const float midW = W - sw - fw;
     leftBar = { 0, 0, sw, H };
@@ -790,6 +827,7 @@ void Window::renderFrame() {
     pollClipboardRequests(); // OSC 52 is policy-gated; never silently trusted
     pollUpdateResult();   // show the update-check result when it arrives
     pollAiResult();       // display an explicitly requested AI explanation
+    pollWorkspaceStatusRefresh();
     updateTitle();        // reflect OSC 0/2 title changes live
 
     Tab* t = activeTab();
@@ -890,8 +928,10 @@ void Window::updateChromeAccessibility() {
         bool enabled;
     };
     const std::wstring sidebarName =
-        sidebarVisible_ ? L"Hide workspace sidebar"
-                        : L"Show workspace sidebar";
+        sidebarAutoCollapsed_
+            ? L"Workspace sidebar hidden at this window size"
+            : sidebarEffectiveVisible_ ? L"Hide workspace sidebar"
+                                       : L"Show workspace sidebar";
     const std::wstring awakeName =
         keepAwake_ ? L"Keep awake options, currently on"
                    : L"Keep awake options, currently off";
@@ -899,7 +939,9 @@ void Window::updateChromeAccessibility() {
     const ChromeElement chrome[] = {
         {AccessibleElementId::SidebarToggle, sidebarToggleRect_,
          sidebarName.c_str(), L"Liney.Toolbar.Sidebar",
-         L"Shows or hides Workspace, SSH hosts and Agents.",
+         sidebarAutoCollapsed_
+             ? L"Make the window wider to restore Workspace, SSH hosts and Agents."
+             : L"Shows or hides Workspace, SSH hosts and Agents.",
          L"Ctrl+Shift+B", L"Alt+B", true},
         {AccessibleElementId::NewTab, plusRect_, L"New tab",
          L"Liney.Toolbar.NewTab",
@@ -943,6 +985,84 @@ void Window::updateChromeAccessibility() {
         elements.push_back(
             {element.id, element.name, element.automationId, element.help,
              element.accelerator, element.accessKey, rect, element.enabled});
+    }
+    const int tabBase = static_cast<int>(AccessibleElementId::TabBase);
+    for (size_t i = 0; i < tabs_.size() && i < tabRects_.size(); ++i) {
+        if (!usable(tabRects_[i])) continue;
+        AccessibleElementInfo info;
+        info.id = static_cast<AccessibleElementId>(
+            tabBase + static_cast<int>(i));
+        info.name = tabs_[i]->title();
+        info.automationId = L"Liney.Tab." + std::to_wstring(i);
+        info.helpText = L"Terminal tab. Invoke to activate it.";
+        info.clientRect = toRect(tabRects_[i]);
+        info.controlType = UIA_TabItemControlTypeId;
+        info.selected = i == activeTab_;
+        elements.push_back(std::move(info));
+    }
+    const int rowBase =
+        static_cast<int>(AccessibleElementId::SidebarRowBase);
+    const int fileBase = static_cast<int>(AccessibleElementId::FileRowBase);
+    for (size_t i = 0; i < sidebarRows_.size(); ++i) {
+        const SidebarRow& row = sidebarRows_[i];
+        AccessibleElementInfo info;
+        const bool file = row.kind == RowKind::FileUp ||
+                          row.kind == RowKind::FileDir ||
+                          row.kind == RowKind::FileEntry;
+        info.id = static_cast<AccessibleElementId>(
+            (file ? fileBase : rowBase) + static_cast<int>(i));
+        info.clientRect = toRect(row.rect);
+        info.controlType =
+            file ? UIA_ListItemControlTypeId : UIA_TreeItemControlTypeId;
+        info.automationId =
+            (file ? L"Liney.Files." : L"Liney.Workspace.") +
+            std::to_wstring(i);
+        if (file) {
+            info.name = row.path.empty() ? L"Parent folder" : row.path;
+            info.helpText = row.kind == RowKind::FileEntry
+                                ? L"Inserts this file name into the active pane."
+                                : L"Opens this folder in the file navigator.";
+        } else if (row.kind == RowKind::RepoHeader &&
+                   row.repo >= 0 &&
+                   row.repo < static_cast<int>(workspace_.repos().size())) {
+            const Repo& repo = workspace_.repos()[row.repo];
+            info.name = repo.name;
+            info.helpText = repo.isGit()
+                                ? L"Git project. Invoke to expand or collapse worktrees."
+                                : L"Project folder. Invoke to open a terminal.";
+            info.expandable = repo.isGit();
+            info.expanded = repo.expanded;
+        } else if (row.kind == RowKind::Worktree && row.repo >= 0 &&
+                   row.repo < static_cast<int>(workspace_.repos().size())) {
+            const Repo& repo = workspace_.repos()[row.repo];
+            if (row.worktree >= 0 &&
+                row.worktree < static_cast<int>(repo.worktrees.size()))
+                info.name = repo.worktrees[row.worktree].label;
+            info.helpText = L"Git worktree. Invoke to open a terminal.";
+        } else if (row.kind == RowKind::SshHost && row.repo >= 0 &&
+                   row.repo < static_cast<int>(sshHosts_.size())) {
+            info.name = sshHosts_[row.repo].name;
+            info.helpText = L"SSH host. Invoke to open a session.";
+        } else if (row.kind == RowKind::Agent && row.repo >= 0 &&
+                   row.repo < static_cast<int>(agents_.size())) {
+            info.name = agents_[row.repo].name;
+            info.helpText = L"Agent task. Invoke to open a session.";
+        } else if (row.kind == RowKind::RecentProject) {
+            info.name = row.path;
+            info.helpText = L"Recent project. Invoke to open a terminal.";
+        }
+        if (!info.name.empty()) elements.push_back(std::move(info));
+    }
+    if (!toastMessage_.empty() && GetTickCount64() < toastUntil_) {
+        AccessibleElementInfo info;
+        info.id = AccessibleElementId::Toast;
+        info.name = toastMessage_;
+        info.automationId = L"Liney.StatusToast";
+        info.helpText = toastError_ ? L"Error status" : L"Status";
+        info.clientRect = toRect({0, 0, 1, 1});
+        info.controlType = UIA_StatusBarControlTypeId;
+        info.liveSetting = toastError_ ? Assertive : Polite;
+        elements.push_back(std::move(info));
     }
     AccessibleTextInfo terminalText;
     if (Tab* tab = activeTab(); tab && tab->active() &&
@@ -1314,7 +1434,15 @@ void Window::openSettingsDialog() {
     v.aiModel = aiModel_;
     v.aiIncludeCwd = aiIncludeCwd_;
     v.workspaceRoot = workspaceRoot_;
-    if (!showSettingsDialog(hwnd_, v)) return;
+    v.page = settingsPage_;
+    const bool settingsAccepted = showSettingsDialog(hwnd_, v);
+    settingsPage_ = std::clamp(v.page, 0, 3);
+    if (!settingsAccepted) {
+        updateConfigJson([&](Json& j) {
+            j.set("settingsPage", Json::number(settingsPage_));
+        });
+        return;
+    }
 
     // Apply live. Shell/scrollback affect sessions started from now on.
     shell_ = v.shell;
@@ -1384,6 +1512,7 @@ void Window::openSettingsDialog() {
         ai.set("includeCwd", Json::boolean(aiIncludeCwd_));
         j.set("ai", std::move(ai));
         j.set("workspaceRoot", Json::str(wideToUtf8(workspaceRoot_)));
+        j.set("settingsPage", Json::number(settingsPage_));
     });
 }
 

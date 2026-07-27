@@ -19,6 +19,10 @@ enum class AccessibleElementId : int {
     KeepAwake = 5,
     MainMenu = 6,
     ClosePane = 7,
+    TabBase = 1000,
+    SidebarRowBase = 2000,
+    FileRowBase = 4000,
+    Toast = 6000,
 };
 
 struct AccessibleElementInfo {
@@ -30,6 +34,11 @@ struct AccessibleElementInfo {
     std::wstring accessKey;
     RECT clientRect{};
     bool enabled = true;
+    CONTROLTYPEID controlType = UIA_ButtonControlTypeId;
+    bool selected = false;
+    bool expandable = false;
+    bool expanded = false;
+    LiveSetting liveSetting = Off;
 };
 
 struct AccessibleTextInfo {

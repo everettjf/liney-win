@@ -20,7 +20,7 @@ Status meanings:
 | Selection and reflow | Selection remains anchored across output, scrollback and width changes | Resize anchor gate; streaming/scrollback matrix planned |
 | Font shaping | Fallback, emoji, combining sequences, ligatures on/off, missing-glyph behavior | Fallback/emoji gate; forced opt-in operator-shaping display gate |
 | Display lifecycle | Hardware/WARP, device loss, 96–288 DPI, suspend/resume | Gate; multi-monitor restore is a client gate |
-| Accessibility | Root and toolbar UIA identity, keyboard paths, Invoke; terminal text exposed through TextPattern | TextPattern live-text, toolbar and keyboard gate |
+| Accessibility | Root, toolbar, tabs, workspace tree, file list and live status UIA identity; keyboard paths and terminal TextPattern | TextPattern live-text, semantic chrome hierarchy, live-region and keyboard gate |
 | ConPTY lifecycle | Start/resize/input/output/exit, 50-cycle soak, large output, cancellation, WSL/SSH reconnect | Gate |
 | Shell integration | PowerShell/pwsh/cmd/WSL/Git Bash detection, OSC 7/133, idempotence and conflicting prompt hooks | PowerShell/idempotence gate; cross-shell conflict matrix planned |
 | TUI applications | vim, less, tmux, htop/btop, fzf, mc and a curses fixture on supported shells | Nightly ConPTY gate for vim/less/fzf; interactive mouse fixtures remain planned |
@@ -41,9 +41,9 @@ Status meanings:
 | Area | Required evidence | Current status |
 |---|---|---|
 | Responsive density | Golden captures at minimum width, 100–300% DPI, long names, 1/4/16/48 panes and tab overflow | Width/DPI layout and committed golden comparison gate |
-| Object semantics | Repository, ordinary folder, worktree, SSH host and Agent task have distinct icon/state/secondary text | Gate for distinct icons and explicit dirty/ahead/behind plus Agent activity labels |
-| Side panels | Terminal retains a usable minimum grid; panels collapse predictably and preserve user intent | Pure layout and 640/800/1000px display gate |
-| File tree scope | UI and copy describe navigation/context, not IDE editing | Planned |
+| Object semantics | Repository, ordinary folder, worktree, SSH host and Agent task have distinct icon/state/secondary text | Gate for distinct icons, compact dirty/ahead/behind status, favorites and Agent activity labels |
+| Side panels | Terminal retains a usable minimum grid; panels collapse predictably and preserve user intent | Pure layout and 640/800/1000px display gate; effective state is exposed to UIA |
+| File tree scope | UI and copy describe navigation/context, not IDE editing | Breadcrumb navigation and insert-only file action implemented; remote SFTP remains planned |
 | Visual regression | Pixel/tolerance comparison of deterministic headless Direct2D captures | Gate: isolated profile, WARP captures, committed baselines and 1% tolerance |
 
 ## Reliability schedules

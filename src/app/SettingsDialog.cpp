@@ -2,6 +2,7 @@
 
 #include <commdlg.h>  // ChooseColorW (accent picker)
 #include <dwmapi.h>
+#include <shellapi.h>
 #include <shlobj.h>   // SHBrowseForFolderW (workspace root picker)
 #include <uxtheme.h>
 
@@ -12,6 +13,7 @@
 #include <vector>
 
 #include "core/Themes.h"
+#include "core/Config.h"
 
 namespace liney {
 
@@ -35,6 +37,8 @@ constexpr int kIdAiProvider = 114;
 constexpr int kIdAiModel = 115;
 constexpr int kIdAiCwd = 116;
 constexpr int kIdLigatures = 117;
+constexpr int kIdOpenConfig = 118;
+constexpr int kIdResetPage = 119;
 constexpr int kIdPageAppearance = 201;
 constexpr int kIdPageTerminal = 202;
 constexpr int kIdPageWorkspace = 203;
@@ -59,7 +63,11 @@ struct State {
     HWND aiCwd = nullptr;
     HWND root = nullptr;
     HWND accentHex = nullptr;     // "#RRGGBB" caption next to the swatch
+    HWND themePreview = nullptr;
+    HWND validation = nullptr;
     HBRUSH accentBrush = nullptr; // fills the swatch via WM_CTLCOLORSTATIC
+    HBRUSH themePreviewBrush = nullptr;
+    COLORREF themePreviewText = RGB(232, 232, 208);
     HBRUSH backgroundBrush = nullptr;
     HBRUSH fieldBrush = nullptr;
     Color accent{ 120, 200, 160 };
@@ -73,6 +81,9 @@ struct State {
     std::array<HWND, 4> pageButtons{};
 };
 
+void setAccentSwatch(State* st);
+void updateThemePreview(State* st);
+
 void showPage(State* st, int page) {
     if (!st || page < 0 || page >= 4) return;
     st->activePage = page;
@@ -82,6 +93,45 @@ void showPage(State* st, int page) {
         if (st->pageButtons[p])
             SendMessageW(st->pageButtons[p], BM_SETCHECK,
                          p == page ? BST_CHECKED : BST_UNCHECKED, 0);
+    }
+}
+
+void resetActivePage(State* st) {
+    if (!st) return;
+    if (st->validation) ShowWindow(st->validation, SW_HIDE);
+    switch (st->activePage) {
+    case 0: {
+        SetWindowTextW(st->font, L"Cascadia Mono");
+        SetWindowTextW(st->fontSize, L"16");
+        SendMessageW(st->theme, CB_SETCURSEL, 0, 0);
+        const auto presets = builtinThemePresets();
+        if (!presets.empty()) {
+            st->accent = presets.front().ui.accent;
+            st->accentChanged = true;
+            setAccentSwatch(st);
+            updateThemePreview(st);
+        }
+        break;
+    }
+    case 1:
+        SetWindowTextW(st->shell, L"cmd.exe");
+        SetWindowTextW(st->scrollback, L"10000");
+        SendMessageW(st->fontLigatures, BM_SETCHECK, BST_UNCHECKED, 0);
+        SendMessageW(st->copyOnSelect, BM_SETCHECK, BST_UNCHECKED, 0);
+        SendMessageW(st->pasteWarn, BM_SETCHECK, BST_CHECKED, 0);
+        SendMessageW(st->unixTools, BM_SETCHECK, BST_CHECKED, 0);
+        SendMessageW(st->rememberLayout, BM_SETCHECK, BST_UNCHECKED, 0);
+        SendMessageW(st->splitWorkspaceDir, BM_SETCHECK, BST_UNCHECKED, 0);
+        SendMessageW(st->autoUpdate, BM_SETCHECK, BST_CHECKED, 0);
+        break;
+    case 2:
+        SetWindowTextW(st->root, L"");
+        break;
+    case 3:
+        SendMessageW(st->aiProvider, CB_SETCURSEL, 0, 0);
+        SetWindowTextW(st->aiModel, L"gpt-5.6-luna");
+        SendMessageW(st->aiCwd, BM_SETCHECK, BST_UNCHECKED, 0);
+        break;
     }
 }
 
@@ -122,6 +172,24 @@ void setAccentSwatch(State* st) {
     }
 }
 
+void updateThemePreview(State* st) {
+    if (!st || !st->theme || !st->themePreview) return;
+    const int selected =
+        static_cast<int>(SendMessageW(st->theme, CB_GETCURSEL, 0, 0));
+    const auto presets = builtinThemePresets();
+    if (selected < 0 || selected >= static_cast<int>(presets.size())) return;
+    const Theme& theme = presets[selected].terminal;
+    if (st->themePreviewBrush) DeleteObject(st->themePreviewBrush);
+    st->themePreviewBrush = CreateSolidBrush(
+        RGB(theme.background.r, theme.background.g, theme.background.b));
+    st->themePreviewText =
+        RGB(theme.foreground.r, theme.foreground.g, theme.foreground.b);
+    const std::wstring text =
+        presets[selected].name + L"   PS> git status";
+    SetWindowTextW(st->themePreview, text.c_str());
+    InvalidateRect(st->themePreview, nullptr, TRUE);
+}
+
 std::wstring windowText(HWND h) {
     const int n = GetWindowTextLengthW(h);
     std::wstring s(static_cast<size_t>(n) + 1, L'\0');
@@ -130,15 +198,24 @@ std::wstring windowText(HWND h) {
     return s;
 }
 
-bool parseIntegerField(HWND owner, HWND field, const wchar_t* label,
-                       int minimum, int maximum) {
+bool showValidation(State* st, int page, HWND field,
+                    const std::wstring& message) {
+    if (!st) return false;
+    showPage(st, page);
+    if (st->validation) {
+        SetWindowTextW(st->validation, message.c_str());
+        ShowWindow(st->validation, SW_SHOW);
+    }
+    SetFocus(field);
+    return false;
+}
+
+bool parseIntegerField(State* st, HWND field, const wchar_t* label,
+                       int minimum, int maximum, int page) {
     const std::wstring value = windowText(field);
     if (value.empty()) {
         std::wstring message = std::wstring(label) + L" is required.";
-        MessageBoxW(owner, message.c_str(), L"Check settings",
-                    MB_OK | MB_ICONWARNING);
-        SetFocus(field);
-        return false;
+        return showValidation(st, page, field, message);
     }
     wchar_t* end = nullptr;
     const long number = wcstol(value.c_str(), &end, 10);
@@ -146,9 +223,7 @@ bool parseIntegerField(HWND owner, HWND field, const wchar_t* label,
         std::wstring message = std::wstring(label) + L" must be between " +
             std::to_wstring(minimum) + L" and " + std::to_wstring(maximum) +
             L".";
-        MessageBoxW(owner, message.c_str(), L"Check settings",
-                    MB_OK | MB_ICONWARNING);
-        SetFocus(field);
+        showValidation(st, page, field, message);
         SendMessageW(field, EM_SETSEL, 0, -1);
         return false;
     }
@@ -156,24 +231,25 @@ bool parseIntegerField(HWND owner, HWND field, const wchar_t* label,
 }
 
 bool validateSettings(HWND owner, State* st) {
-    if (windowText(st->shell).empty()) {
-        MessageBoxW(owner, L"Choose a shell command.", L"Check settings",
-                    MB_OK | MB_ICONWARNING);
-        SetFocus(st->shell);
-        return false;
+    (void)owner;
+    if (st->validation) {
+        SetWindowTextW(st->validation, L"");
+        ShowWindow(st->validation, SW_HIDE);
     }
-    if (!parseIntegerField(owner, st->fontSize, L"Font size", 6, 96) ||
-        !parseIntegerField(owner, st->scrollback, L"Scrollback", 0, 1000000))
+    if (windowText(st->shell).empty()) {
+        return showValidation(st, 1, st->shell, L"Choose a shell command.");
+    }
+    if (!parseIntegerField(st, st->fontSize, L"Font size", 6, 96, 0) ||
+        !parseIntegerField(st, st->scrollback, L"Scrollback", 0, 1000000, 1))
         return false;
     const std::wstring root = windowText(st->root);
     if (!root.empty()) {
         const DWORD attributes = GetFileAttributesW(root.c_str());
         if (attributes == INVALID_FILE_ATTRIBUTES ||
             !(attributes & FILE_ATTRIBUTE_DIRECTORY)) {
-            MessageBoxW(owner,
-                        L"Workspace root must be an existing folder, or blank.",
-                        L"Check settings", MB_OK | MB_ICONWARNING);
-            SetFocus(st->root);
+            showValidation(
+                st, 2, st->root,
+                L"Workspace root must be an existing folder, or blank.");
             SendMessageW(st->root, EM_SETSEL, 0, -1);
             return false;
         }
@@ -211,11 +287,25 @@ LRESULT CALLBACK proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
     case WM_COMMAND:
         if (!st) break;
+        if (LOWORD(wParam) == kIdTheme &&
+            HIWORD(wParam) == CBN_SELCHANGE) {
+            updateThemePreview(st);
+            return 0;
+        }
         switch (LOWORD(wParam)) {
         case kIdPageAppearance: showPage(st, 0); return 0;
         case kIdPageTerminal: showPage(st, 1); return 0;
         case kIdPageWorkspace: showPage(st, 2); return 0;
         case kIdPageAi: showPage(st, 3); return 0;
+        case kIdResetPage:
+            resetActivePage(st);
+            return 0;
+        case kIdOpenConfig: {
+            const std::wstring path = configDir() + L"\\config.json";
+            ShellExecuteW(hwnd, L"open", path.c_str(), nullptr, nullptr,
+                          SW_SHOWNORMAL);
+            return 0;
+        }
         case IDOK:
             if (!validateSettings(hwnd, st)) return 0;
             st->accepted = true;
@@ -256,6 +346,17 @@ LRESULT CALLBACK proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         if (st && reinterpret_cast<HWND>(lParam) == st->accentSwatch &&
             st->accentBrush)
             return reinterpret_cast<LRESULT>(st->accentBrush);
+        if (st && reinterpret_cast<HWND>(lParam) == st->themePreview &&
+            st->themePreviewBrush) {
+            SetTextColor(reinterpret_cast<HDC>(wParam), st->themePreviewText);
+            SetBkMode(reinterpret_cast<HDC>(wParam), TRANSPARENT);
+            return reinterpret_cast<LRESULT>(st->themePreviewBrush);
+        }
+        if (st && reinterpret_cast<HWND>(lParam) == st->validation) {
+            SetTextColor(reinterpret_cast<HDC>(wParam), RGB(255, 145, 145));
+            SetBkColor(reinterpret_cast<HDC>(wParam), RGB(31, 33, 40));
+            return reinterpret_cast<LRESULT>(st->backgroundBrush);
+        }
         if (st) {
             SetTextColor(reinterpret_cast<HDC>(wParam), RGB(225, 228, 235));
             SetBkColor(reinterpret_cast<HDC>(wParam), RGB(31, 33, 40));
@@ -428,6 +529,13 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
     st.accentHex = mk(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE, ctrlX + 138,
                       r + 4, 90, 18, -1);
     setAccentSwatch(&st);
+    r += 36;
+    label(L"Preview", r);
+    st.themePreview = mk(
+        WS_EX_STATICEDGE, L"STATIC", L"",
+        WS_CHILD | WS_VISIBLE | SS_CENTER | SS_CENTERIMAGE,
+        ctrlX, r, ctrlW, 34, -1);
+    updateThemePreview(&st);
 
     // ---- Terminal ---------------------------------------------------------
     st.buildingPage = 1;
@@ -533,6 +641,14 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
 
     st.buildingPage = -1;
     // ---- OK / Cancel ------------------------------------------------------
+    st.validation = mk(0, L"STATIC", L"",
+                       WS_CHILD | SS_RIGHT, M, 286,
+                       ctrlR - M - 230, 18, -1);
+    mk(0, L"BUTTON", L"Open config",
+       WS_CHILD | WS_VISIBLE | WS_TABSTOP, M, 310, 92, 28, kIdOpenConfig);
+    mk(0, L"BUTTON", L"Reset page",
+       WS_CHILD | WS_VISIBLE | WS_TABSTOP, M + 102, 310, 92, 28,
+       kIdResetPage);
     mk(0, L"BUTTON", L"OK",
        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, ctrlR - 178, 310,
        84, 28, IDOK);
@@ -553,9 +669,11 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
         return TRUE;
     }, reinterpret_cast<LPARAM>(uiFont));
 
-    showPage(&st, 0);
+    showPage(&st, std::clamp(v.page, 0, 3));
     ShowWindow(dlg, SW_SHOW);
-    SetFocus(st.font);
+    const HWND firstPageControl[] = {
+        st.font, st.shell, st.root, st.aiProvider};
+    SetFocus(firstPageControl[st.activePage]);
     if (owner) EnableWindow(owner, FALSE);
 
     MSG msg{};
@@ -629,6 +747,7 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
         v.workspaceRoot = windowText(st.root);
     }
 
+    v.page = st.activePage;
     if (owner) EnableWindow(owner, TRUE);
     DestroyWindow(dlg);
     if (owner) SetForegroundWindow(owner);
@@ -637,6 +756,7 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
         uiFont != reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT)))
         DeleteObject(uiFont);
     if (st.accentBrush) DeleteObject(st.accentBrush);
+    if (st.themePreviewBrush) DeleteObject(st.themePreviewBrush);
     if (st.backgroundBrush) DeleteObject(st.backgroundBrush);
     if (st.fieldBrush) DeleteObject(st.fieldBrush);
     return st.accepted;

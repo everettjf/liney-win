@@ -94,13 +94,33 @@ try {
         }
         $foundButtons[$entry.Key] = $button
     }
+    $tabCondition =
+        [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+            [System.Windows.Automation.ControlType]::TabItem)
+    $initialTabs = $element.FindAll(
+        [System.Windows.Automation.TreeScope]::Descendants, $tabCondition)
+    if ($initialTabs.Count -lt 1) {
+        throw 'The tab strip does not expose semantic TabItem elements.'
+    }
+    if (-not $initialTabs[0].GetCurrentPropertyValue(
+            [System.Windows.Automation.AutomationElement]::IsSelectionItemPatternAvailableProperty)) {
+        throw 'Terminal tabs do not expose the SelectionItem pattern.'
+    }
     $newTabInvoke = $foundButtons['Liney.Toolbar.NewTab'].GetCurrentPattern(
         [System.Windows.Automation.InvokePattern]::Pattern)
     $newTabInvoke.Invoke()
     Start-Sleep -Milliseconds 150
     if ($process.HasExited) { throw 'UI Automation Invoke caused the app to exit.' }
+    $tabsAfterInvoke = $element.FindAll(
+        [System.Windows.Automation.TreeScope]::Descendants, $tabCondition)
+    if ($tabsAfterInvoke.Count -lt 2) {
+        throw 'New-tab Invoke did not update the semantic tab collection.'
+    }
 
     [void][Microsoft.VisualBasic.Interaction]::AppActivate($process.Id)
+    $element.SetFocus()
+    Start-Sleep -Milliseconds 200
     [System.Windows.Forms.SendKeys]::SendWait(
         'echo liney-accessibility-text{ENTER}')
     $textPattern = $element.GetCurrentPattern(
@@ -136,4 +156,4 @@ try {
     Remove-Item -LiteralPath (Join-Path $testConfig 'config.json') -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath (Join-Path $testConfig 'config.json.bak') -Force -ErrorAction SilentlyContinue
 }
-Write-Host 'UI Automation terminal TextPattern, toolbar identity, Invoke, access keys and command-palette smoke passed.'
+Write-Host 'UI Automation terminal TextPattern, toolbar/tab semantics, Invoke, access keys and command-palette smoke passed.'

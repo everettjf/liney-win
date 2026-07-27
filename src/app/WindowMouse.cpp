@@ -2,6 +2,7 @@
 #include "app/WindowInternal.h"
 #include "core/RenderSignal.h"
 #include "util/InputBox.h"
+#include "util/Process.h"
 
 #include <algorithm>
 #include <cwchar>
@@ -24,6 +25,16 @@ void Window::onMouseDown(int xi, int yi) {
         }
         for (const SidebarRow& row : sidebarRows_) {
             if (!row.rect.contains(x, y)) continue;
+            if (row.kind == RowKind::RecentProject) {
+                if (GetFileAttributesW(row.path.c_str()) !=
+                    INVALID_FILE_ATTRIBUTES) {
+                    rememberRecentProject(row.path);
+                    newTab(row.path);
+                } else {
+                    showToast(L"Recent project is no longer available", true);
+                }
+                return;
+            }
             switch (row.kind) {
             case RowKind::RepoHeader: {
                 auto& repos = workspace_.repos();
@@ -150,6 +161,12 @@ void Window::onMouseDown(int xi, int yi) {
             welcomeVisible_ = false;
             addWorkspaceFolder();
             return;
+        }
+        for (const auto& breadcrumb : fileBreadcrumbs_) {
+            if (breadcrumb.first.contains(x, y)) {
+                browsePath_ = breadcrumb.second;
+                return;
+            }
         }
         if (welcomeVisible_ && welcomePaletteRect_.contains(x, y)) {
             welcomeVisible_ = false;
@@ -354,6 +371,13 @@ void Window::onMouseDownRight(int xi, int yi) {
                 AppendMenuW(menu, MF_STRING, 7, L"Refresh Git status");
             }
             AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+            const bool favorite = std::any_of(
+                favoriteProjects_.begin(), favoriteProjects_.end(),
+                [&](const std::wstring& path) {
+                    return workspacePathsEqual(path, repo.path);
+                });
+            AppendMenuW(menu, MF_STRING, 8,
+                        favorite ? L"Unpin project" : L"Pin project");
             AppendMenuW(menu, MF_STRING, 2, L"Set icon…");
             AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
             AppendMenuW(menu, MF_STRING, 3, L"Remove from workspace");
@@ -373,8 +397,27 @@ void Window::onMouseDownRight(int xi, int yi) {
                 ShellExecuteW(hwnd_, L"open", repo.path.c_str(), nullptr,
                               nullptr, SW_SHOWNORMAL);
             } else if (cmd == 1 && repo.isGit()) {
-                std::wstring name = inputBox(hwnd_, L"New worktree",
-                                             L"New branch / worktree name:", L"");
+                bool branchesOk = false;
+                const std::wstring branchOutput = runCapture(
+                    L"git branch --format=\"%(refname:short)\"",
+                    repo.path, &branchesOk);
+                std::vector<std::wstring> branches;
+                size_t start = 0;
+                while (branchesOk && start < branchOutput.size()) {
+                    size_t end = branchOutput.find(L'\n', start);
+                    if (end == std::wstring::npos) end = branchOutput.size();
+                    std::wstring branch = branchOutput.substr(start, end - start);
+                    if (!branch.empty() && branch.back() == L'\r')
+                        branch.pop_back();
+                    if (!branch.empty()) branches.push_back(std::move(branch));
+                    start = end + 1;
+                }
+                const std::wstring previewPrefix =
+                    parentDir(repo.path) + L"\\" + repo.name + L"-";
+                std::wstring name = inputBoxWithSuggestions(
+                    hwnd_, L"New worktree",
+                    L"Type a new branch or choose an existing branch:", L"",
+                    branches, previewPrefix);
                 if (name.empty()) return;
                 std::wstring err;
                 std::wstring path = workspace_.addWorktree(repo, name, &err);
@@ -437,6 +480,8 @@ void Window::onMouseDownRight(int xi, int yi) {
                 markRenderDirty();
             } else if (cmd == 2) {
                 setProjectIcon(repo);
+            } else if (cmd == 8) {
+                toggleFavoriteProject(repo.path);
             } else if (cmd == 3) {
                 removeProject(repo);  // erases `repo`; nothing used after
             }

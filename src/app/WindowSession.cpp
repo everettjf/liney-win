@@ -584,6 +584,24 @@ void Window::rescanWorkspace() {
     for (const std::wstring& p : workspaceExclusions_)
         workspace_.removeRepoByPath(p);
     for (const std::wstring& p : projects_) workspace_.addProject(p);
+    auto favoriteRank = [&](const Repo& repo) {
+        auto it = std::find_if(
+            favoriteProjects_.begin(), favoriteProjects_.end(),
+            [&](const std::wstring& path) {
+                return workspacePathsEqual(path, repo.path);
+            });
+        return it == favoriteProjects_.end()
+                   ? static_cast<int>(favoriteProjects_.size()) + 1
+                   : static_cast<int>(it - favoriteProjects_.begin());
+    };
+    std::stable_sort(workspace_.repos().begin(), workspace_.repos().end(),
+                     [&](const Repo& a, const Repo& b) {
+                         const int ar = favoriteRank(a);
+                         const int br = favoriteRank(b);
+                         return ar != br ? ar < br
+                                        : _wcsicmp(a.name.c_str(),
+                                                   b.name.c_str()) < 0;
+                     });
 }
 
 void Window::addWorkspaceFolder() {
@@ -676,6 +694,75 @@ void Window::setProjectIcon(const Repo& repo) {
     showToast(L"Project icon updated");
 }
 
+void Window::toggleFavoriteProject(const std::wstring& path) {
+    auto it = std::find_if(
+        favoriteProjects_.begin(), favoriteProjects_.end(),
+        [&](const std::wstring& item) {
+            return workspacePathsEqual(item, path);
+        });
+    const bool adding = it == favoriteProjects_.end();
+    if (adding)
+        favoriteProjects_.insert(favoriteProjects_.begin(),
+                                 normalizeWorkspacePath(path));
+    else
+        favoriteProjects_.erase(it);
+    persistWorkspaceConfig();
+    rescanWorkspace();
+    showToast(adding ? L"Project pinned" : L"Project unpinned");
+}
+
+void Window::pollWorkspaceStatusRefresh() {
+    if (workspaceRefreshReady_.exchange(false)) {
+        if (workspaceRefreshThread_.joinable())
+            workspaceRefreshThread_.join();
+        std::vector<std::pair<std::wstring, GitWorktreeStatus>> results;
+        {
+            std::lock_guard lock(workspaceRefreshMutex_);
+            results.swap(workspaceRefreshResults_);
+        }
+        for (Repo& repo : workspace_.repos()) {
+            for (Worktree& worktree : repo.worktrees) {
+                for (const auto& result : results) {
+                    if (!workspacePathsEqual(worktree.path, result.first))
+                        continue;
+                    worktree.status = result.second;
+                    if (!result.second.branch.empty() &&
+                        !result.second.detached)
+                        worktree.label = result.second.branch;
+                    break;
+                }
+            }
+        }
+        workspaceRefreshBusy_.store(false);
+        markRenderDirty();
+    }
+    const ULONGLONG now = GetTickCount64();
+    if (workspaceRefreshBusy_.load() || now < nextWorkspaceRefresh_) return;
+    std::vector<std::wstring> paths;
+    for (const Repo& repo : workspace_.repos())
+        for (const Worktree& worktree : repo.worktrees)
+            if (worktree.git) paths.push_back(worktree.path);
+    nextWorkspaceRefresh_ = now + 15000;
+    if (paths.empty()) return;
+    workspaceRefreshBusy_.store(true);
+    workspaceRefreshThread_ = std::thread([this, paths = std::move(paths)] {
+        std::vector<std::pair<std::wstring, GitWorktreeStatus>> results;
+        for (const std::wstring& path : paths) {
+            bool ok = false;
+            const std::wstring output = runCapture(
+                L"git status --porcelain=v2 --branch --untracked-files=normal",
+                path, &ok, 5000);
+            if (ok) results.push_back({path, parseGitStatusPorcelainV2(output)});
+        }
+        {
+            std::lock_guard lock(workspaceRefreshMutex_);
+            workspaceRefreshResults_ = std::move(results);
+        }
+        workspaceRefreshReady_.store(true);
+        markRenderDirty();
+    });
+}
+
 void Window::persistWorkspaceConfig() {
     // updateConfigJson preserves other keys, writes atomically, and refuses
     // to clobber a config.json that no longer parses.
@@ -689,6 +776,11 @@ void Window::persistWorkspaceConfig() {
         for (const std::wstring& p : workspaceExclusions_)
             exclusions.push(Json::str(wideToUtf8(p)));
         root.set("workspaceExclusions", std::move(exclusions));
+
+        Json favorites = Json::array();
+        for (const std::wstring& p : favoriteProjects_)
+            favorites.push(Json::str(wideToUtf8(p)));
+        root.set("favoriteProjects", std::move(favorites));
 
         Json icons = Json::object();
         for (const auto& pi : projectIcons_)

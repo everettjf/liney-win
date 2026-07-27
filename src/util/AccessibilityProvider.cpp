@@ -69,7 +69,9 @@ private:
 
 class ChildProvider final : public IRawElementProviderSimple,
                             public IRawElementProviderFragment,
-                            public IInvokeProvider {
+                            public IInvokeProvider,
+                            public ISelectionItemProvider,
+                            public IExpandCollapseProvider {
 public:
     ChildProvider(RootProvider* root, AccessibleElementId id);
     ~ChildProvider();
@@ -97,6 +99,18 @@ public:
         IRawElementProviderFragmentRoot** root) override;
 
     HRESULT STDMETHODCALLTYPE Invoke() override;
+    HRESULT STDMETHODCALLTYPE Select() override { return Invoke(); }
+    HRESULT STDMETHODCALLTYPE AddToSelection() override { return Invoke(); }
+    HRESULT STDMETHODCALLTYPE RemoveFromSelection() override {
+        return UIA_E_NOTSUPPORTED;
+    }
+    HRESULT STDMETHODCALLTYPE get_IsSelected(BOOL* selected) override;
+    HRESULT STDMETHODCALLTYPE get_SelectionContainer(
+        IRawElementProviderSimple** provider) override;
+    HRESULT STDMETHODCALLTYPE Expand() override { return Invoke(); }
+    HRESULT STDMETHODCALLTYPE Collapse() override { return Invoke(); }
+    HRESULT STDMETHODCALLTYPE get_ExpandCollapseState(
+        ExpandCollapseState* state) override;
 
 private:
     std::atomic<ULONG> refs_{1};
@@ -314,9 +328,33 @@ public:
 
     void update(const std::vector<AccessibleElementInfo>& elements,
                 const AccessibleTextInfo& text) {
-        std::lock_guard lock(mutex_);
-        elements_ = elements;
-        terminalText_ = text;
+        bool liveChanged = false;
+        {
+            std::lock_guard lock(mutex_);
+            auto liveName = [](const std::vector<AccessibleElementInfo>& values) {
+                for (const auto& value : values)
+                    if (value.liveSetting != Off) return value.name;
+                return std::wstring();
+            };
+            liveChanged = liveName(elements_) != liveName(elements) &&
+                          !liveName(elements).empty();
+            elements_ = elements;
+            terminalText_ = text;
+        }
+        if (liveChanged) {
+            if (IRawElementProviderFragment* live =
+                    makeChild(AccessibleElementId::Toast)) {
+                IRawElementProviderSimple* simple = nullptr;
+                if (SUCCEEDED(live->QueryInterface(
+                        __uuidof(IRawElementProviderSimple),
+                        reinterpret_cast<void**>(&simple)))) {
+                    UiaRaiseAutomationEvent(simple,
+                                            UIA_LiveRegionChangedEventId);
+                    simple->Release();
+                }
+                live->Release();
+            }
+        }
     }
     bool info(AccessibleElementId id, AccessibleElementInfo& out) const {
         std::lock_guard lock(mutex_);
@@ -622,6 +660,10 @@ HRESULT STDMETHODCALLTYPE ChildProvider::QueryInterface(REFIID id,
         *object = static_cast<IRawElementProviderFragment*>(this);
     } else if (id == __uuidof(IInvokeProvider)) {
         *object = static_cast<IInvokeProvider*>(this);
+    } else if (id == __uuidof(ISelectionItemProvider)) {
+        *object = static_cast<ISelectionItemProvider*>(this);
+    } else if (id == __uuidof(IExpandCollapseProvider)) {
+        *object = static_cast<IExpandCollapseProvider*>(this);
     } else {
         return E_NOINTERFACE;
     }
@@ -647,8 +689,27 @@ HRESULT STDMETHODCALLTYPE ChildProvider::GetPatternProvider(
     if (!provider) return E_POINTER;
     *provider = nullptr;
     if (pattern == UIA_InvokePatternId) {
-        *provider = static_cast<IInvokeProvider*>(this);
-        AddRef();
+        AccessibleElementInfo info;
+        if (root_ && root_->info(id_, info) &&
+            info.controlType != UIA_StatusBarControlTypeId) {
+            *provider = static_cast<IInvokeProvider*>(this);
+            AddRef();
+        }
+    } else if (pattern == UIA_SelectionItemPatternId) {
+        AccessibleElementInfo info;
+        if (root_ && root_->info(id_, info) &&
+            (info.controlType == UIA_TabItemControlTypeId ||
+             info.controlType == UIA_TreeItemControlTypeId ||
+             info.controlType == UIA_ListItemControlTypeId)) {
+            *provider = static_cast<ISelectionItemProvider*>(this);
+            AddRef();
+        }
+    } else if (pattern == UIA_ExpandCollapsePatternId) {
+        AccessibleElementInfo info;
+        if (root_ && root_->info(id_, info) && info.expandable) {
+            *provider = static_cast<IExpandCollapseProvider*>(this);
+            AddRef();
+        }
     }
     return S_OK;
 }
@@ -662,7 +723,7 @@ HRESULT STDMETHODCALLTYPE ChildProvider::GetPropertyValue(PROPERTYID property,
     switch (property) {
     case UIA_ControlTypePropertyId:
         value->vt = VT_I4;
-        value->lVal = UIA_ButtonControlTypeId;
+        value->lVal = info.controlType;
         break;
     case UIA_NamePropertyId:
         value->vt = VT_BSTR;
@@ -697,6 +758,21 @@ HRESULT STDMETHODCALLTYPE ChildProvider::GetPropertyValue(PROPERTYID property,
     case UIA_HasKeyboardFocusPropertyId:
         value->vt = VT_BOOL;
         value->boolVal = VARIANT_FALSE;
+        break;
+    case UIA_SelectionItemIsSelectedPropertyId:
+        value->vt = VT_BOOL;
+        value->boolVal = info.selected ? VARIANT_TRUE : VARIANT_FALSE;
+        break;
+    case UIA_ExpandCollapseExpandCollapseStatePropertyId:
+        if (info.expandable) {
+            value->vt = VT_I4;
+            value->lVal = info.expanded ? ExpandCollapseState_Expanded
+                                        : ExpandCollapseState_Collapsed;
+        }
+        break;
+    case UIA_LiveSettingPropertyId:
+        value->vt = VT_I4;
+        value->lVal = info.liveSetting;
         break;
     default:
         break;
@@ -788,6 +864,38 @@ HRESULT STDMETHODCALLTYPE ChildProvider::Invoke() {
                         static_cast<WPARAM>(id_), 0)
         ? S_OK
         : HRESULT_FROM_WIN32(GetLastError());
+}
+
+HRESULT STDMETHODCALLTYPE ChildProvider::get_IsSelected(BOOL* selected) {
+    if (!selected) return E_POINTER;
+    AccessibleElementInfo info;
+    if (!root_ || !root_->info(id_, info)) return UIA_E_ELEMENTNOTAVAILABLE;
+    *selected = info.selected ? TRUE : FALSE;
+    return S_OK;
+}
+
+HRESULT STDMETHODCALLTYPE ChildProvider::get_SelectionContainer(
+    IRawElementProviderSimple** provider) {
+    if (!provider) return E_POINTER;
+    *provider = nullptr;
+    if (!root_) return UIA_E_ELEMENTNOTAVAILABLE;
+    *provider = static_cast<IRawElementProviderSimple*>(root_);
+    root_->AddRef();
+    return S_OK;
+}
+
+HRESULT STDMETHODCALLTYPE ChildProvider::get_ExpandCollapseState(
+    ExpandCollapseState* state) {
+    if (!state) return E_POINTER;
+    AccessibleElementInfo info;
+    if (!root_ || !root_->info(id_, info)) return UIA_E_ELEMENTNOTAVAILABLE;
+    if (!info.expandable) {
+        *state = ExpandCollapseState_LeafNode;
+    } else {
+        *state = info.expanded ? ExpandCollapseState_Expanded
+                               : ExpandCollapseState_Collapsed;
+    }
+    return S_OK;
 }
 
 } // namespace

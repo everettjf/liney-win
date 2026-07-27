@@ -62,6 +62,8 @@ struct Config {
     // Auto-discovered repositories explicitly removed from the sidebar.
     std::vector<std::wstring> workspaceExclusions;
     std::vector<std::wstring> recentProjects;
+    std::vector<std::wstring> favoriteProjects;
+    int settingsPage = 0;  // last selected Settings category (0..3)
 };
 
 // %USERPROFILE%\.liney (created if missing). Empty if USERPROFILE is unset.

@@ -126,6 +126,26 @@ void Window::drawLeftSidebar(const Rect& r) {
                             y + tDY, r.w - pad * 2.0f - th, th,
                             uiTheme_.text, false);
         y += rowH;
+        if (!recentProjects_.empty()) {
+            y += metrics_.sectionGap();
+            header(L"RECENT");
+            y += rowH + 4.0f;
+            for (size_t i = 0; i < recentProjects_.size() && i < 5; ++i) {
+                if (y > r.bottom()) break;
+                const Rect row{r.x, y, r.w, rowH};
+                rowBackground(row);
+                const std::wstring& path = recentProjects_[i];
+                const size_t slash = path.find_last_of(L"\\/");
+                const std::wstring name =
+                    slash == std::wstring::npos ? path
+                                                : path.substr(slash + 1);
+                iconRow(IconKind::Folder, r.x + pad, y, name,
+                        uiTheme_.text, uiTheme_.dim);
+                sidebarRows_.push_back(
+                    {row, RowKind::RecentProject, -1, -1, path});
+                y += rowH;
+            }
+        }
     }
     const float iconSz = th;  // square project icon
     for (int i = 0; i < static_cast<int>(repos.size()); ++i) {
@@ -156,7 +176,15 @@ void Window::drawLeftSidebar(const Rect& r) {
                                 kRepoTints[i % 6]);
         }
         const float nameX = iconX + iconSz + 8.0f;
-        renderer_->drawText(repo.name, nameX, y + tDY, r.x + r.w - nameX - pad,
+        const bool favorite = std::any_of(
+            favoriteProjects_.begin(), favoriteProjects_.end(),
+            [&](const std::wstring& path) {
+                return workspacePathsEqual(path, repo.path);
+            });
+        const std::wstring repoLabel =
+            favorite ? L"★  " + repo.name : repo.name;
+        renderer_->drawText(repoLabel, nameX, y + tDY,
+                            r.x + r.w - nameX - pad,
                             th, uiTheme_.text, true);
         sidebarRows_.push_back({ repoRow, RowKind::RepoHeader, i, -1, L"" });
         y += rowH;
@@ -171,11 +199,11 @@ void Window::drawLeftSidebar(const Rect& r) {
                 rowBackground(worktreeRow, selected);
                 std::wstring statusLabel = wt.label;
                 if (wt.status.changed > 0)
-                    statusLabel += L"  dirty " + std::to_wstring(wt.status.changed);
+                    statusLabel += L"  \u25cf " + std::to_wstring(wt.status.changed);
                 if (wt.status.ahead > 0)
-                    statusLabel += L"  ahead " + std::to_wstring(wt.status.ahead);
+                    statusLabel += L"  \u2191" + std::to_wstring(wt.status.ahead);
                 if (wt.status.behind > 0)
-                    statusLabel += L"  behind " + std::to_wstring(wt.status.behind);
+                    statusLabel += L"  \u2193" + std::to_wstring(wt.status.behind);
                 iconRow(IconKind::Branch, r.x + pad + metrics_.cellW * 2.0f, y,
                         statusLabel, wt.status.changed > 0 ? uiTheme_.text : uiTheme_.dim,
                         wt.status.changed > 0 ? Color{220, 170, 110} : uiTheme_.accent);
@@ -244,6 +272,7 @@ void Window::drawLeftSidebar(const Rect& r) {
 }
 
 void Window::drawFilesPanel(const Rect& r) {
+    fileBreadcrumbs_.clear();
     renderer_->fillRect(r.x, r.y, r.w, r.h, uiTheme_.sidebarBg);
     renderer_->fillRect(r.x, r.y, 1.0f, r.h, uiTheme_.border);
     const float pad = metrics_.sidebarPad();
@@ -261,14 +290,50 @@ void Window::drawFilesPanel(const Rect& r) {
     };
 
     refreshFileList();
-    std::wstring header = L"FILES";
-    if (!browsePath_.empty()) {
-        size_t s = browsePath_.find_last_of(L"\\/");
-        header += L"  " + (s == std::wstring::npos ? browsePath_
-                                                   : browsePath_.substr(s + 1));
-    }
-    renderer_->drawText(header, r.x + pad, y + tDY, r.w - pad * 2.0f, th,
+    renderer_->drawText(L"FILES", r.x + pad, y + tDY,
+                        metrics_.cellW * 6.0f, th,
                         uiTheme_.sidebarHdr, true);
+    if (!browsePath_.empty()) {
+        std::vector<std::pair<std::wstring, std::wstring>> crumbs;
+        std::wstring cumulative;
+        size_t start = 0;
+        while (start < browsePath_.size()) {
+            size_t slash = browsePath_.find_first_of(L"\\/", start);
+            const size_t end =
+                slash == std::wstring::npos ? browsePath_.size() : slash;
+            std::wstring part = browsePath_.substr(start, end - start);
+            if (!part.empty()) {
+                if (!cumulative.empty() && cumulative.back() != L'\\')
+                    cumulative += L'\\';
+                cumulative += part;
+                crumbs.push_back({part, cumulative});
+            }
+            if (slash == std::wstring::npos) break;
+            start = slash + 1;
+        }
+        const size_t first = crumbs.size() > 2 ? crumbs.size() - 2 : 0;
+        float bx = r.x + pad + metrics_.cellW * 6.0f;
+        for (size_t i = first; i < crumbs.size(); ++i) {
+            if (i > first) {
+                renderer_->drawText(L"›", bx, y + tDY,
+                                    metrics_.cellW * 2.0f, th,
+                                    uiTheme_.dim, false);
+                bx += metrics_.cellW * 1.6f;
+            }
+            const float width = std::min(
+                metrics_.cellW *
+                    (static_cast<float>(crumbs[i].first.size()) + 1.0f),
+                std::max(1.0f, r.right() - pad - bx));
+            Rect hit{bx, y, width, rowH};
+            renderer_->drawText(crumbs[i].first, bx, y + tDY, width, th,
+                                i + 1 == crumbs.size() ? uiTheme_.text
+                                                      : uiTheme_.dim,
+                                i + 1 == crumbs.size());
+            fileBreadcrumbs_.push_back({hit, crumbs[i].second});
+            bx += width;
+            if (bx >= r.right() - pad) break;
+        }
+    }
     y += rowH + 4.0f;
 
     const float isz = th * 0.78f;
@@ -362,7 +427,7 @@ void Window::drawTabBar(const Rect& r) {
         renderer_->fillRoundedRect(
             r.x + controlInset, r.y + controlInset, toggleW - 2 * controlInset,
             r.h - 2 * controlInset, radius * 0.75f, hoverBg);
-    renderer_->drawText(sidebarVisible_ ? L"‹" : L"›",
+    renderer_->drawText(sidebarEffectiveVisible_ ? L"‹" : L"›",
                         r.x + toggleW * 0.34f, textY, toggleW,
                         metrics_.cellH, toggleHot ? uiTheme_.text : uiTheme_.dim,
                         true);
@@ -372,8 +437,12 @@ void Window::drawTabBar(const Rect& r) {
     const float overflowW = plusW;
     const float available =
         std::max(0.0f, actionsLeft - tabsStart - plusW - 2.0f);
+    // Overflow before labels collapse into indistinguishable "prof..." chips.
+    // Reserve roughly twelve readable glyphs in addition to close/padding;
+    // the active-centered overflow window then keeps fewer, useful neighbors.
     const float minTabW =
-        std::max(metrics_.cellW * 9.0f, 84.0f * dpiScale_);
+        std::max(metrics_.cellW * 12.0f + closeW + 10.0f * dpiScale_,
+                 116.0f * dpiScale_);
     const float maxTabW =
         std::max(metrics_.cellW * 18.0f, 190.0f * dpiScale_);
 

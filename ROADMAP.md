@@ -12,35 +12,35 @@
 | 领域 | macOS liney | liney-win 现状 |
 |---|---|---|
 | **终端内核** | Ghostty(完整 VT、scrollback、reflow、Unicode、连字、GPU) | ✅ Ghostty 的 libghostty-vt(经 Zig 构建,即上游同一引擎)—— 完整 VT、scrollback、reflow、Unicode、grapheme;经 C API 拿渲染快照(含 SGR 样式位、宽字符、光标形状/闪烁)+ 标题/cwd + 模式查询(bracketed paste / DECCKM / 备用屏)。已删除早期内置 VTEmulator 与输出流 ModeScanner。待补:桌面通知(OSC 9/777)需在 libghostty 路径重新接线 |
-| ├ 历史回滚 scrollback | ✅ | ❌ 仅当前屏,无历史、无滚轮滚动 |
-| ├ 选择 / 复制粘贴 | ✅ | ❌ 无选区、无剪贴板 |
-| ├ 备用屏 alt-screen | ✅(vim/less/htop 正常) | ❌ 全屏 TUI 应用会错乱 |
-| ├ resize reflow | ✅ | ❌ 改窗口大小不重排长行 |
-| ├ 鼠标上报 | ✅ | ❌ 应用收不到鼠标 |
-| ├ IME / 输入法 | ✅ | ❌ 中日韩输入未处理 |
-| ├ 连字 / 字形 atlas | ✅ | ❌ 逐 cell DrawText(阶段一) |
-| **工作区 / 侧边栏** | 多仓库 + worktree | 🟡 扫描父目录的 git 仓库,惰性列 worktree |
+| ├ 历史回滚 scrollback | ✅ | ✅ 历史、滚轮与键盘导航 |
+| ├ 选择 / 复制粘贴 | ✅ | ✅ 核心选区、剪贴板、bracketed paste 与多行确认 |
+| ├ 备用屏 alt-screen | ✅(vim/less/htop 正常) | ✅ Ghostty 状态机 + TUI 回归测试 |
+| ├ resize reflow | ✅ | ✅ 活动屏与 scrollback 重排 |
+| ├ 鼠标上报 | ✅ | ✅ SGR/传统格式,Shift 回退本地选择 |
+| ├ IME / 输入法 | ✅ | ✅ 中日韩组合输入与候选框定位 |
+| ├ 连字 / 字形 atlas | ✅ | 🟡 GPU atlas、fallback 与 opt-in 连字已具备;复杂 shaping 继续完善 |
+| **工作区 / 侧边栏** | 多仓库 + worktree | ✅ 多仓库、固定/最近项目、worktree 与后台 Git 状态 |
 | ├ 点 worktree 开终端 | ✅ | ✅ 在该目录开新标签 |
-| ├ worktree 增删/切分支 | ✅ | ❌ 只读列举 |
-| ├ 工作区根可配置 | ✅ | ❌ 硬编码为启动目录的父目录 |
-| ├ 布局持久化(按仓库恢复) | ✅ **核心卖点** | ❌ 关闭即丢 |
+| ├ worktree 增删/切分支 | ✅ | ✅ 分支建议、目标预览、创建与删除 |
+| ├ 工作区根可配置 | ✅ | ✅ 设置页或 config.json |
+| ├ 布局持久化(按仓库恢复) | ✅ **核心卖点** | ✅ 标签、pane 树、cwd 与安全备份恢复 |
 | **标签 / 分屏** | ✅ | ✅ 多标签、二叉分屏、方向聚焦、关闭收拢 |
-| ├ 拖拽分隔条调比例 | ✅ | ❌ 固定 50% |
-| ├ 标签拖拽重排 | ✅ | ❌ |
-| **文件浏览** | 跟随聚焦 pane 的文件树(本地 + SSH) | ❌ 无 |
-| **会话类型** | 本地 shell / SSH / agent / tmux | 🟡 仅本地 `cmd.exe`(且 shell 硬编码) |
-| ├ 可选 shell(pwsh/wsl) | ✅ | ❌ |
-| ├ SSH + 远程文件树 | ✅ | ❌ |
-| ├ agent 会话 | ✅ | ❌ |
-| ├ tmux 集成 | ✅ | ❌ |
-| **Git 集成** | worktree、分支、diff、history | 🟡 worktree 列举 + 分支名 |
-| ├ diff 视图 | ✅ | ❌ |
-| ├ history 视图 | ✅ | ❌ |
-| **生命周期 hooks** | app/session 启停执行命令 | ❌ |
-| **通知** | OSC 9/777 → 灵动岛 + `liney notify` CLI | ❌ |
-| **配置 / 设置** | 设置面板 + `~/.liney/` 持久化 | ❌ 无配置文件 |
-| **打包 / 更新** | DMG + Homebrew + Sparkle | ❌ 直接跑 exe,无安装包/更新 |
-| **CLI 工具** | `liney notify`、`skills/liney-cli` | ❌ |
+| ├ 拖拽分隔条调比例 | ✅ | ✅ |
+| ├ 标签拖拽重排 | ✅ | ✅ |
+| **文件浏览** | 跟随聚焦 pane 的文件树(本地 + SSH) | 🟡 本地跟随、面包屑导航与文件插入;SFTP 待做 |
+| **会话类型** | 本地 shell / SSH / agent / tmux | 🟡 本地、SSH、agent;tmux 可作为命令启动 |
+| ├ 可选 shell(pwsh/wsl) | ✅ | ✅ 自动发现并可配置 |
+| ├ SSH + 远程文件树 | ✅ | 🟡 SSH 会话已具备;远程文件树待做 |
+| ├ agent 会话 | ✅ | ✅ |
+| ├ tmux 集成 | ✅ | 🟡 可运行;原生 control mode 待做 |
+| **Git 集成** | worktree、分支、diff、history | ✅ worktree、状态、diff、history |
+| ├ diff 视图 | ✅ | ✅ |
+| ├ history 视图 | ✅ | ✅ |
+| **生命周期 hooks** | app/session 启停执行命令 | ✅ |
+| **通知** | OSC 9/777 → 灵动岛 + `liney notify` CLI | ✅ Windows 通知、状态 toast 与 CLI |
+| **配置 / 设置** | 设置面板 + `~/.liney/` 持久化 | ✅ 分页设置、预览、验证与 config.json |
+| **打包 / 更新** | DMG + Homebrew + Sparkle | 🟡 NSIS、便携包、MSIX 与 GitHub 自动更新;签名/商店待做 |
+| **CLI 工具** | `liney notify`、`skills/liney-cli` | ✅ `liney notify` / `title` |
 
 ---
 

@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.10.3] - 2026-07-28
+
+- Added explicit responsive panel state so narrow-window auto-collapse is
+  reflected by toolbar labels, tooltips and UI Automation without losing the
+  user's visibility preference.
+- Kept high-DPI tab titles readable by moving excess tabs into the existing
+  overflow switcher before their labels collapse.
+- Exposed tabs, repositories, worktrees, recent projects, files and status
+  messages through richer UI Automation roles, selection/expand state and live
+  regions.
+- Added remembered Settings pages, live theme previews, inline validation,
+  per-page reset and direct access to the advanced configuration file.
+- Added pinned and recent projects, clickable file breadcrumbs, branch-aware
+  worktree creation and compact Git dirty/ahead/behind status.
+- Refreshes Git worktree state in the background without blocking rendering or
+  accumulating worker handles.
+
 ## [0.10.2] - 2026-07-28
 
 - Decoupled Windows application chrome metrics from terminal font zoom, keeping

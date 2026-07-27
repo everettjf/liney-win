@@ -30,6 +30,7 @@ struct SettingsValues {
     std::wstring aiModel;
     bool aiIncludeCwd = false;
     std::wstring workspaceRoot;      // sidebar scan root (empty = explicit only)
+    int page = 0;                    // last selected category (0..3)
 };
 
 // Modal, click-to-configure settings window (the GUI counterpart of
