@@ -58,7 +58,10 @@ function Compare-Png([string]$actualPath, [string]$baselinePath) {
 $scenarios = @(
     @{ Name='welcome-100'; Width='1000'; Height='640'; Dpi='96'; Tabs='1'; Panes='1'; Files=$null },
     @{ Name='compact-150'; Width='800'; Height='600'; Dpi='144'; Tabs='4'; Panes='4'; Files='1' },
-    @{ Name='dense-200'; Width='1000'; Height='700'; Dpi='192'; Tabs='16'; Panes='8'; Files='1' }
+    # Keep the requested client height below the smallest hosted-runner work
+    # area. Windows Server 2022/2025 reserve different title/taskbar heights;
+    # 700px plus the native frame is clamped and produces a variable capture.
+    @{ Name='dense-200'; Width='1000'; Height='600'; Dpi='192'; Tabs='16'; Panes='8'; Files='1' }
 )
 try {
     $env:LINEY_HEADLESS = '1'
