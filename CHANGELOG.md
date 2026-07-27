@@ -34,6 +34,8 @@ All notable changes to liney-win. Versioning follows [SemVer](https://semver.org
 - Scheduled shutdown menus show a known in-app countdown before cancellation.
 
 ### Fixed
+- Release packages now build the Ghostty VT runtime for a generic x64 CPU
+  baseline instead of inheriting the build host's instruction set.
 - Closing a background tab no longer changes the identity of the active tab.
 - Removing an auto-discovered repository now survives rescans and restarts.
 - Closing many panes checks running processes with one system snapshot, and
