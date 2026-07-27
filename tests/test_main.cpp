@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <string>
 
+#include "app/TabStripLayout.h"
 #include "util/Json.h"
 #include "vt/OscParser.h"
 #include "workspace/GitStatusParser.h"
@@ -19,6 +20,7 @@
 #include "core/Update.h"
 #include "core/WindowGeometry.h"
 #include "core/Ai.h"
+#include "core/CommandPalette.h"
 
 namespace {
 
@@ -48,6 +50,117 @@ void testWindowGeometry() {
         {400, 300, 2400, 1400}, {0, 0, 1920, 1040});
     check(r.x == 0 && r.y == 0,
           "oversized window anchors at work-area origin");
+}
+
+void testCommandPalette() {
+    std::printf("Command palette filters and recency\n");
+    using liney::PaletteSearchItem;
+    const std::vector<PaletteSearchItem> items = {
+        {1, L"New tab", L"Session", L"actions tabs", L"create shell", 10, 1},
+        {2, L"Split right", L"Pane", L"actions pane", L"layout columns", 20, 0},
+        {3, L"Production", L"SSH", L"ssh", L"remote host", 30, -1},
+        {4, L"Repository", L"Workspace", L"workspace git", L"worktree", 40, -1},
+    };
+    const auto parsed = liney::parsePaletteSearchQuery(L" panes: split ");
+    check(parsed.filter == L"pane" && parsed.text == L"split",
+          "normalizes plural filter aliases");
+    const auto recent = liney::rankPaletteItems(items, L"");
+    check(recent.size() == 4 && recent[0] == 2 && recent[1] == 1,
+          "empty query puts most-recent commands first");
+    const auto ssh = liney::rankPaletteItems(items, L"ssh: prod");
+    check(ssh.size() == 1 && ssh[0] == 3,
+          "category prefix filters dynamic items");
+    const auto git = liney::rankPaletteItems(items, L"worktrees:");
+    check(git.size() == 1 && git[0] == 4,
+          "worktree alias maps to Git results");
+    const auto fuzzy = liney::rankPaletteItems(items, L"splr");
+    check(!fuzzy.empty() && fuzzy[0] == 2,
+          "fuzzy search includes command keywords");
+}
+
+void testTabStripLayout() {
+    std::printf("Tab strip layout and focus stability\n");
+    {
+        const auto layout =
+            liney::layoutTabStrip({120.0f, 100.0f, 140.0f}, 1, 420.0f,
+                                  72.0f, 32.0f);
+        check(!layout.overflow && layout.items.size() == 3,
+              "natural tab widths fit without overflow");
+        check(layout.items[0].width == 120.0f &&
+                  layout.items[2].width == 140.0f,
+              "natural widths are preserved when space allows");
+    }
+    {
+        const auto layout =
+            liney::layoutTabStrip({180.0f, 180.0f, 180.0f}, 1, 300.0f,
+                                  72.0f, 32.0f);
+        check(!layout.overflow && layout.items.size() == 3,
+              "tabs shrink before overflowing");
+        check(layout.items.back().x + layout.items.back().width <= 300.01f,
+              "shrunken tabs remain inside the available strip");
+        check(layout.items[0].width >= 72.0f,
+              "shrunken tabs respect the readable minimum");
+    }
+    {
+        const auto layout =
+            liney::layoutTabStrip(std::vector<float>(12, 140.0f), 9, 360.0f,
+                                  80.0f, 32.0f);
+        check(layout.overflow, "large tab sets expose overflow");
+        bool activeVisible = false;
+        for (const auto& item : layout.items)
+            activeVisible = activeVisible || item.index == 9;
+        check(activeVisible, "overflow window always contains the active tab");
+        check(layout.items.back().x + layout.items.back().width <= 328.01f,
+              "overflow layout reserves its menu button");
+    }
+    {
+        const auto layout =
+            liney::layoutTabStrip({160.0f}, 0, 24.0f, 72.0f, 32.0f);
+        check(!layout.overflow && layout.items.size() == 1,
+              "a single narrow tab does not expose a useless overflow menu");
+        check(layout.items[0].width <= 24.01f,
+              "single tab remains bounded in an extremely narrow strip");
+    }
+    {
+        const auto layout =
+            liney::layoutTabStrip({160.0f, 160.0f}, 1, 24.0f, 72.0f, 32.0f);
+        check(layout.overflow && layout.items.size() == 1,
+              "extremely narrow multi-tab strips keep the active tab reachable");
+        check(layout.items[0].index == 1 &&
+                  layout.items[0].width <= 1.01f,
+              "overflow reservation cannot push the active tab outside bounds");
+    }
+    check(liney::activeTabAfterClose(5, 3, 1) == 2,
+          "closing a tab to the left preserves active tab identity");
+    check(liney::activeTabAfterClose(5, 3, 3) == 3,
+          "closing active middle tab selects its right neighbor");
+    check(liney::activeTabAfterClose(5, 4, 4) == 3,
+          "closing final active tab selects previous tab");
+    for (size_t count = 2; count <= 128; ++count) {
+        for (size_t active = 0; active < count; ++active) {
+            for (size_t erased = 0; erased < count; ++erased) {
+                const size_t next =
+                    liney::activeTabAfterClose(count, active, erased);
+                check(next < count - 1,
+                      "tab close focus always remains in the new bounds");
+                if (erased != active) {
+                    const size_t oldIdentity =
+                        next >= erased ? next + 1 : next;
+                    check(oldIdentity == active,
+                          "background close preserves active tab identity");
+                }
+            }
+        }
+    }
+    {
+        const auto layout = liney::layoutTabStrip(
+            std::vector<float>(200, 160.0f), 199, 800.0f, 84.0f, 36.0f);
+        check(layout.overflow && !layout.items.empty() &&
+                  layout.items.back().index == 199,
+              "two hundred tabs keep the final active tab visible");
+        check(layout.items.back().x + layout.items.back().width <= 764.01f,
+              "high-count tab layout keeps overflow control unobstructed");
+    }
 }
 
 void testScheduledShutdown() {
@@ -368,6 +481,8 @@ void testSshProfiles() {
 int main() {
     testScheduledShutdown();
     testWindowGeometry();
+    testCommandPalette();
+    testTabStripLayout();
     testJson();
     testJsonHardening();
     testOscParser();

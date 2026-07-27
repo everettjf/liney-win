@@ -38,6 +38,10 @@
   "projectIcons": {
     "my-repo": "C:\\path\\to\\icon.png"
   },
+  "projects": [
+    "C:\\path\\to\\a-folder-or-git-repository"
+  ],
+  "workspaceExclusions": [],
 
   "//theme": "A built-in preset NAME: Emerald Night | Azure Night | Violet Night | Amber Dark | Rose Dark | Slate Frost | Paper Light. Pick one in Settings…, or set it here.",
   "theme": "Emerald Night",

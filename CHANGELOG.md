@@ -3,6 +3,46 @@
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 
+## [0.10.0] - 2026-07-27
+
+### Added
+- Tab-strip overflow keeps the active tab visible and exposes every hidden tab
+  through an active-centered compact switcher; every open tab is searchable in
+  the command palette even beyond the native menu's practical row limit.
+- Headless frame capture supports repeatable visual QA of real Direct2D output.
+- Workspace projects now distinguish ordinary folders from Git repositories;
+  only Git projects expose worktrees, status, review, and Agent task actions.
+- Active split layouts show a compact pane-count and close control.
+- The command palette supports category columns, recent built-in actions,
+  disabled-state explanations, Page Up/Page Down navigation and filters such as
+  `tabs:`, `pane:`, `git:`, `ssh:` and `agent:`.
+- Self-drawn toolbar controls expose native tooltips, UI Automation button
+  identities and Invoke patterns, plus direct Alt access keys.
+
+### Changed
+- Tabs now use adaptive widths, attached rounded active cards, subtle shadows,
+  a compact accent indicator and native Windows UI typography.
+- Sidebar rows, command palette, find bar, exited-shell notice and zoom badge
+  use a restrained rounded-card treatment for a more cohesive Windows UI.
+- The main window enforces a DPI-aware minimum size so tab, pane and toolbar
+  controls cannot collapse into one another.
+- Pane context commands are grouped into Agent, Last command and Pane layout
+  submenus; the main menu is grouped into Pane layout, View, Workspace and
+  Tools, with context-only no-ops omitted.
+- Split, find, folder-opening and ellipsis terminology is consistent across
+  menus, shortcuts and documentation; multi-tab close actions show their scope.
+- Scheduled shutdown menus show a known in-app countdown before cancellation.
+
+### Fixed
+- Closing a background tab no longer changes the identity of the active tab.
+- Removing an auto-discovered repository now survives rescans and restarts.
+- Closing many panes checks running processes with one system snapshot, and
+  session-exit hooks run once for every pane actually closed.
+- High-contrast palette changes are reversible when Windows leaves
+  high-contrast mode, including for existing terminal sessions.
+- Display and performance smoke tests isolate internal visual-fixture settings
+  from the caller's environment.
+
 ## [0.9.2] - 2026-07-23
 
 ### Changed

@@ -8,10 +8,20 @@ $saved = @{
     LINEY_FORCE_WARP = $env:LINEY_FORCE_WARP
     LINEY_SIMULATE_DEVICE_LOSS = $env:LINEY_SIMULATE_DEVICE_LOSS
     LINEY_TEST_DPI = $env:LINEY_TEST_DPI
+    LINEY_CAPTURE_PNG = $env:LINEY_CAPTURE_PNG
+    LINEY_TEST_TABS = $env:LINEY_TEST_TABS
+    LINEY_TEST_PANES = $env:LINEY_TEST_PANES
+    LINEY_TEST_FOLDER_PROJECT = $env:LINEY_TEST_FOLDER_PROJECT
+    LINEY_TEST_PALETTE = $env:LINEY_TEST_PALETTE
 }
 try {
     $env:LINEY_HEADLESS = '1'
     $env:LINEY_AUTOCLOSE_MS = '350'
+    $env:LINEY_CAPTURE_PNG = $null
+    $env:LINEY_TEST_TABS = $null
+    $env:LINEY_TEST_PANES = $null
+    $env:LINEY_TEST_FOLDER_PROJECT = $null
+    $env:LINEY_TEST_PALETTE = '1'
     foreach ($dpi in 96, 120, 144, 192, 288) {
         $env:LINEY_TEST_DPI = [string]$dpi
         foreach ($mode in 'hardware-recovery', 'warp') {

@@ -39,6 +39,7 @@ add_executable(liney_win WIN32
   src/app/WindowAi.cpp
   src/app/SettingsDialog.cpp
   src/app/Tab.cpp
+  src/app/TabStripLayout.cpp
   src/core/TerminalSession.cpp
   src/core/Config.cpp
   src/core/ShellProfiles.cpp
@@ -49,6 +50,7 @@ add_executable(liney_win WIN32
   src/core/WindowGeometry.cpp
   src/core/Ai.cpp
   src/core/CommandHistory.cpp
+  src/core/CommandPalette.cpp
   src/render/D2DRenderer.cpp
   src/pty/ConPty.cpp
   src/vt/Terminal.cpp
@@ -80,7 +82,7 @@ target_compile_definitions(liney_win PRIVATE
 
 target_link_libraries(liney_win PRIVATE
   d2d1 dwrite d3d11 dxgi imm32 winhttp bcrypt windowscodecs ole32 oleaut32
-  comdlg32 shell32 dbghelp wintrust crypt32 uiautomationcore)
+  comctl32 comdlg32 shell32 dbghelp wintrust crypt32 uiautomationcore)
 
 # resource.rc already embeds our compatibility/DPI/long-path manifest. MSVC's
 # default linker manifest would create a second RT_MANIFEST/1 resource and make

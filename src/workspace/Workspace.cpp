@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cwchar>
 
 #include "util/Process.h"
 
@@ -25,46 +26,92 @@ std::wstring parentDir(const std::wstring& path) {
     return (slash == std::wstring::npos) ? path : path.substr(0, slash);
 }
 
-bool isGitRepo(const std::wstring& dir) {
-    DWORD attr = GetFileAttributesW((dir + L"\\.git").c_str());
-    return attr != INVALID_FILE_ATTRIBUTES;  // .git may be a dir or a file
+bool projectLess(const Repo& a, const Repo& b) {
+    const int byName = _wcsicmp(a.name.c_str(), b.name.c_str());
+    if (byName != 0) return byName < 0;
+    return _wcsicmp(a.path.c_str(), b.path.c_str()) < 0;
 }
 
 } // namespace
 
+std::wstring normalizeWorkspacePath(const std::wstring& input) {
+    if (input.empty()) return L"";
+    std::wstring path = input;
+    std::replace(path.begin(), path.end(), L'/', L'\\');
+
+    const DWORD needed = GetFullPathNameW(path.c_str(), 0, nullptr, nullptr);
+    if (needed > 0 && needed < 32768) {
+        std::wstring full(static_cast<size_t>(needed), L'\0');
+        const DWORD written = GetFullPathNameW(
+            path.c_str(), needed, full.data(), nullptr);
+        if (written > 0 && written < needed) {
+            full.resize(written);
+            path = std::move(full);
+        }
+    }
+
+    while (path.size() > 1 &&
+           (path.back() == L'\\' || path.back() == L'/')) {
+        if (path.size() == 3 && path[1] == L':') break;
+        path.pop_back();
+    }
+    return path;
+}
+
+bool workspacePathsEqual(const std::wstring& a, const std::wstring& b) {
+    const std::wstring left = normalizeWorkspacePath(a);
+    const std::wstring right = normalizeWorkspacePath(b);
+    return !left.empty() && !right.empty() &&
+           _wcsicmp(left.c_str(), right.c_str()) == 0;
+}
+
+bool isGitRepositoryPath(const std::wstring& input) {
+    const std::wstring dir = normalizeWorkspacePath(input);
+    if (dir.empty()) return false;
+    const DWORD attr = GetFileAttributesW((dir + L"\\.git").c_str());
+    return attr != INVALID_FILE_ATTRIBUTES;  // .git may be a dir or a file
+}
+
 void Workspace::scan(const std::wstring& root) {
-    root_ = root;
+    root_ = normalizeWorkspacePath(root);
     repos_.clear();
-    if (root.empty()) return;  // empty means explicit projects only
+    if (root_.empty()) return;  // empty means explicit projects only
 
     WIN32_FIND_DATAW fd{};
-    HANDLE h = FindFirstFileW((root + L"\\*").c_str(), &fd);
+    HANDLE h = FindFirstFileW((root_ + L"\\*").c_str(), &fd);
     if (h == INVALID_HANDLE_VALUE) return;
     do {
         if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
         const std::wstring name = fd.cFileName;
         if (name == L"." || name == L"..") continue;
-        const std::wstring path = root + L"\\" + name;
-        if (isGitRepo(path)) repos_.push_back(Repo{ name, path, {}, false, false });
+        const std::wstring path = root_ + L"\\" + name;
+        if (isGitRepositoryPath(path))
+            repos_.push_back(
+                Repo{name, path, ProjectKind::GitRepository, {}, false, false});
     } while (FindNextFileW(h, &fd));
     FindClose(h);
 
-    std::sort(repos_.begin(), repos_.end(),
-              [](const Repo& a, const Repo& b) { return a.name < b.name; });
+    std::sort(repos_.begin(), repos_.end(), projectLess);
 }
 
-void Workspace::addProject(const std::wstring& path) {
+void Workspace::addProject(const std::wstring& input) {
+    const std::wstring path = normalizeWorkspacePath(input);
     if (path.empty()) return;
     for (const Repo& r : repos_)
-        if (r.path == path) return;  // already present
-    repos_.push_back(Repo{ basename(path), path, {}, false, false });
-    std::sort(repos_.begin(), repos_.end(),
-              [](const Repo& a, const Repo& b) { return a.name < b.name; });
+        if (workspacePathsEqual(r.path, path)) return;  // already present
+    const ProjectKind kind = isGitRepositoryPath(path)
+                                 ? ProjectKind::GitRepository
+                                 : ProjectKind::Folder;
+    repos_.push_back(Repo{basename(path), path, kind, {}, false, false});
+    std::sort(repos_.begin(), repos_.end(), projectLess);
 }
 
 bool Workspace::removeRepoByPath(const std::wstring& path) {
     for (auto it = repos_.begin(); it != repos_.end(); ++it) {
-        if (it->path == path) { repos_.erase(it); return true; }
+        if (workspacePathsEqual(it->path, path)) {
+            repos_.erase(it);
+            return true;
+        }
     }
     return false;
 }
@@ -73,6 +120,7 @@ void Workspace::loadWorktrees(Repo& repo) {
     if (repo.loaded) return;
     repo.loaded = true;
     repo.worktrees.clear();
+    if (!repo.isGit()) return;
 
     bool ok = false;
     std::wstring out =
@@ -85,7 +133,7 @@ void Workspace::loadWorktrees(Repo& repo) {
         if (curPath.empty()) return;
         std::wstring label =
             !curBranch.empty() ? curBranch : basename(curPath);
-        Worktree worktree{ curPath, label };
+        Worktree worktree{curPath, label, {}, true};
         refreshStatus(worktree);
         repo.worktrees.push_back(std::move(worktree));
         curPath.clear();
@@ -116,10 +164,12 @@ void Workspace::loadWorktrees(Repo& repo) {
 
     // Fallback: if git wasn't available, at least show the repo root itself.
     if (repo.worktrees.empty())
-        repo.worktrees.push_back(Worktree{ repo.path, basename(repo.path), {} });
+        repo.worktrees.push_back(
+            Worktree{repo.path, basename(repo.path), {}, true});
 }
 
 void Workspace::refreshStatus(Worktree& worktree) {
+    if (!worktree.git) return;
     bool ok = false;
     const std::wstring output = runCapture(
         L"git status --porcelain=v2 --branch --untracked-files=normal",
@@ -133,6 +183,10 @@ void Workspace::refreshStatus(Worktree& worktree) {
 
 std::wstring Workspace::addWorktree(Repo& repo, const std::wstring& name,
                                     std::wstring* err) {
+    if (!repo.isGit()) {
+        if (err) *err = L"Git worktrees require a Git repository.";
+        return L"";
+    }
     if (name.empty()) return L"";
     // The name lands inside a quoted command line and becomes a branch name +
     // path component — restrict it to characters that are safe as both. This
@@ -185,6 +239,10 @@ std::wstring Workspace::addWorktree(Repo& repo, const std::wstring& name,
 
 bool Workspace::removeWorktree(Repo& repo, const std::wstring& path,
                                std::wstring* err) {
+    if (!repo.isGit()) {
+        if (err) *err = L"Git worktrees require a Git repository.";
+        return false;
+    }
     bool ok = false;
     const std::wstring out =
         runCapture(L"git worktree remove \"" + path + L"\"", repo.path, &ok);

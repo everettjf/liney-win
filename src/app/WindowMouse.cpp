@@ -29,8 +29,18 @@ void Window::onMouseDown(int xi, int yi) {
                 auto& repos = workspace_.repos();
                 if (row.repo < 0 || row.repo >= static_cast<int>(repos.size())) return;
                 Repo& repo = repos[row.repo];
-                repo.expanded = !repo.expanded;
-                if (repo.expanded) workspace_.loadWorktrees(repo);
+                if (repo.isGit()) {
+                    repo.expanded = !repo.expanded;
+                    if (repo.expanded) workspace_.loadWorktrees(repo);
+                } else {
+                    rememberRecentProject(repo.path);
+                    newTab(repo.path);
+                    if (TerminalSession* session = activeSession()) {
+                        SessionContext context;
+                        context.projectPath = repo.path;
+                        session->setContext(std::move(context));
+                    }
+                }
                 break;
             }
             case RowKind::Worktree: {
@@ -106,6 +116,10 @@ void Window::onMouseDown(int xi, int yi) {
         if (menuButtonRect_.contains(x, y)) { openMainMenu(); return; }
         if (openButtonRect_.contains(x, y)) { openDirectoryMenu(); return; }
         if (awakeButtonRect_.contains(x, y)) { openKeepAwakeMenu(); return; }
+        if (tabOverflowRect_.contains(x, y)) {
+            openTabOverflowMenu(xi, yi);
+            return;
+        }
         if (plusRect_.contains(x, y)) {
             newTab(activeSession() ? activeSession()->cwd() : homeDir());
             return;
@@ -132,6 +146,10 @@ void Window::onMouseDown(int xi, int yi) {
     }
 
     if (panes.contains(x, y)) {
+        if (paneCloseRect_.contains(x, y)) {
+            closeActivePaneConfirming();
+            return;
+        }
         // Clicks on the floating find bar shouldn't start a text selection.
         if (findActive_ && findBarRect_.contains(x, y)) return;
         Tab* t = activeTab();
@@ -212,6 +230,7 @@ void Window::onMouseDoubleClick(int xi, int yi) {
         const bool onToolbar = menuButtonRect_.contains(x, y) ||
             openButtonRect_.contains(x, y) || awakeButtonRect_.contains(x, y);
         if (!onTab && !plusRect_.contains(x, y) &&
+            !tabOverflowRect_.contains(x, y) &&
             !sidebarToggleRect_.contains(x, y) && !onToolbar)
             newTab(activeSession() ? activeSession()->cwd() : homeDir());
         else
@@ -291,44 +310,81 @@ void Window::onMouseDownRight(int xi, int yi) {
             if (!command.empty()) newTabShell(command, L"");
             return;
         }
+        if (row.kind != RowKind::RepoHeader &&
+            row.kind != RowKind::Worktree)
+            return;
         auto& repos = workspace_.repos();
         if (row.repo < 0 || row.repo >= static_cast<int>(repos.size())) return;
         Repo& repo = repos[row.repo];
 
         if (row.worktree < 0) {
-            // Repo header: a context menu (new worktree / set icon / remove).
+            // Project header: folders get folder actions; Git repositories
+            // additionally expose worktree, review, and agent workflows.
             POINT pt{ xi, yi };
             ClientToScreen(hwnd_, &pt);
             HMENU menu = CreatePopupMenu();
-            AppendMenuW(menu, MF_STRING, 1, L"New worktree…");
-            if (!agents_.empty()) {
-                HMENU agentMenu = CreatePopupMenu();
-                for (size_t i = 0; i < agents_.size() && i < 50; ++i)
-                    AppendMenuW(agentMenu, MF_STRING, static_cast<UINT>(100 + i),
-                                agents_[i].name.c_str());
-                AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(agentMenu),
-                            L"New isolated Agent task");
+            AppendMenuW(menu, MF_STRING, 4, L"Open");
+            AppendMenuW(menu, MF_STRING, 5, L"Open folder in File Explorer");
+            if (repo.isGit()) {
+                AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+                AppendMenuW(menu, MF_STRING, 1, L"New worktree…");
+                if (!agents_.empty()) {
+                    HMENU agentMenu = CreatePopupMenu();
+                    for (size_t i = 0; i < agents_.size() && i < 50; ++i)
+                        AppendMenuW(
+                            agentMenu, MF_STRING,
+                            static_cast<UINT>(100 + i),
+                            agents_[i].name.c_str());
+                    AppendMenuW(
+                        menu, MF_POPUP,
+                        reinterpret_cast<UINT_PTR>(agentMenu),
+                        L"New isolated Agent task");
+                }
+                AppendMenuW(menu, MF_STRING, 6, L"Review changes");
+                AppendMenuW(menu, MF_STRING, 7, L"Refresh Git status");
             }
+            AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
             AppendMenuW(menu, MF_STRING, 2, L"Set icon…");
             AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
             AppendMenuW(menu, MF_STRING, 3, L"Remove from workspace");
             const int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
                                            pt.x, pt.y, 0, hwnd_, nullptr);
             DestroyMenu(menu);
-            if (cmd == 1) {
+            if (cmd == 4) {
+                rememberRecentProject(repo.path);
+                newTab(repo.path);
+                if (TerminalSession* session = activeSession()) {
+                    SessionContext context;
+                    context.projectPath = repo.path;
+                    if (repo.isGit()) context.worktreePath = repo.path;
+                    session->setContext(std::move(context));
+                }
+            } else if (cmd == 5) {
+                ShellExecuteW(hwnd_, L"open", repo.path.c_str(), nullptr,
+                              nullptr, SW_SHOWNORMAL);
+            } else if (cmd == 1 && repo.isGit()) {
                 std::wstring name = inputBox(hwnd_, L"New worktree",
                                              L"New branch / worktree name:", L"");
                 if (name.empty()) return;
                 std::wstring err;
                 std::wstring path = workspace_.addWorktree(repo, name, &err);
-                if (!path.empty()) newTab(path);
+                if (!path.empty()) {
+                    rememberRecentProject(path);
+                    newTab(path);
+                    if (TerminalSession* session = activeSession()) {
+                        SessionContext context;
+                        context.projectPath = repo.path;
+                        context.worktreePath = path;
+                        session->setContext(std::move(context));
+                    }
+                }
                 else {
                     std::wstring msg = L"git worktree add failed.";
                     if (!err.empty()) msg += L"\n\n" + err;
                     MessageBoxW(hwnd_, msg.c_str(), L"Liney",
                                 MB_OK | MB_ICONERROR);
                 }
-            } else if (cmd >= 100 &&
+            } else if (repo.isGit() && cmd >= 100 &&
                        cmd < 100 + static_cast<int>(agents_.size())) {
                 const size_t agentIndex = static_cast<size_t>(cmd - 100);
                 const std::wstring task = inputBox(
@@ -355,6 +411,20 @@ void Window::onMouseDownRight(int xi, int yi) {
                     context.testCommand = agents_[agentIndex].testCommand;
                     session->setContext(std::move(context));
                 }
+            } else if (cmd == 6 && repo.isGit()) {
+                if (TerminalSession* session = newTabShell(
+                        L"git -C \"" + repo.path + L"\" diff",
+                        repo.path)) {
+                    SessionContext context;
+                    context.projectPath = repo.path;
+                    context.worktreePath = repo.path;
+                    session->setContext(std::move(context));
+                }
+            } else if (cmd == 7 && repo.isGit()) {
+                repo.loaded = false;
+                workspace_.loadWorktrees(repo);
+                repo.expanded = true;
+                markRenderDirty();
             } else if (cmd == 2) {
                 setProjectIcon(repo);
             } else if (cmd == 3) {
@@ -369,18 +439,38 @@ void Window::onMouseDownRight(int xi, int yi) {
             AppendMenuW(worktreeMenu, MF_STRING, 11, L"Review changes");
             AppendMenuW(worktreeMenu, MF_STRING, 12, L"Refresh Git status");
             AppendMenuW(worktreeMenu, MF_SEPARATOR, 0, nullptr);
-            AppendMenuW(worktreeMenu, MF_STRING, 13, L"Remove worktree…");
+            const bool mainWorktree =
+                workspacePathsEqual(worktreePath, repo.path);
+            AppendMenuW(
+                worktreeMenu,
+                MF_STRING | (mainWorktree ? MF_GRAYED : 0), 13,
+                mainWorktree ? L"Main worktree (cannot remove)"
+                             : L"Remove worktree…");
             const int action = TrackPopupMenu(worktreeMenu,
                 TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd_, nullptr);
             DestroyMenu(worktreeMenu);
             if (action == 10) {
+                rememberRecentProject(worktreePath);
                 newTab(worktreePath);
+                if (TerminalSession* session = activeSession()) {
+                    SessionContext context;
+                    context.projectPath = repo.path;
+                    context.worktreePath = worktreePath;
+                    session->setContext(std::move(context));
+                }
             } else if (action == 11) {
-                newTabShell(L"git -C \"" + worktreePath + L"\" diff",
-                            worktreePath);
+                if (TerminalSession* session = newTabShell(
+                        L"git -C \"" + worktreePath + L"\" diff",
+                        worktreePath)) {
+                    SessionContext context;
+                    context.projectPath = repo.path;
+                    context.worktreePath = worktreePath;
+                    session->setContext(std::move(context));
+                }
             } else if (action == 12) {
                 workspace_.refreshStatus(repo.worktrees[row.worktree]);
-            } else if (action == 13) {
+                markRenderDirty();
+            } else if (action == 13 && !mainWorktree) {
                 std::wstring msg = L"Remove worktree?\n\n" + worktreePath +
                     L"\n\nGit will refuse if it contains uncommitted changes.";
                 if (MessageBoxW(hwnd_, msg.c_str(), L"Remove worktree",
@@ -666,6 +756,10 @@ bool Window::updateCursor() {
     regions(leftBar, rightPanel, tabBar, panes);
 
     if (panes.contains(x, y)) {
+        if (paneCloseRect_.contains(x, y)) {
+            SetCursor(LoadCursorW(nullptr, IDC_ARROW));
+            return true;
+        }
         if (Tab* t = activeTab()) {
             if (Pane* d = t->splitDividerAt(x, y, 4.0f)) {
                 SetCursor(LoadCursorW(nullptr,
@@ -697,6 +791,7 @@ void Window::openPaneMenu(int xi, int yi) {
                 L"Copy\tCtrl+Shift+C");
     AppendMenuW(m, MF_STRING, 2, L"Paste\tShift+Insert");
     AppendMenuW(m, MF_STRING, 3, L"Select all\tCtrl+Shift+A");
+    AppendMenuW(m, MF_STRING, 4, L"Find in terminal…\tCtrl+F");
     TerminalSession* menuSession = activeSession();
     if (menuSession && menuSession->exited()) {
         AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
@@ -705,70 +800,83 @@ void Window::openPaneMenu(int xi, int yi) {
     const bool agentSession = menuSession &&
         menuSession->context().role == SessionRole::Agent;
     if (agentSession) {
+        HMENU agent = CreatePopupMenu();
+        AppendMenuW(agent, MF_STRING, 20, L"Review changes");
+        if (!menuSession->context().testCommand.empty())
+            AppendMenuW(agent, MF_STRING, 21, L"Run project verification");
+        AppendMenuW(agent, MF_STRING, 28, L"Open task folder in…");
+        if (menuSession->exited() &&
+            !menuSession->context().worktreePath.empty()) {
+            AppendMenuW(agent, MF_SEPARATOR, 0, nullptr);
+            AppendMenuW(agent, MF_STRING, 29, L"Safely remove task worktree…");
+        }
         AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(m, MF_STRING, 20, L"Review Agent changes");
-        AppendMenuW(m, MF_STRING |
-                         (menuSession->context().testCommand.empty() ? MF_GRAYED : 0),
-                    21, L"Run project verification");
-        AppendMenuW(m, MF_STRING, 28, L"Open task directory in...");
-        AppendMenuW(m, MF_STRING |
-                         (!menuSession->exited() ||
-                                  menuSession->context().worktreePath.empty()
-                              ? MF_GRAYED : 0),
-                    29, L"Safely remove task worktree...");
+        AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(agent), L"Agent");
     }
     const CommandBlock* lastCommand = nullptr;
     if (menuSession && !menuSession->commandBlocks().empty())
         lastCommand = &menuSession->commandBlocks().back();
     if (lastCommand) {
-        AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+        HMENU command = CreatePopupMenu();
         const wchar_t* state = lastCommand->state == CommandState::Running ? L"running" :
                                lastCommand->state == CommandState::Succeeded ? L"succeeded" :
                                                                                L"failed";
         const std::wstring summary = L"Last command: " + std::wstring(state) +
             L" (" + std::to_wstring(lastCommand->duration.count()) + L" ms)";
-        AppendMenuW(m, MF_STRING | MF_DISABLED, 0, summary.c_str());
-        AppendMenuW(m, MF_STRING |
-                         (lastCommand->command.empty() ? MF_GRAYED : 0),
-                    22, L"Copy last command");
-        AppendMenuW(m, MF_STRING |
-                         (lastCommand->command.empty() ||
-                                  lastCommand->state == CommandState::Running
-                              ? MF_GRAYED : 0),
-                    23, L"Run last command again");
-        AppendMenuW(m, MF_STRING, 24, L"Jump to previous command");
-        AppendMenuW(m, MF_STRING, 25, L"Jump to next command");
-        AppendMenuW(m, MF_STRING, 26, L"Copy last command output");
-        AppendMenuW(m, MF_STRING, 27,
+        AppendMenuW(command, MF_STRING | MF_DISABLED, 0, summary.c_str());
+        AppendMenuW(command,
+                    MF_STRING |
+                        (lastCommand->command.empty() ? MF_GRAYED : 0),
+                    22, L"Copy command");
+        AppendMenuW(command,
+                    MF_STRING |
+                        (lastCommand->command.empty() ||
+                                 lastCommand->state == CommandState::Running
+                             ? MF_GRAYED
+                             : 0),
+                    23, L"Run again");
+        AppendMenuW(command, MF_STRING, 24, L"Jump to previous command");
+        AppendMenuW(command, MF_STRING, 25, L"Jump to next command");
+        AppendMenuW(command, MF_STRING, 26, L"Copy output");
+        AppendMenuW(command, MF_STRING, 27,
                     lastCommand->bookmarked ? L"Remove command bookmark"
                                             : L"Bookmark last command");
-        AppendMenuW(m, MF_STRING |
-                         (aiProvider_ == L"off" || aiBusy_ ||
-                                  lastCommand->state == CommandState::Running
-                              ? MF_GRAYED : 0),
+        AppendMenuW(command,
+                    MF_STRING |
+                        (aiProvider_ == L"off" || aiBusy_ ||
+                                 lastCommand->state == CommandState::Running
+                             ? MF_GRAYED
+                             : 0),
                     40, lastCommand->state == CommandState::Failed
-                            ? L"Diagnose failed command with AI..."
-                            : L"Explain last command with AI...");
+                            ? L"Diagnose failure with AI…"
+                            : L"Explain with AI…");
+        if (!agentSession) AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(command),
+                    L"Last command");
+    }
+
+    // Keep the root context menu short. Layout operations remain discoverable
+    // under one stable submenu and context-only no-ops are omitted.
+    const bool split = activeTab() && activeTab()->isSplit();
+    HMENU layout = CreatePopupMenu();
+    AppendMenuW(layout, MF_STRING, 7, L"Split right\tAlt+D");
+    AppendMenuW(layout, MF_STRING, 8, L"Split down\tShift+Alt+D");
+    if (split) {
+        AppendMenuW(layout, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(layout, MF_STRING, 9, L"Zoom or restore pane\tCtrl+Shift+Z");
+        AppendMenuW(layout, MF_STRING, 10, L"Equalize panes\tCtrl+Shift+E");
+        AppendMenuW(layout, MF_STRING, 11, L"Swap with next pane");
+        AppendMenuW(layout, MF_STRING, 12, L"Move pane to new tab");
+        AppendMenuW(layout, MF_STRING, 13, L"Move pane forward");
+        AppendMenuW(layout, MF_STRING, 6, L"Close other panes");
     }
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(m, MF_STRING, 4, L"Find…\tCtrl+F");
+    AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(layout),
+                L"Pane layout");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    // Split management.
-    AppendMenuW(m, MF_STRING, 7, L"Split right\tAlt+D");
-    AppendMenuW(m, MF_STRING, 8, L"Split down\tShift+Alt+D");
-    const bool split = activeTab() && activeTab()->isSplit();
-    AppendMenuW(m, MF_STRING | (split ? 0 : MF_GRAYED), 9,
-                L"Zoom pane\tCtrl+Shift+Z");
-    AppendMenuW(m, MF_STRING | (split ? 0 : MF_GRAYED), 10, L"Equalize panes");
-    AppendMenuW(m, MF_STRING | (split ? 0 : MF_GRAYED), 11,
-                L"Swap with next pane");
-    AppendMenuW(m, MF_STRING | (split ? 0 : MF_GRAYED), 12,
-                L"Move pane to new tab");
-    AppendMenuW(m, MF_STRING | (split ? 0 : MF_GRAYED), 13,
-                L"Move pane forward");
-    AppendMenuW(m, MF_STRING, 5, L"Close pane\tCtrl+Shift+W");
-    AppendMenuW(m, MF_STRING | (split ? 0 : MF_GRAYED), 6,
-                L"Close other panes");
+    AppendMenuW(m, MF_STRING, 5,
+                split ? L"Close pane\tCtrl+Shift+W"
+                      : L"Close tab\tCtrl+Shift+W");
     const int cmd = TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y,
                                    0, hwnd_, nullptr);
     DestroyMenu(m);

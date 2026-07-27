@@ -1,10 +1,42 @@
 #include "app/Window.h"
 #include "app/WindowInternal.h"
+#include "app/TabStripLayout.h"
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 
 namespace liney {
+namespace {
+
+Color blendColor(const Color& from, const Color& to, float amount) {
+    amount = std::clamp(amount, 0.0f, 1.0f);
+    auto channel = [amount](uint8_t a, uint8_t b) {
+        return static_cast<uint8_t>(std::lround(
+            static_cast<float>(a) +
+            (static_cast<float>(b) - static_cast<float>(a)) * amount));
+    };
+    return {channel(from.r, to.r), channel(from.g, to.g),
+            channel(from.b, to.b)};
+}
+
+bool isLightColor(const Color& color) {
+    return static_cast<int>(color.r) * 299 +
+               static_cast<int>(color.g) * 587 +
+               static_cast<int>(color.b) * 114 >
+           155000;
+}
+
+std::wstring elideTabTitle(const std::wstring& title, size_t maxChars) {
+    if (title.size() <= maxChars) return title;
+    if (maxChars < 2) return L"…";
+    size_t cut = maxChars - 1;
+    if (cut > 0 && title[cut - 1] >= 0xD800 && title[cut - 1] <= 0xDBFF)
+        --cut;
+    return title.substr(0, cut) + L"…";
+}
+
+} // namespace
 
 std::wstring Window::resolveRepoIcon(const Repo& repo) const {
     // 1) explicit config mapping (repo name -> icon path)
@@ -36,11 +68,14 @@ void Window::drawLeftSidebar(const Rect& r) {
     };
     auto rowBackground = [&](const Rect& row, bool selected = false) {
         if (selected || hot(row))
-            renderer_->fillRect(row.x + 4.0f, row.y, row.w - 8.0f, row.h,
-                                uiTheme_.tabActiveBg);
+            renderer_->fillRoundedRect(
+                row.x + 4.0f, row.y + 1.0f, row.w - 8.0f, row.h - 2.0f,
+                std::min(6.0f * dpiScale_, row.h * 0.24f),
+                uiTheme_.tabActiveBg);
         if (selected)
-            renderer_->fillRect(row.x + 4.0f, row.y + 4.0f, 2.0f,
-                                row.h - 8.0f, uiTheme_.accent);
+            renderer_->fillRoundedRect(row.x + 4.0f, row.y + 5.0f,
+                                       3.0f * dpiScale_, row.h - 10.0f,
+                                       1.5f * dpiScale_, uiTheme_.accent);
     };
 
     // A section header ("WORKSPACE" / "SSH" / "AGENTS"), vertically centered.
@@ -71,7 +106,10 @@ void Window::drawLeftSidebar(const Rect& r) {
         const float bx = r.x + r.w - bw - pad * 0.5f;
         workspaceAddRect_ = { bx, y, bw, rowH };
         if (hot(workspaceAddRect_))
-            renderer_->fillRect(bx, y, bw, rowH, uiTheme_.tabActiveBg);
+            renderer_->fillRoundedRect(
+                bx + 4.0f, y + 3.0f, bw - 8.0f, rowH - 6.0f,
+                std::min(6.0f * dpiScale_, rowH * 0.22f),
+                uiTheme_.tabActiveBg);
         renderer_->drawText(L"+", bx + bw * 0.30f, y + tDY, bw, th,
                             hot(workspaceAddRect_) ? uiTheme_.text : uiTheme_.accent,
                             true);
@@ -92,10 +130,15 @@ void Window::drawLeftSidebar(const Rect& r) {
         if (y > r.bottom()) break;
         Repo& repo = repos[i];
         const Rect repoRow{ r.x, y, r.w, rowH };
-        rowBackground(repoRow);
-        // expand chevron, then a project icon, then the name.
-        renderer_->drawText(repo.expanded ? L"v" : L">", r.x + pad, y + tDY,
-                            metrics_.cellW * 1.5f, th, uiTheme_.dim, true);
+        const bool projectSelected =
+            !repo.isGit() && activeSession() &&
+            workspacePathsEqual(activeSession()->cwd(), repo.path);
+        rowBackground(repoRow, projectSelected);
+        // Git repositories disclose worktrees; ordinary folders open directly.
+        if (repo.isGit())
+            renderer_->drawText(repo.expanded ? L"v" : L">", r.x + pad,
+                                y + tDY, metrics_.cellW * 1.5f, th,
+                                uiTheme_.dim, true);
         const float iconX = r.x + pad + metrics_.cellW * 1.5f;
         const float iconY = y + (rowH - iconSz) * 0.5f;
         std::wstring iconPath = resolveRepoIcon(repo);
@@ -105,7 +148,9 @@ void Window::drawLeftSidebar(const Rect& r) {
             static const Color kRepoTints[] = {
                 { 120, 200, 160 }, { 130, 170, 230 }, { 220, 170, 110 },
                 { 200, 140, 200 }, { 210, 130, 130 }, { 150, 190, 120 } };
-            renderer_->drawIcon(IconKind::Folder, iconX, iconY, iconSz,
+            renderer_->drawIcon(repo.isGit() ? IconKind::Branch
+                                             : IconKind::Folder,
+                                iconX, iconY, iconSz,
                                 kRepoTints[i % 6]);
         }
         const float nameX = iconX + iconSz + 8.0f;
@@ -207,8 +252,10 @@ void Window::drawFilesPanel(const Rect& r) {
     auto rowBackground = [&](const Rect& row) {
         if (row.contains(static_cast<float>(lastMouseX_),
                          static_cast<float>(lastMouseY_)))
-            renderer_->fillRect(row.x + 4.0f, row.y, row.w - 8.0f, row.h,
-                                uiTheme_.tabActiveBg);
+            renderer_->fillRoundedRect(
+                row.x + 4.0f, row.y + 1.0f, row.w - 8.0f, row.h - 2.0f,
+                std::min(6.0f * dpiScale_, row.h * 0.24f),
+                uiTheme_.tabActiveBg);
     };
 
     refreshFileList();
@@ -284,74 +331,159 @@ void Window::refreshFileList() {
 }
 
 void Window::drawTabBar(const Rect& r) {
-    tabRects_.clear();
-    tabCloseRects_.clear();
+    tabRects_.assign(tabs_.size(), Rect{});
+    tabCloseRects_.assign(tabs_.size(), Rect{});
+    tabOverflowRect_ = {};
     renderer_->fillRect(r.x, r.y, r.w, r.h, uiTheme_.tabBg);
 
-    const float pad = metrics_.cellW;
-    const float closeW = metrics_.cellH;  // square × hit area at the tab's right
+    const bool light = isLightColor(uiTheme_.tabBg);
+    const Color hoverBg =
+        blendColor(uiTheme_.tabBg, uiTheme_.text, light ? 0.08f : 0.11f);
+    const Color shadow =
+        blendColor(uiTheme_.tabBg, Color{0, 0, 0}, light ? 0.16f : 0.48f);
+    const Color activeBorder =
+        blendColor(uiTheme_.tabActiveBg, uiTheme_.accent, light ? 0.22f : 0.30f);
+    const float radius = std::clamp(r.h * 0.20f, 4.0f, 8.0f);
+    const float controlInset = std::max(4.0f, r.h * 0.13f);
+    const float textY = r.y + (r.h - metrics_.cellH) * 0.5f + 1.0f;
+    const float closeW = std::max(metrics_.cellH, 24.0f * dpiScale_);
     const float bw = r.h;
     const float actionsLeft = r.right() - bw * 3.0f;
+
     // A persistent disclosure button makes the whole sidebar directly
     // collapsible and, importantly, remains available to restore it.
     const float toggleW = r.h;
     sidebarToggleRect_ = { r.x, r.y, toggleW, r.h };
-    if (sidebarToggleRect_.contains(static_cast<float>(lastMouseX_),
-                                    static_cast<float>(lastMouseY_)))
-        renderer_->fillRect(r.x, r.y, toggleW, r.h, uiTheme_.tabActiveBg);
+    const bool toggleHot = sidebarToggleRect_.contains(
+        static_cast<float>(lastMouseX_), static_cast<float>(lastMouseY_));
+    if (toggleHot)
+        renderer_->fillRoundedRect(
+            r.x + controlInset, r.y + controlInset, toggleW - 2 * controlInset,
+            r.h - 2 * controlInset, radius * 0.75f, hoverBg);
     renderer_->drawText(sidebarVisible_ ? L"‹" : L"›",
-                        r.x + toggleW * 0.34f, r.y + 4.0f, toggleW,
-                        metrics_.cellH, uiTheme_.dim, true);
-    float x = r.x + toggleW;
-    for (size_t i = 0; i < tabs_.size(); ++i) {
-        std::wstring title = tabs_[i]->title();
-        if (tabs_[i]->pinned()) title = L"● " + title;
-        if (title.size() > 18) {
-            size_t cut = 17;
-            // Don't split a surrogate pair (emoji / non-BMP CJK in titles).
-            if (title[cut - 1] >= 0xD800 && title[cut - 1] <= 0xDBFF) --cut;
-            title = title.substr(0, cut) + L"…";
-        }
-        // +4 chars of slack leaves room for the × button after the title.
-        const float tw = (static_cast<float>(title.size()) + 4.0f) * metrics_.cellW;
+                        r.x + toggleW * 0.34f, textY, toggleW,
+                        metrics_.cellH, toggleHot ? uiTheme_.text : uiTheme_.dim,
+                        true);
+
+    const float tabsStart = r.x + toggleW;
+    const float plusW = std::max(metrics_.cellW * 3.0f, 34.0f * dpiScale_);
+    const float overflowW = plusW;
+    const float available =
+        std::max(0.0f, actionsLeft - tabsStart - plusW - 2.0f);
+    const float minTabW =
+        std::max(metrics_.cellW * 9.0f, 84.0f * dpiScale_);
+    const float maxTabW =
+        std::max(metrics_.cellW * 18.0f, 190.0f * dpiScale_);
+
+    std::vector<std::wstring> titles;
+    std::vector<float> preferredWidths;
+    titles.reserve(tabs_.size());
+    preferredWidths.reserve(tabs_.size());
+    for (const auto& tab : tabs_) {
+        std::wstring title = tab->title();
+        if (tab->pinned()) title = L"●  " + title;
+        titles.push_back(std::move(title));
+        const float natural =
+            (static_cast<float>(titles.back().size()) + 2.5f) * metrics_.cellW +
+            closeW;
+        preferredWidths.push_back(std::clamp(natural, minTabW, maxTabW));
+    }
+
+    const auto layout =
+        layoutTabStrip(preferredWidths, activeTab_, available, minTabW,
+                       overflowW);
+    float visibleEnd = 0.0f;
+    for (const TabStripItem& item : layout.items) {
+        const size_t i = item.index;
+        const float x = tabsStart + item.x;
+        const float tw = item.width;
         const bool active = (i == activeTab_);
-        if (active || static_cast<int>(i) == hoverTab_)
-            renderer_->fillRect(x, r.y, tw, r.h, uiTheme_.tabActiveBg);
-        renderer_->drawText(title, x + pad, r.y + 5.0f, tw - pad - closeW,
-                            metrics_.cellH, active ? uiTheme_.accent : uiTheme_.dim,
-                            active);
-        if (active)
-            renderer_->fillRect(x, r.bottom() - 2.0f, tw, 2.0f, uiTheme_.accent);
+        const bool hot = static_cast<int>(i) == hoverTab_;
+        const float cardX = x + 1.0f;
+        const float cardW = std::max(1.0f, tw - 2.0f);
+        if (active) {
+            // Extend below the clipped strip so only the top corners show,
+            // matching native TabView/Windows Terminal's attached-card shape.
+            renderer_->fillRoundedRect(cardX, r.y + 5.0f, cardW,
+                                       r.h + radius, radius, shadow);
+            renderer_->fillRoundedRect(cardX, r.y + 3.0f, cardW,
+                                       r.h + radius, radius,
+                                       uiTheme_.tabActiveBg);
+            renderer_->strokeRoundedRect(cardX, r.y + 3.0f, cardW,
+                                         r.h + radius, radius, activeBorder,
+                                         1.0f);
+        } else if (hot) {
+            renderer_->fillRoundedRect(cardX, r.y + 4.0f, cardW,
+                                       r.h - 7.0f, radius, hoverBg);
+        }
+
+        const float textX = x + std::max(metrics_.cellW, 10.0f * dpiScale_);
+        const float textW = std::max(1.0f, tw - (textX - x) - closeW);
+        const size_t maxChars = std::max<size_t>(
+            1, static_cast<size_t>(std::floor(textW / metrics_.cellW)));
+        renderer_->drawText(elideTabTitle(titles[i], maxChars), textX, textY,
+                            textW, metrics_.cellH,
+                            active ? uiTheme_.text : uiTheme_.dim, active);
+        if (active) {
+            const float indicatorW =
+                std::clamp(tw * 0.28f, 24.0f * dpiScale_, 54.0f * dpiScale_);
+            renderer_->fillRoundedRect(
+                x + (tw - indicatorW) * 0.5f, r.bottom() - 3.0f, indicatorW,
+                3.0f, 1.5f, uiTheme_.accent);
+        }
+
         // × close button — shown on the active or hovered tab (the whole area
         // stays clickable regardless, matching browser/VS Code behavior).
         const Rect closeRect{ x + tw - closeW, r.y, closeW, r.h };
-        tabCloseRects_.push_back(closeRect);
-        if (active || static_cast<int>(i) == hoverTab_) {
+        tabCloseRects_[i] = closeRect;
+        if (active || hot) {
             const bool hotClose = closeRect.contains(
                 static_cast<float>(lastMouseX_), static_cast<float>(lastMouseY_));
-            renderer_->drawText(L"×", closeRect.x + closeW * 0.28f, r.y + 5.0f,
+            if (hotClose)
+                renderer_->fillRoundedRect(
+                    closeRect.x + controlInset * 0.65f,
+                    closeRect.y + controlInset * 0.75f,
+                    closeRect.w - controlInset * 1.3f,
+                    closeRect.h - controlInset * 1.5f, radius * 0.65f,
+                    blendColor(hoverBg, uiTheme_.text,
+                               light ? 0.05f : 0.08f));
+            renderer_->drawText(L"×", closeRect.x + closeW * 0.28f, textY,
                                 closeW, metrics_.cellH,
                                 hotClose ? uiTheme_.text : uiTheme_.dim, true);
         }
-        tabRects_.push_back({ x, r.y, tw, r.h });
-        x += tw;
+        tabRects_[i] = {x, r.y, tw, r.h};
+        visibleEnd = item.x + item.width;
     }
 
-    // "+" new-tab button.
-    const float plusW = metrics_.cellW * 3.0f;
-    const float plusX = std::max(r.x + toggleW,
-                                 std::min(x, actionsLeft - plusW));
+    float controlsX = tabsStart + visibleEnd;
+    if (layout.overflow) {
+        tabOverflowRect_ = {controlsX, r.y, overflowW, r.h};
+        const bool overflowHot = tabOverflowRect_.contains(
+            static_cast<float>(lastMouseX_), static_cast<float>(lastMouseY_));
+        if (overflowHot)
+            renderer_->fillRoundedRect(
+                controlsX + controlInset, r.y + controlInset,
+                overflowW - 2 * controlInset, r.h - 2 * controlInset,
+                radius * 0.75f, hoverBg);
+        renderer_->drawText(L"⋯", controlsX + overflowW * 0.27f, textY,
+                            overflowW, metrics_.cellH,
+                            overflowHot ? uiTheme_.text : uiTheme_.dim, true);
+        controlsX += overflowW;
+    }
+
+    // "+" new-tab button, always kept before the fixed top-right toolbar.
+    const float plusLimit = std::max(tabsStart, actionsLeft - plusW);
+    const float plusX = std::min(controlsX, plusLimit);
     plusRect_ = { plusX, r.y, plusW, r.h };
-    // Keep this control visible when many tabs overflow toward the toolbar.
-    renderer_->fillRect(plusX, r.y, plusW, r.h, uiTheme_.tabBg);
-    if (plusRect_.contains(static_cast<float>(lastMouseX_),
-                           static_cast<float>(lastMouseY_)))
-        renderer_->fillRect(plusX, r.y, plusW, r.h, uiTheme_.tabActiveBg);
-    renderer_->drawText(L"+", plusX + metrics_.cellW, r.y + 5.0f, plusW,
-                        metrics_.cellH,
-                        plusRect_.contains(static_cast<float>(lastMouseX_),
-                                           static_cast<float>(lastMouseY_))
-                            ? uiTheme_.text : uiTheme_.dim,
+    const bool plusHot = plusRect_.contains(
+        static_cast<float>(lastMouseX_), static_cast<float>(lastMouseY_));
+    if (plusHot)
+        renderer_->fillRoundedRect(
+            plusX + controlInset, r.y + controlInset,
+            plusW - 2 * controlInset, r.h - 2 * controlInset,
+            radius * 0.75f, hoverBg);
+    renderer_->drawText(L"+", plusX + plusW * 0.34f, textY, plusW,
+                        metrics_.cellH, plusHot ? uiTheme_.text : uiTheme_.dim,
                         true);
 
     // ---- top-right contextual menus: folder, coffee, more -----------------
@@ -364,7 +496,9 @@ void Window::drawTabBar(const Rect& r) {
     menuButtonRect_ = { bx, r.y, bw, r.h };
     if (menuButtonRect_.contains(static_cast<float>(lastMouseX_),
                                  static_cast<float>(lastMouseY_)))
-        renderer_->fillRect(bx, r.y, bw, r.h, uiTheme_.tabActiveBg);
+        renderer_->fillRoundedRect(
+            bx + controlInset, r.y + controlInset, bw - 2 * controlInset,
+            r.h - 2 * controlInset, radius * 0.75f, hoverBg);
     renderer_->drawIcon(IconKind::Menu, bx + (bw - isz) * 0.5f,
                         r.y + (r.h - isz) * 0.5f, isz,
                         uiTheme_.text);
@@ -374,7 +508,9 @@ void Window::drawTabBar(const Rect& r) {
     if (keepAwake_ || awakeButtonRect_.contains(
                           static_cast<float>(lastMouseX_),
                           static_cast<float>(lastMouseY_)))
-        renderer_->fillRect(bx, r.y, bw, r.h, uiTheme_.tabActiveBg);
+        renderer_->fillRoundedRect(
+            bx + controlInset, r.y + controlInset, bw - 2 * controlInset,
+            r.h - 2 * controlInset, radius * 0.75f, hoverBg);
     renderer_->drawIcon(IconKind::Coffee, bx + (bw - isz) * 0.5f,
                         r.y + (r.h - isz) * 0.5f, isz,
                         keepAwake_ ? uiTheme_.accent : uiTheme_.text);
@@ -382,12 +518,16 @@ void Window::drawTabBar(const Rect& r) {
     openButtonRect_ = { bx, r.y, bw, r.h };
     if (openButtonRect_.contains(static_cast<float>(lastMouseX_),
                                  static_cast<float>(lastMouseY_)))
-        renderer_->fillRect(bx, r.y, bw, r.h, uiTheme_.tabActiveBg);
+        renderer_->fillRoundedRect(
+            bx + controlInset, r.y + controlInset, bw - 2 * controlInset,
+            r.h - 2 * controlInset, radius * 0.75f, hoverBg);
     renderer_->drawIcon(IconKind::Folder, bx + (bw - isz) * 0.5f,
                         r.y + (r.h - isz) * 0.5f, isz, uiTheme_.text);
+    renderer_->fillRect(r.x, r.bottom() - 1.0f, r.w, 1.0f, uiTheme_.border);
 }
 
 void Window::drawPanes(const Rect& r) {
+    paneCloseRect_ = {};
     Tab* t = activeTab();
     if (!t) return;
     t->layout(r, metrics_);
@@ -429,8 +569,14 @@ void Window::drawPanes(const Rect& r) {
             const float bw = std::min(pr.w - 16.0f, metrics_.cellW * 38.0f);
             const float bx = pr.x + 8.0f;
             const float by = pr.y + pr.h - bh - 8.0f;
-            renderer_->fillRect(bx, by, bw, bh, uiTheme_.tabActiveBg);
-            renderer_->strokeRect(bx, by, bw, bh, uiTheme_.accent, 1.0f);
+            renderer_->fillRoundedRect(bx + 2.0f, by + 3.0f, bw, bh,
+                                       6.0f * dpiScale_,
+                                       uiTheme_.workspaceBg);
+            renderer_->fillRoundedRect(bx, by, bw, bh, 6.0f * dpiScale_,
+                                       uiTheme_.tabActiveBg);
+            renderer_->strokeRoundedRect(bx, by, bw, bh,
+                                         6.0f * dpiScale_, uiTheme_.accent,
+                                         1.0f);
             renderer_->drawText(L"Shell exited - right-click to restart",
                                 bx + 8.0f, by + 4.0f, bw - 16.0f,
                                 metrics_.cellH, uiTheme_.text, true);
@@ -440,16 +586,69 @@ void Window::drawPanes(const Rect& r) {
                               focused ? 1.5f : 1.0f);
     }
 
+    // A compact active-pane control keeps closing discoverable even in a deep
+    // split tree. The count clarifies scope; Ctrl+Shift+W and this × close one
+    // pane, while the tab × closes the whole tab.
+    if (t->isSplit() && !findActive_ && t->active()) {
+        const Rect& pr = t->active()->rect;
+        const size_t count = t->leaves().size();
+        const float h = std::max(metrics_.cellH + 6.0f,
+                                 26.0f * dpiScale_);
+        const bool showCount = !t->zoom() && pr.w >= 150.0f * dpiScale_;
+        const std::wstring countLabel =
+            std::to_wstring(count) + (count == 1 ? L" pane" : L" panes");
+        const float labelW =
+            showCount ? std::max(58.0f * dpiScale_,
+                                 metrics_.cellW *
+                                     (static_cast<float>(countLabel.size()) +
+                                      1.5f))
+                      : 0.0f;
+        const float closeW = h;
+        const float totalW = labelW + closeW;
+        const float x = std::max(pr.x + 6.0f,
+                                 pr.right() - totalW - 8.0f);
+        const float y = pr.y + 8.0f;
+        const float radius = h * 0.28f;
+        renderer_->fillRoundedRect(x + 2.0f, y + 3.0f, totalW, h, radius,
+                                   uiTheme_.workspaceBg);
+        renderer_->fillRoundedRect(x, y, totalW, h, radius,
+                                   uiTheme_.tabActiveBg);
+        renderer_->strokeRoundedRect(x, y, totalW, h, radius,
+                                     uiTheme_.border, 1.0f);
+        if (showCount)
+            renderer_->drawText(countLabel, x + 9.0f, y + 3.0f,
+                                labelW - 9.0f, metrics_.cellH,
+                                uiTheme_.dim, false);
+        paneCloseRect_ = {x + labelW, y, closeW, h};
+        const bool closeHot = paneCloseRect_.contains(
+            static_cast<float>(lastMouseX_),
+            static_cast<float>(lastMouseY_));
+        if (showCount)
+            renderer_->fillRect(paneCloseRect_.x, y + 5.0f, 1.0f,
+                                h - 10.0f, uiTheme_.border);
+        if (closeHot)
+            renderer_->fillRoundedRect(
+                paneCloseRect_.x + 3.0f, y + 3.0f, closeW - 6.0f, h - 6.0f,
+                radius * 0.75f,
+                blendColor(uiTheme_.tabActiveBg, uiTheme_.text, 0.12f));
+        renderer_->drawText(L"×", paneCloseRect_.x + closeW * 0.31f,
+                            y + 3.0f, closeW, metrics_.cellH,
+                            closeHot ? uiTheme_.text : uiTheme_.dim, true);
+    }
+
     // A solid accent "ZOOM" pill in the zoomed pane's top-right corner so it's
     // clear the other panes are hidden, not gone.
     if (Pane* z = t->zoom()) {
         const Rect& pr = z->rect;
         const float bw = metrics_.cellW * 6.5f, bh = metrics_.cellH + 6.0f;
         // Top-right of the pane, clamped so it stays on-screen at any width.
-        float bx = pr.x + pr.w - bw - 14.0f;
+        const float rightInset =
+            paneCloseRect_.w > 0.0f ? paneCloseRect_.w + 20.0f : 14.0f;
+        float bx = pr.x + pr.w - bw - rightInset;
         if (bx < pr.x + 8.0f) bx = pr.x + 8.0f;
         const float by = pr.y + 12.0f;
-        renderer_->fillRect(bx, by, bw, bh, uiTheme_.accent);
+        renderer_->fillRoundedRect(bx, by, bw, bh, bh * 0.5f,
+                                   uiTheme_.accent);
         renderer_->drawText(L"ZOOM", bx + metrics_.cellW, by + 3.0f, bw,
                             metrics_.cellH, uiTheme_.workspaceBg, true);
     }

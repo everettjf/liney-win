@@ -49,8 +49,13 @@ public:
 
     // Chrome primitives (pixel coordinates).
     virtual void fillRect(float x, float y, float w, float h, const Color& c) = 0;
+    virtual void fillRoundedRect(float x, float y, float w, float h,
+                                 float radius, const Color& c) = 0;
     virtual void strokeRect(float x, float y, float w, float h, const Color& c,
                             float thickness = 1.0f) = 0;
+    virtual void strokeRoundedRect(float x, float y, float w, float h,
+                                   float radius, const Color& c,
+                                   float thickness = 1.0f) = 0;
     // Single line of UI text, clipped to [x, x+maxW] x [y, y+rowH].
     virtual void drawText(const std::wstring& text, float x, float y, float maxW,
                           float rowH, const Color& c, bool bold = false) = 0;

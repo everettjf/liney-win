@@ -2,9 +2,11 @@
 
 #include <windowsx.h>  // GET_X_LPARAM / GET_WHEEL_DELTA_WPARAM
 #include <commdlg.h>   // ChooseFontW (the Font… picker)
+#include <commctrl.h>  // native tooltips for the self-drawn toolbar
 #include <tlhelp32.h>  // process snapshot for the running-command check
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <functional>
@@ -14,6 +16,7 @@
 #include <unordered_set>
 
 #include "app/SettingsDialog.h"
+#include "app/TabStripLayout.h"
 #include "app/WindowInternal.h"
 #include "util/AccessibilityProvider.h"
 #include "util/Diagnostics.h"
@@ -181,6 +184,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
                             x, y, w, h, nullptr, nullptr, hInstance, this);
     if (!hwnd_) return false;
     accessibilityProvider_ = createAccessibilityProvider(hwnd_);
+    initializeTooltips();
 
     g_wakeHwnd.store(hwnd_, std::memory_order_relaxed);  // PTY thread wakes us here
     dpiScale_ = queryDpiScale(hwnd_);                    // scale the font to the monitor
@@ -231,10 +235,13 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     agents_ = cfg.agents;
     projectIcons_ = cfg.projectIcons;
     projects_ = cfg.projects;
+    workspaceExclusions_ = cfg.workspaceExclusions;
     recentProjects_ = cfg.recentProjects;
     workspaceRoot_ = cfg.workspaceRoot;
     theme_ = cfg.theme;
     uiTheme_ = cfg.uiTheme;
+    configuredTheme_ = theme_;
+    configuredUiTheme_ = uiTheme_;
     themeName_ = cfg.themeName;
     applyHighContrastIfEnabled();
     // Gutters/margins behind panes use the chrome's workspace color; panes
@@ -285,6 +292,56 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
         }
     }
     if (!restored && !(rememberLayout_ && restoreLayout())) newTab(homeDir());
+    // Deterministic multi-tab fixture for headless visual/layout regression.
+    // It is intentionally unavailable in normal interactive launches.
+    if (suppressRecoveryPrompt) {
+        wchar_t testFolder[32768]{};
+        const DWORD folderLength = GetEnvironmentVariableW(
+            L"LINEY_TEST_FOLDER_PROJECT", testFolder,
+            static_cast<DWORD>(_countof(testFolder)));
+        if (folderLength > 0 && folderLength < _countof(testFolder))
+            workspace_.addProject(testFolder);
+
+        wchar_t testTabs[8]{};
+        const DWORD length = GetEnvironmentVariableW(
+            L"LINEY_TEST_TABS", testTabs,
+            static_cast<DWORD>(_countof(testTabs)));
+        if (length > 0 && length < _countof(testTabs)) {
+            const unsigned long requested = wcstoul(testTabs, nullptr, 10);
+            const size_t target =
+                static_cast<size_t>(std::clamp(requested, 1ul, 64ul));
+            while (tabs_.size() < target) newTab(homeDir());
+        }
+
+        wchar_t testPanes[8]{};
+        const DWORD paneLength = GetEnvironmentVariableW(
+            L"LINEY_TEST_PANES", testPanes,
+            static_cast<DWORD>(_countof(testPanes)));
+        if (paneLength > 0 && paneLength < _countof(testPanes)) {
+            const unsigned long requested = wcstoul(testPanes, nullptr, 10);
+            const size_t target =
+                static_cast<size_t>(std::clamp(requested, 1ul, 16ul));
+            Tab* tab = activeTab();
+            while (tab && tab->leaves().size() < target) {
+                auto session = std::make_unique<TerminalSession>();
+                if (!session->start(shell_, homeDir(), 40, 12, scrollback_))
+                    break;
+                session->setTheme(theme_);
+                runStartHook(session.get());
+                const bool columns = tab->leaves().size() % 2 == 1;
+                tab->splitActive(columns ? SplitDir::Cols : SplitDir::Rows,
+                                 std::move(session));
+            }
+            if (tab && !tab->leaves().empty())
+                tab->setActive(tab->leaves().front());
+        }
+
+        wchar_t testPalette[8]{};
+        if (GetEnvironmentVariableW(
+                L"LINEY_TEST_PALETTE", testPalette,
+                static_cast<DWORD>(_countof(testPalette))) > 0)
+            openCommandPalette();
+    }
     if (tabs_.empty()) {
         // No session could start — almost always the terminal core DLL is
         // missing/incompatible, or the configured shell doesn't exist. Tell the
@@ -380,6 +437,35 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
             return UiaReturnRawElementProvider(hwnd_, wParam, lParam,
                                                accessibilityProvider_);
         return DefWindowProcW(hwnd_, msg, wParam, lParam);
+    case kAccessibilityInvokeMessage:
+        switch (static_cast<AccessibleElementId>(wParam)) {
+        case AccessibleElementId::SidebarToggle:
+            sidebarVisible_ = !sidebarVisible_;
+            markRenderDirty();
+            break;
+        case AccessibleElementId::NewTab:
+            newTab(activeSession() ? activeSession()->cwd() : homeDir());
+            break;
+        case AccessibleElementId::TabOverflow:
+            if (tabOverflowRect_.w > 0.0f)
+                openTabOverflowMenu(
+                    static_cast<int>(tabOverflowRect_.right()),
+                    static_cast<int>(tabOverflowRect_.bottom()));
+            break;
+        case AccessibleElementId::OpenFolder:
+            openDirectoryMenu();
+            break;
+        case AccessibleElementId::KeepAwake:
+            openKeepAwakeMenu();
+            break;
+        case AccessibleElementId::MainMenu:
+            openMainMenu();
+            break;
+        case AccessibleElementId::ClosePane:
+            closeActivePaneConfirming();
+            break;
+        }
+        return 0;
     case WM_CLOSE: {
         // Quitting the app: one consolidated warning that lists every tab still
         // running a command, instead of a dialog per tab.
@@ -419,6 +505,20 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
         markRenderDirty();
         return 0;
     }
+    case WM_GETMINMAXINFO: {
+        // Keep both side panels, one usable tab and the fixed toolbar from
+        // colliding. The limit is logical-pixel based and follows monitor DPI.
+        auto* info = reinterpret_cast<MINMAXINFO*>(lParam);
+        if (info) {
+            info->ptMinTrackSize.x = std::max<LONG>(
+                info->ptMinTrackSize.x,
+                static_cast<LONG>(std::lround(800.0f * dpiScale_)));
+            info->ptMinTrackSize.y = std::max<LONG>(
+                info->ptMinTrackSize.y,
+                static_cast<LONG>(std::lround(480.0f * dpiScale_)));
+        }
+        return 0;
+    }
     case WM_POWERBROADCAST:
         if (wParam == PBT_APMSUSPEND) {
             // Stop relying on any queued frame while the graphics stack and
@@ -442,8 +542,15 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
         }
         return DefWindowProcW(hwnd_, msg, wParam, lParam);
     case WM_SETTINGCHANGE:
+        // High contrast is reversible. Restore the configured palettes first,
+        // then apply the current system override if it is still enabled.
+        theme_ = configuredTheme_;
+        uiTheme_ = configuredUiTheme_;
         applyHighContrastIfEnabled();
         if (renderer_) renderer_->setColors(uiTheme_.workspaceBg, theme_.background);
+        for (auto& tab : tabs_)
+            for (Pane* leaf : tab->leaves())
+                if (leaf->session) leaf->session->setTheme(theme_);
         markRenderDirty();
         return 0;
     case WM_CHAR:
@@ -591,7 +698,131 @@ void Window::renderFrame() {
     renderer_->popClip();
     drawPanes(panes);
     drawCommandPalette();
+    updateChromeAccessibility();
     renderer_->endFrame();
+}
+
+void Window::initializeTooltips() {
+    INITCOMMONCONTROLSEX controls{};
+    controls.dwSize = sizeof(controls);
+    controls.dwICC = ICC_WIN95_CLASSES;
+    InitCommonControlsEx(&controls);
+    tooltipHwnd_ = CreateWindowExW(
+        WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr,
+        WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX, CW_USEDEFAULT, CW_USEDEFAULT,
+        CW_USEDEFAULT, CW_USEDEFAULT, hwnd_, nullptr, nullptr, nullptr);
+    if (!tooltipHwnd_) return;
+    SetWindowPos(tooltipHwnd_, HWND_TOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    SendMessageW(tooltipHwnd_, TTM_SETMAXTIPWIDTH, 0, 420);
+    SendMessageW(tooltipHwnd_, TTM_SETDELAYTIME, TTDT_INITIAL, 450);
+    struct TooltipDef {
+        AccessibleElementId id;
+        const wchar_t* text;
+    };
+    static constexpr TooltipDef definitions[] = {
+        {AccessibleElementId::SidebarToggle,
+         L"Toggle workspace sidebar (Alt+B / Ctrl+Shift+B)"},
+        {AccessibleElementId::NewTab, L"New tab (Alt+N / Ctrl+Shift+T)"},
+        {AccessibleElementId::TabOverflow,
+         L"All tabs (Alt+L; search with Ctrl+Shift+P)"},
+        {AccessibleElementId::OpenFolder,
+         L"Open active folder in… (Alt+O)"},
+        {AccessibleElementId::KeepAwake,
+         L"Keep awake options (Alt+K / Ctrl+Shift+K)"},
+        {AccessibleElementId::MainMenu, L"More commands (Alt+M)"},
+        {AccessibleElementId::ClosePane,
+         L"Close active pane (Ctrl+Shift+W)"},
+    };
+    for (const TooltipDef& definition : definitions) {
+        TOOLINFOW tool{};
+        tool.cbSize = sizeof(tool);
+        tool.uFlags = TTF_SUBCLASS;
+        tool.hwnd = hwnd_;
+        tool.uId = static_cast<UINT_PTR>(definition.id);
+        tool.lpszText = const_cast<wchar_t*>(definition.text);
+        SendMessageW(tooltipHwnd_, TTM_ADDTOOLW, 0,
+                     reinterpret_cast<LPARAM>(&tool));
+    }
+}
+
+void Window::updateChromeAccessibility() {
+    const auto toRect = [](const Rect& rect) {
+        return RECT{
+            static_cast<LONG>(std::lround(rect.x)),
+            static_cast<LONG>(std::lround(rect.y)),
+            static_cast<LONG>(std::lround(rect.right())),
+            static_cast<LONG>(std::lround(rect.bottom()))};
+    };
+    const auto usable = [](const Rect& rect) {
+        return rect.w > 0.0f && rect.h > 0.0f;
+    };
+    struct ChromeElement {
+        AccessibleElementId id;
+        Rect rect;
+        const wchar_t* name;
+        const wchar_t* automationId;
+        const wchar_t* help;
+        const wchar_t* accelerator;
+        const wchar_t* accessKey;
+        bool enabled;
+    };
+    const std::wstring sidebarName =
+        sidebarVisible_ ? L"Hide workspace sidebar"
+                        : L"Show workspace sidebar";
+    const std::wstring awakeName =
+        keepAwake_ ? L"Keep awake options, currently on"
+                   : L"Keep awake options, currently off";
+    const bool split = activeTab() && activeTab()->isSplit();
+    const ChromeElement chrome[] = {
+        {AccessibleElementId::SidebarToggle, sidebarToggleRect_,
+         sidebarName.c_str(), L"Liney.Toolbar.Sidebar",
+         L"Shows or hides Workspace, SSH hosts and Agents.",
+         L"Ctrl+Shift+B", L"Alt+B", true},
+        {AccessibleElementId::NewTab, plusRect_, L"New tab",
+         L"Liney.Toolbar.NewTab",
+         L"Opens a terminal tab in the active directory.",
+         L"Ctrl+Shift+T", L"Alt+N", true},
+        {AccessibleElementId::TabOverflow, tabOverflowRect_, L"All tabs",
+         L"Liney.Toolbar.AllTabs",
+         L"Shows hidden tabs. Every tab is also searchable in the command palette.",
+         L"Ctrl+Shift+P", L"Alt+L", usable(tabOverflowRect_)},
+        {AccessibleElementId::OpenFolder, openButtonRect_,
+         L"Open active folder in", L"Liney.Toolbar.OpenFolder",
+         L"Opens the active pane directory in File Explorer, PowerShell or an installed editor.",
+         L"", L"Alt+O", true},
+        {AccessibleElementId::KeepAwake, awakeButtonRect_,
+         awakeName.c_str(), L"Liney.Toolbar.KeepAwake",
+         L"Chooses how long Windows should stay awake.",
+         L"Ctrl+Shift+K", L"Alt+K", true},
+        {AccessibleElementId::MainMenu, menuButtonRect_, L"More commands",
+         L"Liney.Toolbar.MoreCommands",
+         L"Opens session, pane, view, workspace and tool commands.",
+         L"Ctrl+Shift+P", L"Alt+M", true},
+        {AccessibleElementId::ClosePane, paneCloseRect_,
+         L"Close active pane", L"Liney.Pane.Close",
+         L"Closes only the focused pane; the tab remains when it has other panes.",
+         L"Ctrl+Shift+W", L"", split && usable(paneCloseRect_)},
+    };
+
+    std::vector<AccessibleElementInfo> elements;
+    for (const ChromeElement& element : chrome) {
+        const RECT rect = toRect(element.rect);
+        if (tooltipHwnd_) {
+            TOOLINFOW tool{};
+            tool.cbSize = sizeof(tool);
+            tool.hwnd = hwnd_;
+            tool.uId = static_cast<UINT_PTR>(element.id);
+            tool.rect = rect;
+            SendMessageW(tooltipHwnd_, TTM_NEWTOOLRECTW, 0,
+                         reinterpret_cast<LPARAM>(&tool));
+        }
+        if (!usable(element.rect)) continue;
+        elements.push_back(
+            {element.id, element.name, element.automationId, element.help,
+             element.accelerator, element.accessKey, rect, element.enabled});
+    }
+    updateAccessibilityProvider(accessibilityProvider_, elements);
 }
 
 
@@ -650,6 +881,12 @@ void Window::runStartHook(TerminalSession* s) {
     const std::wstring line = sessionStartHook_ + L"\r";
     const std::string utf8 = wideToUtf8(line);
     s->sendBytes(utf8.data(), utf8.size());
+}
+
+void Window::runSessionExitHooks(size_t paneCount) {
+    if (sessionExitHook_.empty()) return;
+    for (size_t i = 0; i < paneCount; ++i)
+        runDetached(sessionExitHook_, L"");
 }
 
 void Window::splitActive(SplitDir dir) {
@@ -712,10 +949,10 @@ void Window::closeOtherPanes() {
     if (!t || !t->isSplit()) return;
     // Warn once if any of the panes we're about to close is running a command.
     Pane* keep = t->active();
-    int running = 0;
+    std::vector<Pane*> closing;
     for (Pane* leaf : t->leaves())
-        if (leaf != keep && leaf->session && leaf->session->hasRunningChild())
-            ++running;
+        if (leaf != keep) closing.push_back(leaf);
+    const size_t running = runningPaneCount(closing);
     if (running > 0) {
         const std::wstring msg =
             std::to_wstring(running) +
@@ -725,6 +962,7 @@ void Window::closeOtherPanes() {
             return;
     }
     clearSelection();
+    runSessionExitHooks(closing.size());
     t->closeOthers();
     markRenderDirty();
 }
@@ -732,10 +970,14 @@ void Window::closeOtherPanes() {
 void Window::closeActivePaneConfirming() {
     // User-initiated (Ctrl+Shift+W): warn if the pane is running a command.
     // The automatic reaper calls closeActivePane() directly (no prompt).
+    const bool closesTab = !activeTab() || !activeTab()->isSplit();
     if (TerminalSession* s = activeSession(); s && s->hasRunningChild()) {
-        const std::wstring msg =
-            L"This pane is still running a command.\n\nClose it anyway?";
-        if (MessageBoxW(hwnd_, msg.c_str(), L"Liney — close pane",
+        const std::wstring msg = closesTab
+            ? L"This tab is still running a command.\n\nClose it anyway?"
+            : L"This pane is still running a command.\n\nClose it anyway?";
+        if (MessageBoxW(hwnd_, msg.c_str(),
+                        closesTab ? L"Liney — close tab"
+                                  : L"Liney — close pane",
                         MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
             return;
     }
@@ -744,13 +986,15 @@ void Window::closeActivePaneConfirming() {
 
 void Window::closeActivePane() {
     clearSelection();
-    runDetached(sessionExitHook_, L"");  // hooks.sessionExit
     Tab* t = activeTab();
     if (!t) return;
+    runSessionExitHooks(1);
     if (!t->closeActive()) {
+        const size_t nextActive =
+            activeTabAfterClose(tabs_.size(), activeTab_, activeTab_);
         tabs_.erase(tabs_.begin() + activeTab_);
         if (tabs_.empty()) { PostQuitMessage(0); return; }
-        if (activeTab_ >= tabs_.size()) activeTab_ = tabs_.size() - 1;
+        activeTab_ = std::min(nextActive, tabs_.size() - 1);
     }
     updateTitle();
 }
@@ -868,9 +1112,11 @@ static std::string colorToHex(const Color& c) {
 void Window::applyHighContrastIfEnabled() {
     HIGHCONTRASTW highContrast{};
     highContrast.cbSize = sizeof(highContrast);
-    if (!SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(highContrast),
-                               &highContrast, 0) ||
-        !(highContrast.dwFlags & HCF_HIGHCONTRASTON)) return;
+    highContrastActive_ =
+        SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(highContrast),
+                              &highContrast, 0) &&
+        (highContrast.dwFlags & HCF_HIGHCONTRASTON);
+    if (!highContrastActive_) return;
     auto systemColor = [](int index) {
         const COLORREF value = GetSysColor(index);
         return Color{GetRValue(value), GetGValue(value), GetBValue(value)};
@@ -896,6 +1142,8 @@ void Window::applyTheme(const std::wstring& presetName, const Color& accent) {
         uiTheme_ = p->ui;
     }
     uiTheme_.accent = accent;  // override on top of the preset
+    configuredTheme_ = theme_;
+    configuredUiTheme_ = uiTheme_;
     applyHighContrastIfEnabled();
     renderer_->setColors(uiTheme_.workspaceBg, theme_.background);
     // Push the terminal palette to every live session so the change is
@@ -912,7 +1160,7 @@ void Window::openSettingsDialog() {
     v.fontFamily = fontFamily_;
     v.fontSize = fontSize_;
     v.themeName = themeName_;
-    v.accent = uiTheme_.accent;
+    v.accent = configuredUiTheme_.accent;
     v.scrollback = scrollback_;
     v.copyOnSelect = copyOnSelect_;
     v.multiLinePasteWarning = multiLinePasteWarning_;
@@ -1073,12 +1321,14 @@ void Window::openDirectoryMenu() {
                                !findExecutable(L"powershell.exe").empty();
     HMENU m = CreatePopupMenu();
     AppendMenuW(m, MF_STRING, 30, L"File Explorer");
-    AppendMenuW(m, MF_STRING | (hasPowerShell ? 0 : MF_GRAYED), 31, L"PowerShell");
-    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(m, MF_STRING | (code.empty() ? MF_GRAYED : 0), 32,
-                L"Visual Studio Code");
-    AppendMenuW(m, MF_STRING | (subl.empty() ? MF_GRAYED : 0), 33, L"Sublime Text");
-    AppendMenuW(m, MF_STRING | (warp.empty() ? MF_GRAYED : 0), 34, L"Warp");
+    if (hasPowerShell) AppendMenuW(m, MF_STRING, 31, L"PowerShell");
+    if (!code.empty() || !subl.empty() || !warp.empty()) {
+        AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+        if (!code.empty())
+            AppendMenuW(m, MF_STRING, 32, L"Visual Studio Code");
+        if (!subl.empty()) AppendMenuW(m, MF_STRING, 33, L"Sublime Text");
+        if (!warp.empty()) AppendMenuW(m, MF_STRING, 34, L"Warp");
+    }
     const int cmd = TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTALIGN, pt.x, pt.y,
                                    0, hwnd_, nullptr);
     DestroyMenu(m);
@@ -1155,7 +1405,7 @@ void Window::searchHistory() {
     for (size_t i = 0; i < results.size(); ++i) {
         std::wstring label = results[i].command;
         std::replace(label.begin(), label.end(), L'\t', L' ');
-        if (label.size() > 120) label = label.substr(0, 117) + L"...";
+        if (label.size() > 120) label = label.substr(0, 117) + L"…";
         AppendMenuW(menu, MF_STRING, static_cast<UINT>(500 + i), label.c_str());
     }
     POINT pt{}; GetCursorPos(&pt);
@@ -1225,6 +1475,7 @@ void Window::setScheduledShutdown(int hours) {
         bool ok = false;
         runCapture(cancelShutdownCommand(), L"", &ok, 5000);
         if (ok) {
+            scheduledShutdownUntil_ = 0;
             showBalloon(L"Liney", L"Scheduled shutdown cancelled");
         } else {
             MessageBoxW(hwnd_,
@@ -1247,6 +1498,8 @@ void Window::setScheduledShutdown(int hours) {
     bool ok = false;
     runCapture(command, L"", &ok, 5000);
     if (ok) {
+        scheduledShutdownUntil_ =
+            GetTickCount64() + static_cast<ULONGLONG>(hours) * 60ULL * 60ULL * 1000ULL;
         showBalloon(L"Liney", L"Windows shutdown scheduled in " +
                                 std::to_wstring(hours) +
                                 (hours == 1 ? L" hour" : L" hours"));
@@ -1262,22 +1515,33 @@ void Window::openMainMenu() {
               static_cast<int>(menuButtonRect_.bottom()) };
     ClientToScreen(hwnd_, &pt);
     HMENU m = CreatePopupMenu();
-    auto item = [&](UINT id, const wchar_t* text, bool checked = false) {
-        AppendMenuW(m, MF_STRING | (checked ? MF_CHECKED : 0), id, text);
-    };
-
-    item(4, L"New tab\tCtrl+Shift+T");
+    AppendMenuW(m, MF_STRING, 4, L"New tab\tCtrl+Shift+T");
     HMENU profiles = CreatePopupMenu();
     for (size_t i = 0; i < shellProfiles_.size() && i < 50; ++i)
         AppendMenuW(profiles, MF_STRING, static_cast<UINT>(200 + i),
                     shellProfiles_[i].name.c_str());
     AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(profiles),
                 L"New tab with profile");
-    item(5, L"Split side by side\tAlt+D");
-    item(6, L"Split stacked\tShift+Alt+D");
-    item(16, L"New window");
-    item(17, L"New administrator window…");
-    item(15, L"Workspace snapshots…");
+    AppendMenuW(m, MF_STRING, 16, L"New window");
+    AppendMenuW(m, MF_STRING, 17, L"New administrator window…");
+    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m, MF_STRING, 22, L"Command palette…\tCtrl+Shift+P");
+
+    Tab* at = activeTab();
+    const bool split = at && at->isSplit();
+    HMENU layout = CreatePopupMenu();
+    AppendMenuW(layout, MF_STRING, 5, L"Split right\tAlt+D");
+    AppendMenuW(layout, MF_STRING, 6, L"Split down\tShift+Alt+D");
+    if (split) {
+        AppendMenuW(layout, MF_SEPARATOR, 0, nullptr);
+        const bool zoomed = at->zoom() != nullptr;
+        AppendMenuW(layout, MF_STRING | (zoomed ? MF_CHECKED : 0), 13,
+                    zoomed ? L"Restore pane\tCtrl+Shift+Z"
+                           : L"Zoom pane\tCtrl+Shift+Z");
+        AppendMenuW(layout, MF_STRING, 14,
+                    L"Equalize panes\tCtrl+Shift+E");
+    }
+    AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(layout), L"Pane layout");
 
     HMENU view = CreatePopupMenu();
     AppendMenuW(view, MF_STRING | (sidebarVisible_ ? MF_CHECKED : 0), 2,
@@ -1285,18 +1549,30 @@ void Window::openMainMenu() {
     AppendMenuW(view, MF_STRING | (filesPanelVisible_ ? MF_CHECKED : 0), 3,
                 L"Files panel\tCtrl+Shift+F");
     AppendMenuW(view, MF_SEPARATOR, 0, nullptr);
-    Tab* at = activeTab();
-    const bool zoomed = at && at->zoom();
-    AppendMenuW(view, MF_STRING | (zoomed ? MF_CHECKED : 0), 13,
-                zoomed ? L"Restore pane\tCtrl+Shift+Z"
-                       : L"Zoom pane\tCtrl+Shift+Z");
-    AppendMenuW(view, MF_STRING, 14, L"Equalize panes\tCtrl+Shift+E");
-    AppendMenuW(view, MF_STRING, 9, L"Find on screen…\tCtrl+F");
+    AppendMenuW(view, MF_STRING, 9, L"Find in terminal…\tCtrl+F");
     AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(view), L"View");
-    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    item(11, L"Settings…\tCtrl+,");
+
+    HMENU workspace = CreatePopupMenu();
+    AppendMenuW(workspace, MF_STRING, 15, L"Workspace snapshots…");
+    AppendMenuW(workspace, MF_STRING, 21, L"Search command history…");
+    AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(workspace), L"Workspace");
+
+    HMENU tools = CreatePopupMenu();
     HMENU shutdown = CreatePopupMenu();
-    AppendMenuW(shutdown, MF_STRING, 300, L"Cancel scheduled shutdown");
+    const ULONGLONG now = GetTickCount64();
+    if (scheduledShutdownUntil_ > now) {
+        const ULONGLONG minutes =
+            (scheduledShutdownUntil_ - now + 59999ULL) / 60000ULL;
+        const std::wstring status =
+            L"Scheduled in " + std::to_wstring(minutes) +
+            (minutes == 1 ? L" minute" : L" minutes");
+        AppendMenuW(shutdown, MF_STRING | MF_DISABLED, 0, status.c_str());
+        AppendMenuW(shutdown, MF_STRING, 300, L"Cancel scheduled shutdown");
+    } else {
+        scheduledShutdownUntil_ = 0;
+        AppendMenuW(shutdown, MF_STRING, 300,
+                    L"Cancel a scheduled shutdown…");
+    }
     AppendMenuW(shutdown, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(shutdown, MF_STRING, 301, L"Shut down in 1 hour");
     AppendMenuW(shutdown, MF_STRING, 302, L"Shut down in 2 hours");
@@ -1304,19 +1580,20 @@ void Window::openMainMenu() {
     AppendMenuW(shutdown, MF_STRING, 304, L"Shut down in 6 hours");
     AppendMenuW(shutdown, MF_STRING, 305, L"Shut down in 12 hours");
     AppendMenuW(shutdown, MF_STRING, 306, L"Shut down in 24 hours");
-    AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(shutdown),
+    AppendMenuW(tools, MF_POPUP, reinterpret_cast<UINT_PTR>(shutdown),
                 L"Scheduled shutdown");
-    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     HMENU support = CreatePopupMenu();
     AppendMenuW(support, MF_STRING, 12, L"Report an issue…");
     AppendMenuW(support, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(support, MF_STRING, 18, L"Open diagnostics folder");
     AppendMenuW(support, MF_STRING, 19, L"Copy diagnostic summary");
-    AppendMenuW(support, MF_STRING, 20, L"Export diagnostic bundle...");
-    AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(support),
+    AppendMenuW(support, MF_STRING, 20, L"Export diagnostic bundle…");
+    AppendMenuW(tools, MF_POPUP, reinterpret_cast<UINT_PTR>(support),
                 L"Support & diagnostics");
-    item(21, L"Search command history...");
-    item(8, L"Check for updates\tCtrl+Shift+U");
+    AppendMenuW(tools, MF_STRING, 8, L"Check for updates\tCtrl+Shift+U");
+    AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(tools), L"Tools");
+    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m, MF_STRING, 11, L"Settings…\tCtrl+,");
 
     const int cmd = TrackPopupMenu(m, TPM_RETURNCMD | TPM_RIGHTALIGN, pt.x, pt.y,
                                    0, hwnd_, nullptr);
@@ -1351,6 +1628,7 @@ void Window::openMainMenu() {
     case 19: copyDiagnosticSummary(); break;
     case 20: exportDiagnostics(); break;
     case 21: searchHistory(); break;
+    case 22: openCommandPalette(); break;
     case 12:
         ShellExecuteW(hwnd_, L"open",
                       L"https://github.com/everettjf/liney-win/issues/new",
@@ -1367,7 +1645,7 @@ void Window::openTabMenu(int xi, int yi) {
     ClientToScreen(hwnd_, &pt);
     HMENU m = CreatePopupMenu();
     AppendMenuW(m, MF_STRING, 1, L"New tab\tCtrl+Shift+T");
-    AppendMenuW(m, MF_STRING, 2, L"Open in Explorer");
+    AppendMenuW(m, MF_STRING, 2, L"Open folder in File Explorer");
     AppendMenuW(m, MF_STRING, 3, L"Copy path");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING | (tabs_[idx]->pinned() ? MF_CHECKED : 0), 9,
@@ -1375,15 +1653,31 @@ void Window::openTabMenu(int xi, int yi) {
     AppendMenuW(m, MF_STRING, 10, L"Rename tab…");
     AppendMenuW(m, MF_STRING, 11, L"Duplicate tab");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(m, MF_STRING, 4, L"Close tab\tCtrl+Shift+W");
-    // Close-multiple, each disabled when it would be a no-op.
-    const UINT dR = (idx + 1 < n) ? 0u : MF_GRAYED;
-    const UINT dL = (idx > 0) ? 0u : MF_GRAYED;
-    const UINT dO = (n > 1) ? 0u : MF_GRAYED;
-    AppendMenuW(m, MF_STRING | dR, 5, L"Close tabs to the right");
-    AppendMenuW(m, MF_STRING | dL, 6, L"Close tabs to the left");
-    AppendMenuW(m, MF_STRING | dO, 7, L"Close other tabs");
-    AppendMenuW(m, MF_STRING, 8, L"Close all tabs");
+    const size_t paneCount = tabs_[idx]->leaves().size();
+    const std::wstring closeLabel =
+        paneCount > 1
+            ? L"Close tab (" + std::to_wstring(paneCount) + L" panes)"
+            : L"Close tab\tCtrl+Shift+W";
+    AppendMenuW(m, MF_STRING, 4, closeLabel.c_str());
+    // Omit close-multiple no-ops and make the impact explicit before selection.
+    if (idx + 1 < n) {
+        const std::wstring label =
+            L"Close " + std::to_wstring(n - idx - 1) + L" tabs to the right";
+        AppendMenuW(m, MF_STRING, 5, label.c_str());
+    }
+    if (idx > 0) {
+        const std::wstring label =
+            L"Close " + std::to_wstring(idx) + L" tabs to the left";
+        AppendMenuW(m, MF_STRING, 6, label.c_str());
+    }
+    if (n > 1) {
+        const std::wstring label =
+            L"Close " + std::to_wstring(n - 1) + L" other tabs";
+        AppendMenuW(m, MF_STRING, 7, label.c_str());
+    }
+    const std::wstring closeAllLabel =
+        L"Close all " + std::to_wstring(n) + (n == 1 ? L" tab" : L" tabs");
+    AppendMenuW(m, MF_STRING, 8, closeAllLabel.c_str());
     const int cmd = TrackPopupMenu(m, TPM_RETURNCMD, pt.x, pt.y, 0, hwnd_, nullptr);
     DestroyMenu(m);
 
@@ -1448,6 +1742,56 @@ void Window::openTabMenu(int xi, int yi) {
     }
 }
 
+void Window::openTabOverflowMenu(int xi, int yi) {
+    if (tabs_.empty()) return;
+    HMENU menu = CreatePopupMenu();
+    if (!menu) return;
+
+    // Native popup menus become hard to scan when they span hundreds of rows.
+    // Show a bounded window centered on the active tab; every tab remains
+    // searchable by title in the command palette.
+    constexpr size_t kMaxMenuTabs = 80;
+    const size_t count = std::min(tabs_.size(), kMaxMenuTabs);
+    size_t first = activeTab_ > count / 2 ? activeTab_ - count / 2 : 0;
+    if (first + count > tabs_.size()) first = tabs_.size() - count;
+    if (first > 0)
+        AppendMenuW(menu, MF_STRING | MF_DISABLED, 0,
+                    (L"… " + std::to_wstring(first) +
+                     L" earlier tabs — search with Ctrl+Shift+P")
+                        .c_str());
+    for (size_t offset = 0; offset < count; ++offset) {
+        const size_t i = first + offset;
+        std::wstring label = tabs_[i]->title();
+        if (label.size() > 48) label = label.substr(0, 47) + L"…";
+        if (tabs_[i]->pinned()) label = L"●  " + label;
+        UINT flags = MF_STRING;
+        if (i == activeTab_) flags |= MF_CHECKED;
+        AppendMenuW(menu, flags, static_cast<UINT>(600 + offset),
+                    label.c_str());
+    }
+    if (first + count < tabs_.size())
+        AppendMenuW(menu, MF_STRING | MF_DISABLED, 0,
+                    (L"… " + std::to_wstring(tabs_.size() - first - count) +
+                     L" later tabs — search with Ctrl+Shift+P")
+                        .c_str());
+
+    POINT point{xi, yi};
+    ClientToScreen(hwnd_, &point);
+    const int selected =
+        TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, point.x, point.y,
+                       0, hwnd_, nullptr);
+    DestroyMenu(menu);
+    if (selected < 600) return;
+    const size_t index =
+        first + static_cast<size_t>(selected - 600);
+    if (index >= tabs_.size()) return;
+    clearSelection();
+    activeTab_ = index;
+    hoverTab_ = -1;
+    updateTitle();
+    markRenderDirty();
+}
+
 void Window::togglePinActiveTab() {
     if (activeTab_ >= tabs_.size()) return;
     Tab* selected = tabs_[activeTab_].get();
@@ -1484,6 +1828,28 @@ bool Window::tabHasRunningProcess(size_t idx) const {
     }
     CloseHandle(snap);
     return running;
+}
+
+size_t Window::runningPaneCount(const std::vector<Pane*>& panes) const {
+    std::unordered_set<DWORD> shellPids;
+    for (Pane* pane : panes)
+        if (pane && pane->session && pane->session->shellPid() != 0)
+            shellPids.insert(pane->session->shellPid());
+    if (shellPids.empty()) return 0;
+
+    std::unordered_set<DWORD> runningShells;
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return 0;
+    PROCESSENTRY32W pe{};
+    pe.dwSize = sizeof(pe);
+    if (Process32FirstW(snap, &pe)) {
+        do {
+            if (shellPids.count(pe.th32ParentProcessID))
+                runningShells.insert(pe.th32ParentProcessID);
+        } while (Process32NextW(snap, &pe));
+    }
+    CloseHandle(snap);
+    return runningShells.size();
 }
 
 std::vector<std::wstring> Window::runningTabTitles(
@@ -1535,7 +1901,13 @@ bool Window::confirmCloseRunning(const std::vector<std::wstring>& titles,
 
 void Window::closeTabConfirming(size_t idx) {
     if (idx >= tabs_.size()) return;
-    if (!confirmCloseRunning(runningTabTitles({ idx }), L"Close this tab?"))
+    const size_t paneCount = tabs_[idx]->leaves().size();
+    const std::wstring prompt =
+        paneCount > 1
+            ? L"Close this tab and its " + std::to_wstring(paneCount) +
+                  L" panes?"
+            : L"Close this tab?";
+    if (!confirmCloseRunning(runningTabTitles({idx}), prompt))
         return;
     closeTab(idx);
 }
@@ -1544,10 +1916,12 @@ void Window::closeTab(size_t idx) {
     if (idx >= tabs_.size()) return;
     clearSelection();
     hoverTab_ = -1;  // indices shift; drop stale hover
-    runDetached(sessionExitHook_, L"");  // hooks.sessionExit
+    runSessionExitHooks(tabs_[idx]->leaves().size());
+    const size_t nextActive =
+        activeTabAfterClose(tabs_.size(), activeTab_, idx);
     tabs_.erase(tabs_.begin() + idx);
     if (tabs_.empty()) { PostQuitMessage(0); return; }
-    if (activeTab_ >= tabs_.size()) activeTab_ = tabs_.size() - 1;
+    activeTab_ = std::min(nextActive, tabs_.size() - 1);
     updateTitle();
 }
 
@@ -1563,7 +1937,7 @@ void Window::closeTabSet(const std::vector<size_t>& victims, Tab* keep) {
     std::sort(sorted.begin(), sorted.end(), std::greater<size_t>());
     for (size_t i : sorted) {
         if (i >= tabs_.size()) continue;
-        runDetached(sessionExitHook_, L"");  // hooks.sessionExit (per tab)
+        runSessionExitHooks(tabs_[i]->leaves().size());
         tabs_.erase(tabs_.begin() + i);
     }
     if (tabs_.empty()) { PostQuitMessage(0); return; }

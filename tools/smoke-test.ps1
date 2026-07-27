@@ -68,6 +68,17 @@ if ($processTest.ExitCode -ne 0) {
 }
 Write-Host 'Bounded child-process capture/timeout self-test passed.'
 
+$workspaceTest = [Diagnostics.Process]::Start(
+    $resolved, 'workspace-close-self-test')
+if (-not $workspaceTest.WaitForExit(10000)) {
+    $workspaceTest.Kill()
+    throw 'Workspace and high-count close self-test timed out.'
+}
+if ($workspaceTest.ExitCode -ne 0) {
+    throw "Workspace and close self-test failed with exit code $($workspaceTest.ExitCode)."
+}
+Write-Host 'Folder/Git Workspace and 48-pane close invariants passed.'
+
 $remoteTest = [Diagnostics.Process]::Start($resolved, 'remote-self-test')
 if (-not $remoteTest.WaitForExit(20000)) {
     $remoteTest.Kill()

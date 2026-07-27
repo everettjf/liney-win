@@ -1,5 +1,6 @@
 #include "render/D2DRenderer.h"
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -71,6 +72,8 @@ bool D2DRenderer::buildTextFormats() {
     textFormatBold_.Reset();
     textFormatItalic_.Reset();
     textFormatBoldItalic_.Reset();
+    uiTextFormat_.Reset();
+    uiTextFormatBold_.Reset();
 
     // Font (or size) changed: every cached glyph is stale. The atlas is
     // recreated lazily at the new cell size.
@@ -114,6 +117,37 @@ bool D2DRenderer::buildTextFormats() {
                 textFormatItalic_);
     makeVariant(DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_ITALIC,
                 textFormatBoldItalic_);
+
+    // Keep application chrome visually native even when the terminal uses a
+    // distinctive programming font. Segoe UI Variable ships on Windows 11;
+    // classic Segoe UI is the Windows 10 fallback.
+    const float uiFontSize = std::max(11.0f, fontSize_ * 0.88f);
+    const wchar_t* uiFamily = L"Segoe UI Variable Text";
+    hr = dwriteFactory_->CreateTextFormat(
+        uiFamily, nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
+        DWRITE_FONT_STRETCH_NORMAL, uiFontSize, L"en-us",
+        uiTextFormat_.GetAddressOf());
+    if (FAILED(hr)) {
+        uiFamily = L"Segoe UI";
+        hr = dwriteFactory_->CreateTextFormat(
+            uiFamily, nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+            DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, uiFontSize,
+            L"en-us", uiTextFormat_.GetAddressOf());
+    }
+    if (SUCCEEDED(hr)) {
+        uiTextFormat_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+        uiTextFormat_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+        uiTextFormat_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+        if (SUCCEEDED(dwriteFactory_->CreateTextFormat(
+                uiFamily, nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
+                DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, uiFontSize,
+                L"en-us", uiTextFormatBold_.GetAddressOf()))) {
+            uiTextFormatBold_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+            uiTextFormatBold_->SetParagraphAlignment(
+                DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+            uiTextFormatBold_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+        }
+    }
 
     // Derive the monospace cell size from a representative glyph.
     ComPtr<IDWriteTextLayout> layout;
@@ -254,6 +288,18 @@ void D2DRenderer::endFrame() {
     if (!d2dContext_ || !swapChain_ || !frameOpen_) return;
     frameOpen_ = false;
     const HRESULT hrDraw = d2dContext_->EndDraw();
+    wchar_t capturePath[32768]{};
+    wchar_t headless[8]{};
+    const bool isHeadless =
+        GetEnvironmentVariableW(L"LINEY_HEADLESS", headless,
+                                static_cast<DWORD>(_countof(headless))) > 0;
+    if (!capturedFrame_ && isHeadless && SUCCEEDED(hrDraw)) {
+        const DWORD captureLength = GetEnvironmentVariableW(
+            L"LINEY_CAPTURE_PNG", capturePath,
+            static_cast<DWORD>(_countof(capturePath)));
+        if (captureLength > 0 && captureLength < _countof(capturePath))
+            capturedFrame_ = captureBackBufferPng(capturePath);
+    }
     const HRESULT hrPresent = swapChain_->Present(1, 0);
     wchar_t simulate[8]{};
     if (!simulatedDeviceLoss_ && GetEnvironmentVariableW(
@@ -270,6 +316,69 @@ void D2DRenderer::endFrame() {
         hrPresent == DXGI_ERROR_DEVICE_RESET) {
         deviceLost_ = true;
     }
+}
+
+bool D2DRenderer::captureBackBufferPng(const std::wstring& path) {
+    if (path.empty() || !swapChain_ || !d3dDevice_ || !d3dContext_ ||
+        !wicFactory_)
+        return false;
+
+    ComPtr<ID3D11Texture2D> backBuffer;
+    if (FAILED(swapChain_->GetBuffer(
+            0, __uuidof(ID3D11Texture2D),
+            reinterpret_cast<void**>(backBuffer.GetAddressOf()))))
+        return false;
+
+    D3D11_TEXTURE2D_DESC desc{};
+    backBuffer->GetDesc(&desc);
+    if (desc.Width == 0 || desc.Height == 0 ||
+        desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM)
+        return false;
+    desc.Usage = D3D11_USAGE_STAGING;
+    desc.BindFlags = 0;
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    desc.MiscFlags = 0;
+
+    ComPtr<ID3D11Texture2D> staging;
+    if (FAILED(d3dDevice_->CreateTexture2D(&desc, nullptr,
+                                           staging.GetAddressOf())))
+        return false;
+    d3dContext_->CopyResource(staging.Get(), backBuffer.Get());
+
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    if (FAILED(d3dContext_->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped)))
+        return false;
+
+    bool ok = false;
+    ComPtr<IWICStream> stream;
+    ComPtr<IWICBitmapEncoder> encoder;
+    ComPtr<IWICBitmapFrameEncode> frame;
+    IPropertyBag2* optionsRaw = nullptr;
+    DeleteFileW(path.c_str());
+    if (SUCCEEDED(wicFactory_->CreateStream(stream.GetAddressOf())) &&
+        SUCCEEDED(stream->InitializeFromFilename(path.c_str(), GENERIC_WRITE)) &&
+        SUCCEEDED(wicFactory_->CreateEncoder(
+            GUID_ContainerFormatPng, nullptr, encoder.GetAddressOf())) &&
+        SUCCEEDED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache)) &&
+        SUCCEEDED(encoder->CreateNewFrame(frame.GetAddressOf(), &optionsRaw))) {
+        ComPtr<IPropertyBag2> options;
+        options.Attach(optionsRaw);
+        WICPixelFormatGUID format = GUID_WICPixelFormat32bppBGRA;
+        if (SUCCEEDED(frame->Initialize(options.Get())) &&
+            SUCCEEDED(frame->SetSize(desc.Width, desc.Height)) &&
+            SUCCEEDED(frame->SetPixelFormat(&format)) &&
+            IsEqualGUID(format, GUID_WICPixelFormat32bppBGRA) &&
+            mapped.RowPitch <= UINT_MAX / desc.Height &&
+            SUCCEEDED(frame->WritePixels(
+                desc.Height, mapped.RowPitch, mapped.RowPitch * desc.Height,
+                static_cast<BYTE*>(mapped.pData))) &&
+            SUCCEEDED(frame->Commit()) && SUCCEEDED(encoder->Commit())) {
+            ok = true;
+        }
+    }
+    d3dContext_->Unmap(staging.Get(), 0);
+    if (!ok) DeleteFileW(path.c_str());
+    return ok;
 }
 
 bool D2DRenderer::recreateDevice() {
@@ -313,6 +422,16 @@ void D2DRenderer::fillRect(float x, float y, float w, float h, const Color& c) {
     d2dContext_->FillRectangle(D2D1::RectF(x, y, x + w, y + h), brush_.Get());
 }
 
+void D2DRenderer::fillRoundedRect(float x, float y, float w, float h,
+                                  float radius, const Color& c) {
+    if (!d2dContext_ || !brush_ || w <= 0.0f || h <= 0.0f) return;
+    brush_->SetColor(toColorF(c));
+    radius = std::max(0.0f, std::min(radius, std::min(w, h) * 0.5f));
+    d2dContext_->FillRoundedRectangle(
+        D2D1::RoundedRect(D2D1::RectF(x, y, x + w, y + h), radius, radius),
+        brush_.Get());
+}
+
 void D2DRenderer::strokeRect(float x, float y, float w, float h, const Color& c,
                              float thickness) {
     if (!d2dContext_ || !brush_) return;
@@ -323,11 +442,27 @@ void D2DRenderer::strokeRect(float x, float y, float w, float h, const Color& c,
                                brush_.Get(), thickness);
 }
 
+void D2DRenderer::strokeRoundedRect(float x, float y, float w, float h,
+                                    float radius, const Color& c,
+                                    float thickness) {
+    if (!d2dContext_ || !brush_ || w <= 0.0f || h <= 0.0f) return;
+    brush_->SetColor(toColorF(c));
+    const float inset = thickness * 0.5f;
+    radius = std::max(0.0f, std::min(radius, std::min(w, h) * 0.5f));
+    d2dContext_->DrawRoundedRectangle(
+        D2D1::RoundedRect(
+            D2D1::RectF(x + inset, y + inset, x + w - inset, y + h - inset),
+            radius, radius),
+        brush_.Get(), thickness);
+}
+
 void D2DRenderer::drawText(const std::wstring& text, float x, float y,
                            float maxW, float rowH, const Color& c, bool bold) {
     if (!d2dContext_ || !brush_ || text.empty()) return;
     IDWriteTextFormat* fmt =
-        bold && textFormatBold_ ? textFormatBold_.Get() : textFormat_.Get();
+        bold && uiTextFormatBold_ ? uiTextFormatBold_.Get()
+                                 : (uiTextFormat_ ? uiTextFormat_.Get()
+                                                  : textFormat_.Get());
     brush_->SetColor(toColorF(c));
     d2dContext_->DrawText(text.c_str(), static_cast<UINT32>(text.size()), fmt,
                           D2D1::RectF(x, y, x + maxW, y + rowH), brush_.Get(),
