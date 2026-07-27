@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.10.2] - 2026-07-27
+
+- Decoupled Windows application chrome metrics from terminal font zoom, keeping
+  tabs, sidebars, rows and pane padding stable while terminal text is resized.
+- Refined pane focus into a restrained edge marker instead of a full accent
+  frame, and simplified the first-run workspace empty state.
+- Added an automatic compact presentation for restored layouts whose panes
+  would otherwise collapse into unreadable slivers; directional focus still
+  cycles through every hidden pane.
+- Updated first-run language around adding a project folder and clarified the
+  command-palette shortcut.
+- Added a dark Windows 11 Settings frame, dark native controls, rounded window
+  corners and consistent field colors.
+- Added unit coverage ensuring terminal zoom cannot resize application chrome.
+
 ## [0.10.1] - 2026-07-27
 
 - Added a scheduled two-hour reliability workflow with working-set,

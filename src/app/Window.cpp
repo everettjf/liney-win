@@ -197,6 +197,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
 
     g_wakeHwnd.store(hwnd_, std::memory_order_relaxed);  // PTY thread wakes us here
     dpiScale_ = queryDpiScale(hwnd_);                    // scale the font to the monitor
+    metrics_.uiScale = dpiScale_;
 
     if (!renderer_->initialize(hwnd_)) return false;
     RECT rc{};
@@ -596,7 +597,8 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
             // A resume can replace the D3D device, monitor, or effective DPI.
             // Re-read all display-dependent state; present() will recreate a
             // lost device through the renderer's normal recovery path.
-            dpiScale_ = queryDpiScale(hwnd_);
+        dpiScale_ = queryDpiScale(hwnd_);
+        metrics_.uiScale = dpiScale_;
             applyFont();
             RECT rc{};
             if (GetClientRect(hwnd_, &rc) && renderer_)
@@ -743,7 +745,7 @@ void Window::regions(Rect& leftBar, Rect& rightPanel, Rect& tabBar,
     const float H = static_cast<float>(rc.bottom - rc.top);
     const ResponsivePanelLayout responsive = layoutResponsivePanels(
         W, sidebarVisible_, filesPanelVisible_, metrics_.sidebarW(),
-        metrics_.cellW * 18.0f, metrics_.cellW * 36.0f);
+        metrics_.compactSidebarW(), metrics_.minimumTerminalW());
     const float sw = responsive.leftWidth;
     const float fw = responsive.rightWidth;
     const float tb = metrics_.tabBarH();
@@ -1131,6 +1133,7 @@ void Window::updateTitle() {
 void Window::applyFont() {
     // fontSize_ is logical; render at device pixels so glyphs use the monitor's
     // full resolution (sharp on HiDPI) instead of being bitmap-stretched.
+    renderer_->setUiScale(dpiScale_);
     renderer_->setFont(fontFamily_, fontSize_ * dpiScale_);
     renderer_->setLigatures(fontLigatures_);
     unsigned cw = 0, ch = 0;

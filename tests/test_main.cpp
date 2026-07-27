@@ -11,6 +11,7 @@
 
 #include "app/TabStripLayout.h"
 #include "app/ResponsiveLayout.h"
+#include "app/Layout.h"
 #include "util/Json.h"
 #include "vt/OscParser.h"
 #include "vt/KeyEncoder.h"
@@ -92,6 +93,22 @@ void testResponsivePanels() {
     check(layout.leftWidth == 0.0f && layout.rightWidth == 100.0f &&
               layout.centerWidth == 400.0f,
           "single visible panel also yields to terminal space");
+}
+
+void testUiMetrics() {
+    std::printf("DPI-aware UI metrics\n");
+    liney::Metrics metrics;
+    metrics.uiScale = 1.5f;
+    const float sidebar = metrics.sidebarW();
+    const float tabBar = metrics.tabBarH();
+    const float row = metrics.rowH();
+    metrics.cellW = 20.0f;
+    metrics.cellH = 40.0f;
+    check(metrics.sidebarW() == sidebar && metrics.tabBarH() == tabBar &&
+              metrics.rowH() == row,
+          "terminal zoom does not resize application chrome");
+    check(metrics.panePad() == 9.0f,
+          "pane padding follows monitor DPI instead of terminal font size");
 }
 
 void testWindowGeometry() {
@@ -559,6 +576,7 @@ int main() {
     testScheduledShutdown();
     testKeyEncoder();
     testResponsivePanels();
+    testUiMetrics();
     testWindowGeometry();
     testCommandPalette();
     testTabStripLayout();

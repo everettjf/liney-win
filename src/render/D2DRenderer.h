@@ -30,6 +30,7 @@ public:
     void resize(unsigned widthPx, unsigned heightPx) override;
     void cellSize(unsigned& wPx, unsigned& hPx) const override;
     void setFont(const std::wstring& family, float sizePx) override;
+    void setUiScale(float scale) override;
     void setLigatures(bool enabled) override { ligatures_ = enabled; }
     void setColors(const Color& workspaceBg, const Color& termBg) override;
 
@@ -71,6 +72,7 @@ private:
     float cellW_ = 0.0f, cellH_ = 0.0f;
     std::wstring fontFamily_ = L"Cascadia Mono";
     float fontSize_ = 16.0f;
+    float uiScale_ = 1.0f;
     bool ligatures_ = false;
     Microsoft::WRL::ComPtr<IDWriteTypography> ligatureTypography_;
     Color workspaceBg_{ 13, 13, 15 };

@@ -169,7 +169,7 @@ bool D2DRenderer::buildTextFormats() {
     // Keep application chrome visually native even when the terminal uses a
     // distinctive programming font. Segoe UI Variable ships on Windows 11;
     // classic Segoe UI is the Windows 10 fallback.
-    const float uiFontSize = std::max(11.0f, fontSize_ * 0.88f);
+    const float uiFontSize = 13.0f * uiScale_;
     const wchar_t* uiFamily = L"Segoe UI Variable Text";
     hr = dwriteFactory_->CreateTextFormat(
         uiFamily, nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL,
@@ -224,6 +224,13 @@ bool D2DRenderer::buildTextFormats() {
 void D2DRenderer::setFont(const std::wstring& family, float sizePx) {
     fontFamily_ = family.empty() ? L"Cascadia Mono" : family;
     fontSize_ = (sizePx < 6.0f) ? 6.0f : (sizePx > 96.0f ? 96.0f : sizePx);
+    buildTextFormats();
+}
+
+void D2DRenderer::setUiScale(float scale) {
+    const float next = std::clamp(scale, 0.75f, 4.0f);
+    if (std::fabs(next - uiScale_) < 0.001f) return;
+    uiScale_ = next;
     buildTextFormats();
 }
 

@@ -52,6 +52,7 @@ public:
     // setZoom(nullptr) or setting a non-leaf clears it.
     void setZoom(Pane* p);
     Pane* zoom() const { return zoom_; }
+    bool compactLayout() const { return compactLayout_; }
 
     Pane* hitTest(float x, float y) const;          // leaf at point, or nullptr
     // Split node whose divider is within `tol` px of the point, or nullptr.
@@ -68,6 +69,7 @@ private:
     std::unique_ptr<Pane> root_;
     Pane* active_ = nullptr;
     Pane* zoom_ = nullptr;  // zoomed leaf (fills the tab), or nullptr
+    bool compactLayout_ = false; // window too small to show every restored pane
     std::wstring customTitle_;
     bool pinned_ = false;
 };

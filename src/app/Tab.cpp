@@ -174,6 +174,7 @@ void Tab::moveActiveForward() {
 
 void Tab::layout(const Rect& area, const Metrics& m) {
     if (!root_) return;
+    compactLayout_ = false;
     // If a pane is zoomed, give it the whole area and collapse the rest to
     // zero-size rects (invisible + never hit-tested). Validate the target
     // still exists first (it may have been closed).
@@ -198,6 +199,31 @@ void Tab::layout(const Rect& area, const Metrics& m) {
         return;
     }
     layoutRec(root_.get(), area, m);
+    // A saved layout may have been created on a much larger monitor, and the
+    // deterministic visual fixture intentionally bypasses Window::splitActive.
+    // Never leave an unusable sliver on screen: temporarily present the active
+    // pane full-size until the window has enough room for every leaf again.
+    for (Pane* leaf : leaves()) {
+        const float usableW = leaf->rect.w - m.panePad() * 2.0f;
+        const float usableH = leaf->rect.h - m.panePad() * 2.0f;
+        if (usableW < m.cellW * 18.0f || usableH < m.cellH * 5.0f) {
+            compactLayout_ = true;
+            break;
+        }
+    }
+    if (compactLayout_ && active_) {
+        for (Pane* leaf : leaves()) leaf->rect = {0, 0, 0, 0};
+        active_->rect = area;
+        if (active_->session) {
+            const float pad2 = m.panePad() * 2.0f;
+            const int cols = std::max(
+                1, static_cast<int>((area.w - pad2) / m.cellW));
+            const int rows = std::max(
+                1, static_cast<int>((area.h - pad2) / m.cellH));
+            active_->session->resize(cols, rows, static_cast<int>(m.cellW),
+                                     static_cast<int>(m.cellH));
+        }
+    }
 }
 
 namespace {
@@ -262,6 +288,14 @@ void Tab::focusDir(SplitDir axis, bool positive) {
     zoom_ = nullptr;  // moving focus reveals all panes again
     std::vector<Pane*> ls;
     collect(root_.get(), ls);
+    if (compactLayout_ && ls.size() > 1) {
+        auto it = std::find(ls.begin(), ls.end(), active_);
+        size_t index = it == ls.end() ? 0 : static_cast<size_t>(it - ls.begin());
+        index = positive ? (index + 1) % ls.size()
+                         : (index + ls.size() - 1) % ls.size();
+        active_ = ls[index];
+        return;
+    }
 
     const float acx = active_->rect.x + active_->rect.w * 0.5f;
     const float acy = active_->rect.y + active_->rect.h * 0.5f;

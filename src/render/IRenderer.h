@@ -35,6 +35,9 @@ public:
 
     // Set the monospace font family and size (px); recomputes the cell size.
     virtual void setFont(const std::wstring& family, float sizePx) = 0;
+    // Set monitor DPI scaling for application chrome. This is intentionally
+    // separate from terminal font zoom.
+    virtual void setUiScale(float scale) = 0;
     virtual void setLigatures(bool enabled) = 0;
 
     // Set the workspace background (gutters/margins) and terminal background.

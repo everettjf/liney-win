@@ -85,6 +85,7 @@ target_compile_definitions(liney_win PRIVATE
 target_link_libraries(liney_win PRIVATE
   d2d1 dwrite d3d11 d3dcompiler dxgi imm32 winhttp bcrypt windowscodecs ole32 oleaut32
   comctl32 comdlg32 shell32 dbghelp wintrust crypt32 uiautomationcore)
+target_link_libraries(liney_win PRIVATE dwmapi uxtheme)
 
 # resource.rc already embeds our compatibility/DPI/long-path manifest. MSVC's
 # default linker manifest would create a second RT_MANIFEST/1 resource and make

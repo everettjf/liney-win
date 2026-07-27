@@ -1,7 +1,9 @@
 #include "app/SettingsDialog.h"
 
 #include <commdlg.h>  // ChooseColorW (accent picker)
+#include <dwmapi.h>
 #include <shlobj.h>   // SHBrowseForFolderW (workspace root picker)
+#include <uxtheme.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -53,6 +55,8 @@ struct State {
     HWND root = nullptr;
     HWND accentHex = nullptr;     // "#RRGGBB" caption next to the swatch
     HBRUSH accentBrush = nullptr; // fills the swatch via WM_CTLCOLORSTATIC
+    HBRUSH backgroundBrush = nullptr;
+    HBRUSH fieldBrush = nullptr;
     Color accent{ 120, 200, 160 };
     bool accentChanged = false;   // user used the color picker
     int themeInitialSel = 0;      // selection when the dialog opened
@@ -227,6 +231,19 @@ LRESULT CALLBACK proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         if (st && reinterpret_cast<HWND>(lParam) == st->accentSwatch &&
             st->accentBrush)
             return reinterpret_cast<LRESULT>(st->accentBrush);
+        if (st) {
+            SetTextColor(reinterpret_cast<HDC>(wParam), RGB(225, 228, 235));
+            SetBkColor(reinterpret_cast<HDC>(wParam), RGB(31, 33, 40));
+            return reinterpret_cast<LRESULT>(st->backgroundBrush);
+        }
+        break;
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORLISTBOX:
+        if (st) {
+            SetTextColor(reinterpret_cast<HDC>(wParam), RGB(236, 238, 244));
+            SetBkColor(reinterpret_cast<HDC>(wParam), RGB(39, 42, 51));
+            return reinterpret_cast<LRESULT>(st->fieldBrush);
+        }
         break;
     case WM_CLOSE:
         if (st) st->done = true;
@@ -249,7 +266,7 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
         wc.lpfnWndProc = proc;
         wc.hInstance = inst;
         wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-        wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
+        wc.hbrBackground = CreateSolidBrush(RGB(31, 33, 40));
         wc.lpszClassName = kClass;
         RegisterClassW(&wc);
         registered = true;
@@ -270,6 +287,8 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
 
     State st;
     st.accent = v.accent;
+    st.backgroundBrush = CreateSolidBrush(RGB(31, 33, 40));
+    st.fieldBrush = CreateSolidBrush(RGB(39, 42, 51));
 
     // Size the window so the *client* area is exactly W × contentH.
     const int contentH = 700;
@@ -288,6 +307,14 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
                                x, y, winW, winH, owner, nullptr, inst, nullptr);
     if (!dlg) return false;
     SetWindowLongPtrW(dlg, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&st));
+    // Ask Windows 11 for a dark caption and rounded native frame. Older
+    // Windows versions safely ignore unsupported attributes.
+    BOOL dark = TRUE;
+    DwmSetWindowAttribute(dlg, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */,
+                          &dark, sizeof(dark));
+    const DWM_WINDOW_CORNER_PREFERENCE corners = DWMWCP_ROUND;
+    DwmSetWindowAttribute(dlg, DWMWA_WINDOW_CORNER_PREFERENCE,
+                          &corners, sizeof(corners));
 
     // Scaled control factory + a couple of shorthands.
     auto mk = [&](DWORD ex, const wchar_t* cls, const wchar_t* txt, DWORD s,
@@ -471,6 +498,7 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
     if (!uiFont) uiFont = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
     EnumChildWindows(dlg, [](HWND child, LPARAM f) -> BOOL {
         SendMessageW(child, WM_SETFONT, static_cast<WPARAM>(f), TRUE);
+        SetWindowTheme(child, L"DarkMode_Explorer", nullptr);
         return TRUE;
     }, reinterpret_cast<LPARAM>(uiFont));
 
@@ -557,6 +585,8 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
         uiFont != reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT)))
         DeleteObject(uiFont);
     if (st.accentBrush) DeleteObject(st.accentBrush);
+    if (st.backgroundBrush) DeleteObject(st.backgroundBrush);
+    if (st.fieldBrush) DeleteObject(st.fieldBrush);
     return st.accepted;
 }
 

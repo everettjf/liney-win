@@ -118,11 +118,13 @@ void Window::drawLeftSidebar(const Rect& r) {
 
     auto& repos = workspace_.repos();
     if (repos.empty()) {
-        renderer_->drawText(L"No projects yet", r.x + pad, y + tDY,
-                            r.w - pad, th, uiTheme_.dim, false);
-        y += rowH;
-        renderer_->drawText(L"Use + to add a folder", r.x + pad, y + tDY,
-                            r.w - pad, th, uiTheme_.sidebarHdr, false);
+        const Rect addRow{r.x, y, r.w, rowH};
+        rowBackground(addRow);
+        renderer_->drawIcon(IconKind::Folder, r.x + pad, y + (rowH - th * 0.78f) * 0.5f,
+                            th * 0.78f, uiTheme_.accent);
+        renderer_->drawText(L"Add project folder", r.x + pad + th + 7.0f,
+                            y + tDY, r.w - pad * 2.0f - th, th,
+                            uiTheme_.text, false);
         y += rowH;
     }
     const float iconSz = th;  // square project icon
@@ -556,6 +558,7 @@ void Window::drawPanes(const Rect& r) {
     for (Pane* leaf : t->leaves()) {
         if (!leaf->session) continue;
         const Rect& pr = leaf->rect;
+        if (pr.w <= 0.0f || pr.h <= 0.0f) continue;
         // Fill the pane background, then clip the grid to the pane so a grid that
         // is momentarily wider than the pane (resize lag / wide output) can never
         // bleed into the sidebar or the right files panel.
@@ -601,8 +604,16 @@ void Window::drawPanes(const Rect& r) {
                                 metrics_.cellH, uiTheme_.text, true);
         }
         const bool focused = (leaf == t->active());
-        renderer_->strokeRect(pr.x, pr.y, pr.w, pr.h, focused ? uiTheme_.accent : uiTheme_.border,
-                              focused ? 1.5f : 1.0f);
+        renderer_->strokeRect(pr.x, pr.y, pr.w, pr.h, uiTheme_.border, 1.0f);
+        // A short edge marker identifies keyboard focus without surrounding
+        // the entire terminal in a high-salience neon rectangle.
+        if (focused) {
+            const float marker = std::min(pr.w, 42.0f * dpiScale_);
+            renderer_->fillRoundedRect(
+                pr.x + (pr.w - marker) * 0.5f, pr.y,
+                marker, std::max(2.0f, 2.0f * dpiScale_),
+                1.0f * dpiScale_, uiTheme_.accent);
+        }
     }
 
     // A compact active-pane control keeps closing discoverable even in a deep
@@ -615,6 +626,7 @@ void Window::drawPanes(const Rect& r) {
                                  26.0f * dpiScale_);
         const bool showCount = !t->zoom() && pr.w >= 150.0f * dpiScale_;
         const std::wstring countLabel =
+            (t->compactLayout() ? L"Compact  ·  " : L"") +
             std::to_wstring(count) + (count == 1 ? L" pane" : L" panes");
         const float labelW =
             showCount ? std::max(58.0f * dpiScale_,
@@ -723,7 +735,7 @@ void Window::drawWelcome(const Rect& r) {
                         y + 22.0f * dpiScale_, width - 48.0f * dpiScale_,
                         metrics_.cellH, uiTheme_.text, true);
     renderer_->drawText(
-        L"Open a project to connect terminals, worktrees and agent tasks.",
+        L"Add a folder to connect terminals, worktrees and agent tasks.",
         x + 24.0f * dpiScale_, y + 58.0f * dpiScale_,
         width - 48.0f * dpiScale_, metrics_.cellH, uiTheme_.dim, false);
     const float buttonY = y + 108.0f * dpiScale_;
@@ -736,7 +748,7 @@ void Window::drawWelcome(const Rect& r) {
     renderer_->fillRoundedRect(welcomeOpenRect_.x, welcomeOpenRect_.y,
                                welcomeOpenRect_.w, welcomeOpenRect_.h,
                                6.0f * dpiScale_, uiTheme_.accent);
-    renderer_->drawText(L"Open project", welcomeOpenRect_.x + 14.0f * dpiScale_,
+    renderer_->drawText(L"Add project folder", welcomeOpenRect_.x + 14.0f * dpiScale_,
                         welcomeOpenRect_.y + 8.0f * dpiScale_,
                         welcomeOpenRect_.w - 28.0f * dpiScale_, metrics_.cellH,
                         uiTheme_.workspaceBg, true);
@@ -747,7 +759,7 @@ void Window::drawWelcome(const Rect& r) {
                         welcomePaletteRect_.y + 8.0f * dpiScale_,
                         welcomePaletteRect_.w - 28.0f * dpiScale_, metrics_.cellH,
                         uiTheme_.text, true);
-    renderer_->drawText(L"Tip: Ctrl+Shift+P opens the command palette",
+    renderer_->drawText(L"Ctrl + Shift + P   Command palette",
                         x + 24.0f * dpiScale_, y + 174.0f * dpiScale_,
                         width - 48.0f * dpiScale_, metrics_.cellH,
                         uiTheme_.dim, false);
