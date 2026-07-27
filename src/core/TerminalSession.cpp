@@ -6,6 +6,9 @@
 #include <atomic>
 #include <memory>
 #include <thread>
+#include <vector>
+
+#include <wincrypt.h>
 
 #include "core/RenderSignal.h"
 #include "core/CommandHistory.h"
@@ -13,6 +16,88 @@
 namespace liney {
 
 namespace {
+bool decodeInlineImage(const SemanticEvent& event, InlineImage& image) {
+    const size_t colon = event.value.find(':');
+    if (colon == std::string::npos) return false;
+    const std::string metadata = event.value.substr(0, colon);
+    const auto hasToken = [&](const std::string& token) {
+        size_t start = 0;
+        while (start <= metadata.size()) {
+            const size_t end = metadata.find(';', start);
+            if (metadata.substr(start, end - start) == token) return true;
+            if (end == std::string::npos) break;
+            start = end + 1;
+        }
+        return false;
+    };
+    if (!hasToken("inline=1")) return false;
+    auto dimension = [&](const char* key, unsigned fallback) {
+        const std::string needle = std::string(key) + "=";
+        const size_t pos = metadata.find(needle);
+        if (pos == std::string::npos) return fallback;
+        unsigned value = 0;
+        size_t i = pos + needle.size();
+        while (i < metadata.size() && metadata[i] >= '0' &&
+               metadata[i] <= '9') {
+            value = value * 10 + static_cast<unsigned>(metadata[i++] - '0');
+            if (value > 500) break;
+        }
+        return value ? std::min(value, 200u) : fallback;
+    };
+
+    const std::string encoded = event.value.substr(colon + 1);
+    DWORD byteCount = 0;
+    if (encoded.empty() ||
+        !CryptStringToBinaryA(encoded.c_str(), static_cast<DWORD>(encoded.size()),
+                              CRYPT_STRING_BASE64 | CRYPT_STRING_STRICT,
+                              nullptr, &byteCount, nullptr, nullptr) ||
+        byteCount == 0 || byteCount > 3 * 1024 * 1024)
+        return false;
+    std::vector<uint8_t> bytes(byteCount);
+    if (!CryptStringToBinaryA(encoded.c_str(), static_cast<DWORD>(encoded.size()),
+                              CRYPT_STRING_BASE64 | CRYPT_STRING_STRICT,
+                              bytes.data(), &byteCount, nullptr, nullptr))
+        return false;
+    bytes.resize(byteCount);
+    const bool png = bytes.size() >= 8 &&
+        bytes[0] == 0x89 && bytes[1] == 'P' && bytes[2] == 'N' &&
+        bytes[3] == 'G';
+    const bool jpeg = bytes.size() >= 3 && bytes[0] == 0xff &&
+                      bytes[1] == 0xd8 && bytes[2] == 0xff;
+    const bool gif = bytes.size() >= 6 && bytes[0] == 'G' &&
+                     bytes[1] == 'I' && bytes[2] == 'F';
+    if (!png && !jpeg && !gif) return false;
+
+    wchar_t tempDir[MAX_PATH]{};
+    wchar_t tempPath[MAX_PATH]{};
+    if (!GetTempPathW(MAX_PATH, tempDir) ||
+        !GetTempFileNameW(tempDir, L"LNY", 0, tempPath))
+        return false;
+    HANDLE file = CreateFileW(tempPath, GENERIC_WRITE, 0, nullptr,
+                              CREATE_ALWAYS,
+                              FILE_ATTRIBUTE_TEMPORARY |
+                                  FILE_FLAG_SEQUENTIAL_SCAN,
+                              nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+        DeleteFileW(tempPath);
+        return false;
+    }
+    DWORD written = 0;
+    const bool ok = WriteFile(file, bytes.data(), byteCount, &written, nullptr) &&
+                    written == byteCount;
+    CloseHandle(file);
+    if (!ok) {
+        DeleteFileW(tempPath);
+        return false;
+    }
+    image.path = tempPath;
+    image.row = event.row;
+    image.column = event.column;
+    image.widthCells = static_cast<uint16_t>(dimension("width", 20));
+    image.heightCells = static_cast<uint16_t>(dimension("height", 10));
+    return true;
+}
+
 // Last path component, for a short tab/pane title.
 std::wstring basename(const std::wstring& path) {
     if (path.empty()) return L"shell";
@@ -49,6 +134,11 @@ bool networkWorkingDirectoryReady(const std::wstring& path) {
     return result->load() == 1;
 }
 } // namespace
+
+TerminalSession::~TerminalSession() {
+    for (const InlineImage& image : inlineImages_)
+        if (!image.path.empty()) DeleteFileW(image.path.c_str());
+}
 
 bool TerminalSession::start(const std::wstring& shell, const std::wstring& cwd,
                             int cols, int rows, int scrollback) {
@@ -190,6 +280,17 @@ void TerminalSession::processSemanticEvents() {
             else if (event.value == "done") reportedAgentActivity_ = AgentActivity::Done;
             else if (event.value == "failed") reportedAgentActivity_ = AgentActivity::Failed;
             break;
+        case SemanticEventType::InlineImage: {
+            InlineImage image;
+            if (decodeInlineImage(event, image)) {
+                if (inlineImages_.size() >= 16) {
+                    DeleteFileW(inlineImages_.front().path.c_str());
+                    inlineImages_.erase(inlineImages_.begin());
+                }
+                inlineImages_.push_back(std::move(image));
+            }
+            break;
+        }
         }
     }
 }

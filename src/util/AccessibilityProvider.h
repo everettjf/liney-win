@@ -32,9 +32,15 @@ struct AccessibleElementInfo {
     bool enabled = true;
 };
 
+struct AccessibleTextInfo {
+    std::wstring text;
+    RECT clientRect{};
+};
+
 IRawElementProviderSimple* createAccessibilityProvider(HWND hwnd);
 void updateAccessibilityProvider(
     IRawElementProviderSimple* provider,
-    const std::vector<AccessibleElementInfo>& elements);
+    const std::vector<AccessibleElementInfo>& elements,
+    const AccessibleTextInfo& terminalText);
 
 } // namespace liney

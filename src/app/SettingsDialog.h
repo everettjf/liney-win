@@ -14,6 +14,7 @@ struct SettingsValues {
     std::wstring shell;              // default shell command for new tabs
     std::wstring fontFamily;         // monospace font family
     float fontSize = 16.0f;          // logical point size
+    bool fontLigatures = false;      // shape common programming operators
     std::wstring themeName;          // active theme preset (see Themes.h)
     Color accent{ 120, 200, 160 };   // chrome accent (divider / active tab)
     bool accentExplicit = false;     // OUT: user picked a custom accent color

@@ -1,10 +1,35 @@
 #include "render/D2DRenderer.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstring>
 #include <cmath>
+#include <fstream>
 #include <utility>
+#include <d3dcompiler.h>
 
 namespace liney {
+
+D2DRenderer::~D2DRenderer() {
+    wchar_t metricsPath[32768]{};
+    const DWORD n = GetEnvironmentVariableW(
+        L"LINEY_FRAME_METRICS", metricsPath,
+        static_cast<DWORD>(_countof(metricsPath)));
+    if (!n || n >= _countof(metricsPath) || frameTimesMs_.empty()) return;
+    std::sort(frameTimesMs_.begin(), frameTimesMs_.end());
+    const auto percentile = [&](double p) {
+        return frameTimesMs_[std::min(
+            frameTimesMs_.size() - 1,
+            static_cast<size_t>(std::ceil(frameTimesMs_.size() * p) - 1))];
+    };
+    std::ofstream out(metricsPath, std::ios::binary | std::ios::trunc);
+    if (!out) return;
+    out << "{\"frames\":" << frameTimesMs_.size()
+        << ",\"p50Ms\":" << percentile(0.50)
+        << ",\"p95Ms\":" << percentile(0.95)
+        << ",\"p99Ms\":" << percentile(0.99)
+        << ",\"maxMs\":" << frameTimesMs_.back() << "}";
+}
 
 static D2D1_COLOR_F toColorF(const Color& c) {
     return D2D1::ColorF(c.r / 255.0f, c.g / 255.0f, c.b / 255.0f, 1.0f);
@@ -12,6 +37,12 @@ static D2D1_COLOR_F toColorF(const Color& c) {
 
 bool D2DRenderer::initialize(void* hwnd) {
     hwnd_ = static_cast<HWND>(hwnd);
+    wchar_t delay[16]{};
+    const DWORD count = GetEnvironmentVariableW(
+        L"LINEY_CAPTURE_DELAY_MS", delay,
+        static_cast<DWORD>(_countof(delay)));
+    if (count > 0 && count < _countof(delay))
+        captureReadyAt_ = GetTickCount64() + wcstoul(delay, nullptr, 10);
     return createDeviceResources();
 }
 
@@ -74,13 +105,17 @@ bool D2DRenderer::buildTextFormats() {
     textFormatBoldItalic_.Reset();
     uiTextFormat_.Reset();
     uiTextFormatBold_.Reset();
+    ligatureTypography_.Reset();
 
     // Font (or size) changed: every cached glyph is stale. The atlas is
     // recreated lazily at the new cell size.
     glyphCache_.clear();
     atlasBrush_.Reset();
-    atlasBitmap_.Reset();
-    atlasRT_.Reset();
+    atlasTarget_.Reset();
+    atlasContext_.Reset();
+    atlasTarget_.Reset();
+    atlasTexture_.Reset();
+    atlasSrv_.Reset();
     atlasX_ = atlasY_ = 0.0f;
     atlasBroken_ = false;
 
@@ -117,6 +152,19 @@ bool D2DRenderer::buildTextFormats() {
                 textFormatItalic_);
     makeVariant(DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_STYLE_ITALIC,
                 textFormatBoldItalic_);
+
+    // DirectWrite typography is applied only to explicitly enabled
+    // programming-operator runs. The ordinary atlas path remains one glyph
+    // per cell, which is the safest default for TUIs and cursor positioning.
+    if (SUCCEEDED(dwriteFactory_->CreateTypography(
+            ligatureTypography_.GetAddressOf()))) {
+        DWRITE_FONT_FEATURE feature{
+            DWRITE_FONT_FEATURE_TAG_STANDARD_LIGATURES, 1
+        };
+        ligatureTypography_->AddFontFeature(feature);
+        feature.nameTag = DWRITE_FONT_FEATURE_TAG_CONTEXTUAL_LIGATURES;
+        ligatureTypography_->AddFontFeature(feature);
+    }
 
     // Keep application chrome visually native even when the terminal uses a
     // distinctive programming font. Segoe UI Variable ships on Windows 11;
@@ -215,6 +263,15 @@ bool D2DRenderer::bindTarget() {
         reinterpret_cast<void**>(surface.GetAddressOf()));
     if (FAILED(hr)) return false;
 
+    ComPtr<ID3D11Texture2D> backBuffer;
+    hr = swapChain_->GetBuffer(
+        0, __uuidof(ID3D11Texture2D),
+        reinterpret_cast<void**>(backBuffer.GetAddressOf()));
+    if (FAILED(hr) ||
+        FAILED(d3dDevice_->CreateRenderTargetView(
+            backBuffer.Get(), nullptr, d3dTargetView_.ReleaseAndGetAddressOf())))
+        return false;
+
     D2D1_BITMAP_PROPERTIES1 props = D2D1::BitmapProperties1(
         D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
         D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE));
@@ -235,6 +292,7 @@ bool D2DRenderer::bindTarget() {
 void D2DRenderer::releaseSwapChainResources() {
     if (d2dContext_) d2dContext_->SetTarget(nullptr);
     targetBitmap_.Reset();
+    d3dTargetView_.Reset();
 }
 
 void D2DRenderer::resize(unsigned widthPx, unsigned heightPx) {
@@ -268,17 +326,19 @@ void D2DRenderer::setColors(const Color& workspaceBg, const Color& termBg) {
 }
 
 void D2DRenderer::beginFrame() {
+    QueryPerformanceCounter(&frameStarted_);
     if (deviceLost_ && !recreateDevice()) return;
-    if (atlasNeedsReset_ && atlasRT_) {
+    if (atlasNeedsReset_ && atlasContext_) {
         // Deferred from atlasSlot: safe to wipe between frames.
         glyphCache_.clear();
         atlasX_ = atlasY_ = 0.0f;
-        atlasRT_->BeginDraw();
-        atlasRT_->Clear(D2D1::ColorF(0, 0, 0, 0.0f));
-        if (FAILED(atlasRT_->EndDraw())) atlasBroken_ = true;
+        atlasContext_->BeginDraw();
+        atlasContext_->Clear(D2D1::ColorF(0, 0, 0, 0.0f));
+        if (FAILED(atlasContext_->EndDraw())) atlasBroken_ = true;
         atlasNeedsReset_ = false;
     }
     if (!d2dContext_ || !targetBitmap_ || !brush_) return;
+    pendingGlyphVertices_.clear();
     d2dContext_->BeginDraw();
     frameOpen_ = true;
     d2dContext_->Clear(toColorF(workspaceBg_));  // workspace bg (gutters/margins)
@@ -288,12 +348,16 @@ void D2DRenderer::endFrame() {
     if (!d2dContext_ || !swapChain_ || !frameOpen_) return;
     frameOpen_ = false;
     const HRESULT hrDraw = d2dContext_->EndDraw();
+    if (SUCCEEDED(hrDraw) && !pendingGlyphVertices_.empty() &&
+        !drawGlyphBatch(pendingGlyphVertices_))
+        atlasBroken_ = true;
     wchar_t capturePath[32768]{};
     wchar_t headless[8]{};
     const bool isHeadless =
         GetEnvironmentVariableW(L"LINEY_HEADLESS", headless,
                                 static_cast<DWORD>(_countof(headless))) > 0;
-    if (!capturedFrame_ && isHeadless && SUCCEEDED(hrDraw)) {
+    if (!capturedFrame_ && isHeadless && SUCCEEDED(hrDraw) &&
+        GetTickCount64() >= captureReadyAt_) {
         const DWORD captureLength = GetEnvironmentVariableW(
             L"LINEY_CAPTURE_PNG", capturePath,
             static_cast<DWORD>(_countof(capturePath)));
@@ -301,6 +365,17 @@ void D2DRenderer::endFrame() {
             capturedFrame_ = captureBackBufferPng(capturePath);
     }
     const HRESULT hrPresent = swapChain_->Present(1, 0);
+    LARGE_INTEGER ended{}, frequency{};
+    QueryPerformanceCounter(&ended);
+    QueryPerformanceFrequency(&frequency);
+    if (frameStarted_.QuadPart && frequency.QuadPart) {
+        const double ms =
+            (ended.QuadPart - frameStarted_.QuadPart) * 1000.0 /
+            frequency.QuadPart;
+        if (frameTimesMs_.size() >= 4096)
+            frameTimesMs_.erase(frameTimesMs_.begin());
+        frameTimesMs_.push_back(ms);
+    }
     wchar_t simulate[8]{};
     if (!simulatedDeviceLoss_ && GetEnvironmentVariableW(
             L"LINEY_SIMULATE_DEVICE_LOSS", simulate,
@@ -390,8 +465,18 @@ bool D2DRenderer::recreateDevice() {
     imageCache_.clear();
     glyphCache_.clear();
     atlasBrush_.Reset();
-    atlasBitmap_.Reset();
-    atlasRT_.Reset();
+    atlasTarget_.Reset();
+    atlasContext_.Reset();
+    atlasSrv_.Reset();
+    atlasTexture_.Reset();
+    glyphVertexShader_.Reset();
+    glyphPixelShader_.Reset();
+    glyphInputLayout_.Reset();
+    glyphVertexBuffer_.Reset();
+    glyphConstants_.Reset();
+    glyphSampler_.Reset();
+    glyphBlend_.Reset();
+    glyphVertexCapacity_ = 0;
     atlasX_ = atlasY_ = 0.0f;
     atlasBroken_ = false;
     d2dContext_.Reset();
@@ -606,22 +691,238 @@ IDWriteTextFormat* D2DRenderer::cellFormat(uint32_t flags) const {
 
 bool D2DRenderer::ensureAtlas() {
     if (atlasBroken_) return false;
-    if (atlasRT_) return true;
-    if (!d2dContext_) return false;
-    if (FAILED(d2dContext_->CreateCompatibleRenderTarget(
-            D2D1::SizeF(kAtlasSize, kAtlasSize), atlasRT_.GetAddressOf())) ||
-        FAILED(atlasRT_->GetBitmap(atlasBitmap_.ReleaseAndGetAddressOf())) ||
-        FAILED(atlasRT_->CreateSolidColorBrush(
+    if (atlasContext_ && atlasSrv_) return true;
+    if (!d2dDevice_ || !d3dDevice_) return false;
+
+    D3D11_TEXTURE2D_DESC desc{};
+    desc.Width = static_cast<UINT>(kAtlasSize);
+    desc.Height = static_cast<UINT>(kAtlasSize);
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_DEFAULT;
+    desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+    if (FAILED(d3dDevice_->CreateTexture2D(
+            &desc, nullptr, atlasTexture_.ReleaseAndGetAddressOf())) ||
+        FAILED(d3dDevice_->CreateShaderResourceView(
+            atlasTexture_.Get(), nullptr, atlasSrv_.ReleaseAndGetAddressOf())) ||
+        FAILED(d2dDevice_->CreateDeviceContext(
+            D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
+            atlasContext_.ReleaseAndGetAddressOf()))) {
+        atlasTexture_.Reset();
+        atlasSrv_.Reset();
+        atlasContext_.Reset();
+        atlasBroken_ = true;
+        return false;
+    }
+    ComPtr<IDXGISurface> surface;
+    if (FAILED(atlasTexture_.As(&surface))) {
+        atlasBroken_ = true;
+        return false;
+    }
+    const D2D1_BITMAP_PROPERTIES1 props = D2D1::BitmapProperties1(
+        D2D1_BITMAP_OPTIONS_TARGET,
+        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
+                          D2D1_ALPHA_MODE_PREMULTIPLIED));
+    if (FAILED(atlasContext_->CreateBitmapFromDxgiSurface(
+            surface.Get(), &props, atlasTarget_.ReleaseAndGetAddressOf())) ||
+        FAILED(atlasContext_->CreateSolidColorBrush(
             D2D1::ColorF(D2D1::ColorF::White),
             atlasBrush_.ReleaseAndGetAddressOf()))) {
         atlasBrush_.Reset();
-        atlasBitmap_.Reset();
-        atlasRT_.Reset();
+        atlasTarget_.Reset();
+        atlasContext_.Reset();
+        atlasSrv_.Reset();
+        atlasTexture_.Reset();
+        atlasBroken_ = true;
+        return false;
+    }
+    atlasContext_->SetTarget(atlasTarget_.Get());
+    atlasContext_->BeginDraw();
+    atlasContext_->Clear(D2D1::ColorF(0, 0, 0, 0.0f));
+    if (FAILED(atlasContext_->EndDraw())) {
         atlasBroken_ = true;
         return false;
     }
     atlasX_ = atlasY_ = 0.0f;
     glyphCache_.clear();
+    SetPropW(hwnd_, L"Liney.D3DGlyphAtlasReady",
+             reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(1)));
+    return ensureGlyphShader();
+}
+
+bool D2DRenderer::ensureGlyphShader() {
+    if (glyphVertexShader_ && glyphPixelShader_ && glyphInputLayout_ &&
+        glyphConstants_ && glyphSampler_ && glyphBlend_)
+        return true;
+    if (!d3dDevice_) return false;
+
+    static const char shader[] = R"HLSL(
+cbuffer Viewport : register(b0) { float2 viewport; float2 unused; };
+struct VSIn {
+    float2 position : POSITION;
+    float2 uv : TEXCOORD0;
+    float4 color : COLOR0;
+};
+struct VSOut {
+    float4 position : SV_POSITION;
+    float2 uv : TEXCOORD0;
+    float4 color : COLOR0;
+};
+VSOut vsMain(VSIn input) {
+    VSOut output;
+    output.position = float4(
+        input.position.x * 2.0 / viewport.x - 1.0,
+        1.0 - input.position.y * 2.0 / viewport.y, 0.0, 1.0);
+    output.uv = input.uv;
+    output.color = input.color;
+    return output;
+}
+Texture2D atlasTexture : register(t0);
+SamplerState atlasSampler : register(s0);
+float4 psMain(VSOut input) : SV_TARGET {
+    float coverage = atlasTexture.Sample(atlasSampler, input.uv).a;
+    return float4(input.color.rgb * coverage, input.color.a * coverage);
+}
+)HLSL";
+    ComPtr<ID3DBlob> vsBlob, psBlob, errors;
+    UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
+#ifndef NDEBUG
+    flags |= D3DCOMPILE_DEBUG;
+#endif
+    if (FAILED(D3DCompile(shader, sizeof(shader) - 1, "LineyGlyphShader",
+                          nullptr, nullptr, "vsMain", "vs_4_0", flags, 0,
+                          vsBlob.GetAddressOf(), errors.GetAddressOf())) ||
+        FAILED(D3DCompile(shader, sizeof(shader) - 1, "LineyGlyphShader",
+                          nullptr, nullptr, "psMain", "ps_4_0", flags, 0,
+                          psBlob.GetAddressOf(), errors.ReleaseAndGetAddressOf())))
+        return false;
+    if (FAILED(d3dDevice_->CreateVertexShader(
+            vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr,
+            glyphVertexShader_.ReleaseAndGetAddressOf())) ||
+        FAILED(d3dDevice_->CreatePixelShader(
+            psBlob->GetBufferPointer(), psBlob->GetBufferSize(), nullptr,
+            glyphPixelShader_.ReleaseAndGetAddressOf())))
+        return false;
+    const D3D11_INPUT_ELEMENT_DESC layout[] = {
+        {"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0,
+         static_cast<UINT>(offsetof(GlyphVertex, x)),
+         D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0,
+         static_cast<UINT>(offsetof(GlyphVertex, u)),
+         D3D11_INPUT_PER_VERTEX_DATA, 0},
+        {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0,
+         static_cast<UINT>(offsetof(GlyphVertex, r)),
+         D3D11_INPUT_PER_VERTEX_DATA, 0},
+    };
+    if (FAILED(d3dDevice_->CreateInputLayout(
+            layout, static_cast<UINT>(_countof(layout)),
+            vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(),
+            glyphInputLayout_.ReleaseAndGetAddressOf())))
+        return false;
+    D3D11_BUFFER_DESC constants{};
+    constants.ByteWidth = 16;
+    constants.Usage = D3D11_USAGE_DYNAMIC;
+    constants.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    constants.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    if (FAILED(d3dDevice_->CreateBuffer(
+            &constants, nullptr, glyphConstants_.ReleaseAndGetAddressOf())))
+        return false;
+    D3D11_SAMPLER_DESC sampler{};
+    // Atlas slots and destination cells are pixel-aligned. Point sampling
+    // preserves ClearType-like edge contrast and prevents adjacent slots from
+    // bleeding into one another during dense output.
+    sampler.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
+    sampler.AddressU = sampler.AddressV = sampler.AddressW =
+        D3D11_TEXTURE_ADDRESS_CLAMP;
+    sampler.MaxLOD = D3D11_FLOAT32_MAX;
+    if (FAILED(d3dDevice_->CreateSamplerState(
+            &sampler, glyphSampler_.ReleaseAndGetAddressOf())))
+        return false;
+    D3D11_BLEND_DESC blend{};
+    blend.RenderTarget[0].BlendEnable = TRUE;
+    blend.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
+    blend.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+    blend.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+    blend.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+    blend.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+    blend.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+    blend.RenderTarget[0].RenderTargetWriteMask =
+        D3D11_COLOR_WRITE_ENABLE_ALL;
+    const bool ready = SUCCEEDED(d3dDevice_->CreateBlendState(
+        &blend, glyphBlend_.ReleaseAndGetAddressOf()));
+    if (ready)
+        SetPropW(hwnd_, L"Liney.D3DGlyphShaderReady",
+                 reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(1)));
+    return ready;
+}
+
+bool D2DRenderer::drawGlyphBatch(const std::vector<GlyphVertex>& vertices) {
+    if (vertices.empty()) return true;
+    if (!d3dContext_ || !d3dTargetView_ || !atlasSrv_ ||
+        !ensureGlyphShader())
+        return false;
+    SetPropW(hwnd_, L"Liney.D3DGlyphD2DCommitted",
+             reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(1)));
+
+    const size_t needed = vertices.size() * sizeof(GlyphVertex);
+    if (!glyphVertexBuffer_ || glyphVertexCapacity_ < needed) {
+        D3D11_BUFFER_DESC desc{};
+        glyphVertexCapacity_ = 4096;
+        while (glyphVertexCapacity_ < needed) glyphVertexCapacity_ *= 2;
+        desc.ByteWidth = static_cast<UINT>(glyphVertexCapacity_);
+        desc.Usage = D3D11_USAGE_DYNAMIC;
+        desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+        desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        if (FAILED(d3dDevice_->CreateBuffer(
+                &desc, nullptr, glyphVertexBuffer_.ReleaseAndGetAddressOf())))
+            return false;
+    }
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    if (FAILED(d3dContext_->Map(glyphVertexBuffer_.Get(), 0,
+                                D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
+        return false;
+    std::memcpy(mapped.pData, vertices.data(), needed);
+    d3dContext_->Unmap(glyphVertexBuffer_.Get(), 0);
+    SetPropW(hwnd_, L"Liney.D3DGlyphVertexUploaded",
+             reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(1)));
+    if (FAILED(d3dContext_->Map(glyphConstants_.Get(), 0,
+                                D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
+        return false;
+    float* viewport = static_cast<float*>(mapped.pData);
+    viewport[0] = static_cast<float>(widthPx_);
+    viewport[1] = static_cast<float>(heightPx_);
+    viewport[2] = viewport[3] = 0.0f;
+    d3dContext_->Unmap(glyphConstants_.Get(), 0);
+
+    const UINT stride = sizeof(GlyphVertex);
+    const UINT offset = 0;
+    ID3D11Buffer* vb = glyphVertexBuffer_.Get();
+    ID3D11Buffer* cb = glyphConstants_.Get();
+    ID3D11ShaderResourceView* srv = atlasSrv_.Get();
+    ID3D11SamplerState* sampler = glyphSampler_.Get();
+    d3dContext_->OMSetRenderTargets(1, d3dTargetView_.GetAddressOf(), nullptr);
+    const float blendFactor[4] = {};
+    d3dContext_->OMSetBlendState(glyphBlend_.Get(), blendFactor, 0xffffffff);
+    D3D11_VIEWPORT vp{0.0f, 0.0f, static_cast<float>(widthPx_),
+                      static_cast<float>(heightPx_), 0.0f, 1.0f};
+    d3dContext_->RSSetViewports(1, &vp);
+    d3dContext_->IASetInputLayout(glyphInputLayout_.Get());
+    d3dContext_->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
+    d3dContext_->IASetPrimitiveTopology(
+        D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    d3dContext_->VSSetShader(glyphVertexShader_.Get(), nullptr, 0);
+    d3dContext_->VSSetConstantBuffers(0, 1, &cb);
+    d3dContext_->PSSetShader(glyphPixelShader_.Get(), nullptr, 0);
+    d3dContext_->PSSetShaderResources(0, 1, &srv);
+    d3dContext_->PSSetSamplers(0, 1, &sampler);
+    d3dContext_->Draw(static_cast<UINT>(vertices.size()), 0);
+    SetPropW(hwnd_, L"Liney.D3DGlyphShaderActive",
+             reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(1)));
+    ID3D11ShaderResourceView* nullSrv = nullptr;
+    d3dContext_->PSSetShaderResources(0, 1, &nullSrv);
+
     return true;
 }
 
@@ -660,17 +961,20 @@ bool D2DRenderer::atlasSlot(const std::wstring& ch, uint32_t flags,
 
     const D2D1_RECT_F rect =
         D2D1::RectF(atlasX_, atlasY_, atlasX_ + w, atlasY_ + h);
-    atlasRT_->BeginDraw();
-    atlasRT_->PushAxisAlignedClip(rect, D2D1_ANTIALIAS_MODE_ALIASED);
-    atlasRT_->Clear(D2D1::ColorF(0, 0, 0, 0.0f));
-    atlasRT_->DrawText(ch.c_str(), static_cast<UINT32>(ch.size()),
-                       cellFormat(flags), rect, atlasBrush_.Get(),
-                       D2D1_DRAW_TEXT_OPTIONS_CLIP);
-    atlasRT_->PopAxisAlignedClip();
-    if (FAILED(atlasRT_->EndDraw())) {
+    atlasContext_->BeginDraw();
+    atlasContext_->PushAxisAlignedClip(rect, D2D1_ANTIALIAS_MODE_ALIASED);
+    atlasContext_->Clear(D2D1::ColorF(0, 0, 0, 0.0f));
+    atlasContext_->DrawText(ch.c_str(), static_cast<UINT32>(ch.size()),
+                            cellFormat(flags), rect, atlasBrush_.Get(),
+                            D2D1_DRAW_TEXT_OPTIONS_CLIP);
+    atlasContext_->PopAxisAlignedClip();
+    if (FAILED(atlasContext_->EndDraw())) {
         atlasBroken_ = true;
         return false;
     }
+    atlasContext_->Flush();
+    SetPropW(hwnd_, L"Liney.D3DGlyphSlotReady",
+             reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(1)));
     atlasX_ += w;
     glyphCache_.emplace(std::move(key), rect);
     src = rect;
@@ -755,10 +1059,100 @@ void D2DRenderer::drawGrid(const Grid& grid, float originX, float originY) {
     }
 
     // Pass 2: glyphs + decorations. Glyphs come from the atlas (rasterized
-    // once, tinted per cell via FillOpacityMask — which requires the aliased
-    // antialias mode); DrawText is the fallback when the atlas is unavailable.
+    // once, then sampled and tinted by one D3D11 shader batch); DrawText is the
+    // fallback for color fonts and when the shader/atlas is unavailable.
+    std::vector<GlyphVertex> glyphVertices;
+    glyphVertices.reserve(static_cast<size_t>(grid.cols) * grid.rows * 3);
+    std::vector<uint8_t> shaped(static_cast<size_t>(grid.cols) * grid.rows, 0);
     const D2D1_ANTIALIAS_MODE prevAA = d2dContext_->GetAntialiasMode();
     d2dContext_->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
+
+    // Opt-in shaping is deliberately narrow: only ASCII operator sequences
+    // known to be used by programming fonts are shaped as a run. CJK, emoji,
+    // combining graphemes, spaces and ordinary shell text stay on the exact
+    // per-cell path, preserving terminal column geometry and font fallback.
+    if (ligatures_ && ligatureTypography_) {
+        const auto hasOperatorLigature = [](const std::wstring& s) {
+            static const wchar_t* candidates[] = {
+                L"->", L"=>", L"!=", L"==", L"<=", L">=", L"::",
+                L"&&", L"||", L"/*", L"*/", L"..", L"++", L"--"
+            };
+            for (const wchar_t* candidate : candidates)
+                if (s.find(candidate) != std::wstring::npos) return true;
+            return false;
+        };
+        constexpr uint32_t styleMask =
+            kFlagBold | kFlagItalic | kFlagFaint | kFlagInverse |
+            kFlagInvisible;
+        for (int y = 0; y < grid.rows; ++y) {
+            int x = 0;
+            while (x < grid.cols) {
+                const Cell& first = grid.at(x, y);
+                if (first.ch.empty() || first.ch == L" " ||
+                    first.ch.size() != 1 || first.ch[0] > 0x7f ||
+                    (first.flags & (kFlagWide | kFlagWideTail |
+                                    kFlagInvisible))) {
+                    ++x;
+                    continue;
+                }
+                Color runFg, runBg;
+                cellColors(grid, x, y, findHitAt(x, y), runFg, runBg);
+                if (first.flags & kFlagFaint)
+                    runFg = Color{
+                        static_cast<uint8_t>((runFg.r + runBg.r) / 2),
+                        static_cast<uint8_t>((runFg.g + runBg.g) / 2),
+                        static_cast<uint8_t>((runFg.b + runBg.b) / 2)
+                    };
+                const uint32_t runStyle = first.flags & styleMask;
+                std::wstring text;
+                int end = x;
+                while (end < grid.cols) {
+                    const Cell& c = grid.at(end, y);
+                    if (c.ch.empty() || c.ch == L" " || c.ch.size() != 1 ||
+                        c.ch[0] > 0x7f ||
+                        (c.flags & (kFlagWide | kFlagWideTail |
+                                    kFlagInvisible)) ||
+                        (c.flags & styleMask) != runStyle)
+                        break;
+                    Color fg, bg;
+                    cellColors(grid, end, y, findHitAt(end, y), fg, bg);
+                    if (c.flags & kFlagFaint)
+                        fg = Color{ static_cast<uint8_t>((fg.r + bg.r) / 2),
+                                    static_cast<uint8_t>((fg.g + bg.g) / 2),
+                                    static_cast<uint8_t>((fg.b + bg.b) / 2) };
+                    if (fg.r != runFg.r || fg.g != runFg.g || fg.b != runFg.b)
+                        break;
+                    text += c.ch;
+                    ++end;
+                }
+                if (end - x >= 2 && hasOperatorLigature(text)) {
+                    const float px = originX + x * cellW_;
+                    const float py = originY + y * cellH_;
+                    const float width = (end - x) * cellW_;
+                    ComPtr<IDWriteTextLayout> layout;
+                    if (SUCCEEDED(dwriteFactory_->CreateTextLayout(
+                            text.c_str(), static_cast<UINT32>(text.size()),
+                            cellFormat(first.flags), width, cellH_,
+                            layout.GetAddressOf()))) {
+                        const DWRITE_TEXT_RANGE range{
+                            0, static_cast<UINT32>(text.size())
+                        };
+                        layout->SetTypography(ligatureTypography_.Get(), range);
+                        brush_->SetColor(toColorF(runFg));
+                        d2dContext_->DrawTextLayout(
+                            D2D1::Point2F(px, py), layout.Get(), brush_.Get(),
+                            D2D1_DRAW_TEXT_OPTIONS_CLIP);
+                        SetPropW(hwnd_, L"Liney.LigatureRunActive",
+                                 reinterpret_cast<HANDLE>(1));
+                        for (int sx = x; sx < end; ++sx)
+                            shaped[static_cast<size_t>(y) * grid.cols + sx] = 1;
+                    }
+                }
+                x = std::max(end, x + 1);
+            }
+        }
+    }
+
     for (int y = 0; y < grid.rows; ++y) {
         for (int x = 0; x < grid.cols; ++x) {
             const Cell& cell = grid.at(x, y);
@@ -780,7 +1174,8 @@ void D2DRenderer::drawGrid(const Grid& grid, float originX, float originY) {
             const float py = originY + y * cellH_;
             const float w = (cell.flags & kFlagWide) ? cellW_ * 2.0f : cellW_;
 
-            if (hasGlyph && !(cell.flags & kFlagInvisible)) {
+            if (hasGlyph && !(cell.flags & kFlagInvisible) &&
+                !shaped[static_cast<size_t>(y) * grid.cols + x]) {
                 brush_->SetColor(toColorF(fg));
                 const D2D1_RECT_F dst = D2D1::RectF(px, py, px + w, py + cellH_);
                 D2D1_RECT_F srcRect{};
@@ -789,9 +1184,22 @@ void D2DRenderer::drawGrid(const Grid& grid, float originX, float originY) {
                 // them directly with color-font support instead.
                 if (!isColorGlyph(cell.ch) &&
                     atlasSlot(cell.ch, cell.flags, srcRect)) {
-                    d2dContext_->FillOpacityMask(
-                        atlasBitmap_.Get(), brush_.Get(),
-                        D2D1_OPACITY_MASK_CONTENT_TEXT_NATURAL, &dst, &srcRect);
+                    const float u0 = srcRect.left / kAtlasSize;
+                    const float v0 = srcRect.top / kAtlasSize;
+                    const float u1 = srcRect.right / kAtlasSize;
+                    const float v1 = srcRect.bottom / kAtlasSize;
+                    const float r = fg.r / 255.0f, g = fg.g / 255.0f;
+                    const float b = fg.b / 255.0f;
+                    const GlyphVertex tl{dst.left, dst.top, u0, v0,
+                                         r, g, b, 1.0f};
+                    const GlyphVertex tr{dst.right, dst.top, u1, v0,
+                                         r, g, b, 1.0f};
+                    const GlyphVertex bl{dst.left, dst.bottom, u0, v1,
+                                         r, g, b, 1.0f};
+                    const GlyphVertex br{dst.right, dst.bottom, u1, v1,
+                                         r, g, b, 1.0f};
+                    glyphVertices.insert(glyphVertices.end(),
+                                         {tl, tr, bl, bl, tr, br});
                 } else {
                     d2dContext_->DrawText(
                         cell.ch.c_str(), static_cast<UINT32>(cell.ch.size()),
@@ -820,8 +1228,9 @@ void D2DRenderer::drawGrid(const Grid& grid, float originX, float originY) {
     d2dContext_->SetAntialiasMode(prevAA);
 
     drawCursor(grid, originX, originY);
-
     d2dContext_->PopAxisAlignedClip();
+    pendingGlyphVertices_.insert(pendingGlyphVertices_.end(),
+                                 glyphVertices.begin(), glyphVertices.end());
 }
 
 void D2DRenderer::drawCursor(const Grid& grid, float originX, float originY) {

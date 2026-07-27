@@ -31,11 +31,13 @@ constexpr int kIdAutoUpdate = 113;
 constexpr int kIdAiProvider = 114;
 constexpr int kIdAiModel = 115;
 constexpr int kIdAiCwd = 116;
+constexpr int kIdLigatures = 117;
 
 struct State {
     HWND shell = nullptr;
     HWND font = nullptr;
     HWND fontSize = nullptr;
+    HWND fontLigatures = nullptr;
     HWND theme = nullptr;
     HWND accentSwatch = nullptr;  // static showing the current accent hex
     HWND scrollback = nullptr;
@@ -103,6 +105,57 @@ std::wstring windowText(HWND h) {
     return s;
 }
 
+bool parseIntegerField(HWND owner, HWND field, const wchar_t* label,
+                       int minimum, int maximum) {
+    const std::wstring value = windowText(field);
+    if (value.empty()) {
+        std::wstring message = std::wstring(label) + L" is required.";
+        MessageBoxW(owner, message.c_str(), L"Check settings",
+                    MB_OK | MB_ICONWARNING);
+        SetFocus(field);
+        return false;
+    }
+    wchar_t* end = nullptr;
+    const long number = wcstol(value.c_str(), &end, 10);
+    if (!end || *end != L'\0' || number < minimum || number > maximum) {
+        std::wstring message = std::wstring(label) + L" must be between " +
+            std::to_wstring(minimum) + L" and " + std::to_wstring(maximum) +
+            L".";
+        MessageBoxW(owner, message.c_str(), L"Check settings",
+                    MB_OK | MB_ICONWARNING);
+        SetFocus(field);
+        SendMessageW(field, EM_SETSEL, 0, -1);
+        return false;
+    }
+    return true;
+}
+
+bool validateSettings(HWND owner, State* st) {
+    if (windowText(st->shell).empty()) {
+        MessageBoxW(owner, L"Choose a shell command.", L"Check settings",
+                    MB_OK | MB_ICONWARNING);
+        SetFocus(st->shell);
+        return false;
+    }
+    if (!parseIntegerField(owner, st->fontSize, L"Font size", 6, 96) ||
+        !parseIntegerField(owner, st->scrollback, L"Scrollback", 0, 1000000))
+        return false;
+    const std::wstring root = windowText(st->root);
+    if (!root.empty()) {
+        const DWORD attributes = GetFileAttributesW(root.c_str());
+        if (attributes == INVALID_FILE_ATTRIBUTES ||
+            !(attributes & FILE_ATTRIBUTE_DIRECTORY)) {
+            MessageBoxW(owner,
+                        L"Workspace root must be an existing folder, or blank.",
+                        L"Check settings", MB_OK | MB_ICONWARNING);
+            SetFocus(st->root);
+            SendMessageW(st->root, EM_SETSEL, 0, -1);
+            return false;
+        }
+    }
+    return true;
+}
+
 // Shells worth offering in the dropdown: present-on-PATH ones only.
 std::vector<std::wstring> detectShells() {
     std::vector<std::wstring> out;
@@ -135,6 +188,7 @@ LRESULT CALLBACK proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         if (!st) break;
         switch (LOWORD(wParam)) {
         case IDOK:
+            if (!validateSettings(hwnd, st)) return 0;
             st->accepted = true;
             st->done = true;
             return 0;
@@ -218,7 +272,7 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
     st.accent = v.accent;
 
     // Size the window so the *client* area is exactly W × contentH.
-    const int contentH = 674;
+    const int contentH = 700;
     RECT wr{ 0, 0, S(W), S(contentH) };
     const DWORD style = WS_POPUP | WS_CAPTION | WS_SYSMENU;
     AdjustWindowRectExForDpi(&wr, style, FALSE, WS_EX_DLGMODALFRAME, dpi);
@@ -302,7 +356,7 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
     setAccentSwatch(&st);
 
     // ---- Terminal ---------------------------------------------------------
-    group(L"Terminal", 152, 252);
+    group(L"Terminal", 152, 278);
     r = 174;
     label(L"Shell", r);
     st.shell = mk(0, L"COMBOBOX", L"",
@@ -331,6 +385,10 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
         SendMessageW(c, BM_SETCHECK, checked ? BST_CHECKED : BST_UNCHECKED, 0);
         return c;
     };
+    st.fontLigatures = checkbox(
+        kIdLigatures, L"Enable programming ligatures (opt-in shaping)",
+        v.fontLigatures, r);
+    r += 26;
     st.copyOnSelect = checkbox(kIdCopyOnSelect,
                                L"Copy to clipboard when a selection ends",
                                v.copyOnSelect, r);
@@ -356,8 +414,8 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
         v.checkForUpdatesOnStartup, r);
 
     // ---- Workspace --------------------------------------------------------
-    group(L"Workspace", 414, 84);
-    r = 436;
+    group(L"Workspace", 440, 84);
+    r = 462;
     label(L"Root", r);
     st.root = mk(WS_EX_CLIENTEDGE, L"EDIT", v.workspaceRoot.c_str(),
                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, ctrlX, r,
@@ -369,8 +427,8 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
        WS_CHILD | WS_VISIBLE, ctrlX, r, ctrlW, 16, -1);
 
     // ---- AI ---------------------------------------------------------------
-    group(L"AI (terminal contents are sent only when you request it)", 508, 112);
-    r = 530;
+    group(L"AI (terminal contents are sent only when you request it)", 534, 112);
+    r = 556;
     label(L"Provider", r);
     st.aiProvider = mk(0, L"COMBOBOX", L"",
                        WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
@@ -398,10 +456,10 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
 
     // ---- OK / Cancel ------------------------------------------------------
     mk(0, L"BUTTON", L"OK",
-       WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, ctrlR - 178, 634,
+       WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, ctrlR - 178, 660,
        84, 28, IDOK);
     mk(0, L"BUTTON", L"Cancel", WS_CHILD | WS_VISIBLE | WS_TABSTOP, ctrlR - 84,
-       634, 84, 28, IDCANCEL);
+       660, 84, 28, IDCANCEL);
 
     // A real Segoe UI font at the monitor's DPI — the biggest single upgrade
     // over the legacy bitmap DEFAULT_GUI_FONT.
@@ -470,6 +528,8 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
             SendMessageW(st.copyOnSelect, BM_GETCHECK, 0, 0) == BST_CHECKED;
         v.multiLinePasteWarning =
             SendMessageW(st.pasteWarn, BM_GETCHECK, 0, 0) == BST_CHECKED;
+        v.fontLigatures =
+            SendMessageW(st.fontLigatures, BM_GETCHECK, 0, 0) == BST_CHECKED;
         v.unixTools =
             SendMessageW(st.unixTools, BM_GETCHECK, 0, 0) == BST_CHECKED;
         v.rememberLayout =

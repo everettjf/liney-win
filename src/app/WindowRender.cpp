@@ -169,11 +169,11 @@ void Window::drawLeftSidebar(const Rect& r) {
                 rowBackground(worktreeRow, selected);
                 std::wstring statusLabel = wt.label;
                 if (wt.status.changed > 0)
-                    statusLabel += L"  *" + std::to_wstring(wt.status.changed);
+                    statusLabel += L"  dirty " + std::to_wstring(wt.status.changed);
                 if (wt.status.ahead > 0)
-                    statusLabel += L"  ↑" + std::to_wstring(wt.status.ahead);
+                    statusLabel += L"  ahead " + std::to_wstring(wt.status.ahead);
                 if (wt.status.behind > 0)
-                    statusLabel += L"  ↓" + std::to_wstring(wt.status.behind);
+                    statusLabel += L"  behind " + std::to_wstring(wt.status.behind);
                 iconRow(IconKind::Branch, r.x + pad + metrics_.cellW * 2.0f, y,
                         statusLabel, wt.status.changed > 0 ? uiTheme_.text : uiTheme_.dim,
                         wt.status.changed > 0 ? Color{220, 170, 110} : uiTheme_.accent);
@@ -563,6 +563,25 @@ void Window::drawPanes(const Rect& r) {
         renderer_->pushClip(pr.x, pr.y, pr.w, pr.h);
         const float pad = metrics_.panePad();
         renderer_->drawGrid(leaf->session->grid(), pr.x + pad, pr.y + pad);
+        const uint64_t viewportTop = leaf->session->viewportRow();
+        for (const InlineImage& image : leaf->session->inlineImages()) {
+            if (image.row < viewportTop) continue;
+            const uint64_t relativeRow = image.row - viewportTop;
+            if (relativeRow >= static_cast<uint64_t>(
+                                   leaf->session->grid().rows))
+                continue;
+            const float ix =
+                pr.x + pad + static_cast<float>(image.column) * metrics_.cellW;
+            const float iy =
+                pr.y + pad + static_cast<float>(relativeRow) * metrics_.cellH;
+            const float iw =
+                static_cast<float>(image.widthCells) * metrics_.cellW;
+            const float ih =
+                static_cast<float>(image.heightCells) * metrics_.cellH;
+            if (renderer_->drawImage(image.path, ix, iy, iw, ih))
+                SetPropW(hwnd_, L"Liney.InlineImageActive",
+                         reinterpret_cast<HANDLE>(1));
+        }
         renderer_->popClip();
         if (leaf->session->exited()) {
             const float bh = metrics_.cellH + 10.0f;
@@ -655,6 +674,83 @@ void Window::drawPanes(const Rect& r) {
 
     // The find bar floats over the focused pane's top-right corner.
     if (findActive_ && t->active()) drawFindBar(t->active()->rect);
+}
+
+void Window::drawToast() {
+    if (toastMessage_.empty()) return;
+    if (GetTickCount64() >= toastUntil_) {
+        toastMessage_.clear();
+        return;
+    }
+    RECT client{};
+    GetClientRect(hwnd_, &client);
+    const float margin = 18.0f * dpiScale_;
+    const float height = metrics_.cellH + 18.0f * dpiScale_;
+    const float width = std::min(
+        static_cast<float>(client.right) - margin * 2.0f,
+        std::max(220.0f * dpiScale_,
+                 metrics_.cellW * (static_cast<float>(toastMessage_.size()) + 4.0f)));
+    const float x = (static_cast<float>(client.right) - width) * 0.5f;
+    const float y = static_cast<float>(client.bottom) - height - margin;
+    const Color border = toastError_ ? Color{220, 90, 90} : uiTheme_.accent;
+    renderer_->fillRoundedRect(x + 2.0f, y + 3.0f, width, height,
+                               7.0f * dpiScale_, uiTheme_.workspaceBg);
+    renderer_->fillRoundedRect(x, y, width, height, 7.0f * dpiScale_,
+                               uiTheme_.tabActiveBg);
+    renderer_->strokeRoundedRect(x, y, width, height, 7.0f * dpiScale_,
+                                 border, 1.0f);
+    renderer_->drawText(toastMessage_, x + 12.0f * dpiScale_,
+                        y + 8.0f * dpiScale_, width - 24.0f * dpiScale_,
+                        metrics_.cellH, uiTheme_.text, false);
+}
+
+void Window::drawWelcome(const Rect& r) {
+    if (tabs_.size() != 1 || !activeTab() ||
+        activeTab()->leaves().size() != 1)
+        return;
+    if (r.w < 360.0f * dpiScale_ || r.h < 260.0f * dpiScale_) return;
+    const float width = std::min(r.w - 48.0f * dpiScale_, 520.0f * dpiScale_);
+    const float height = 220.0f * dpiScale_;
+    const float x = r.x + (r.w - width) * 0.5f;
+    const float y = r.y + std::max(28.0f * dpiScale_, (r.h - height) * 0.32f);
+    renderer_->fillRoundedRect(x + 3.0f, y + 4.0f, width, height,
+                               10.0f * dpiScale_, uiTheme_.workspaceBg);
+    renderer_->fillRoundedRect(x, y, width, height, 10.0f * dpiScale_,
+                               uiTheme_.tabActiveBg);
+    renderer_->strokeRoundedRect(x, y, width, height, 10.0f * dpiScale_,
+                                 uiTheme_.border, 1.0f);
+    renderer_->drawText(L"Welcome to Liney", x + 24.0f * dpiScale_,
+                        y + 22.0f * dpiScale_, width - 48.0f * dpiScale_,
+                        metrics_.cellH, uiTheme_.text, true);
+    renderer_->drawText(
+        L"Open a project to connect terminals, worktrees and agent tasks.",
+        x + 24.0f * dpiScale_, y + 58.0f * dpiScale_,
+        width - 48.0f * dpiScale_, metrics_.cellH, uiTheme_.dim, false);
+    const float buttonY = y + 108.0f * dpiScale_;
+    const float buttonH = 38.0f * dpiScale_;
+    const float gap = 12.0f * dpiScale_;
+    const float buttonW = (width - 48.0f * dpiScale_ - gap) * 0.5f;
+    welcomeOpenRect_ = {x + 24.0f * dpiScale_, buttonY, buttonW, buttonH};
+    welcomePaletteRect_ = {welcomeOpenRect_.right() + gap, buttonY,
+                           buttonW, buttonH};
+    renderer_->fillRoundedRect(welcomeOpenRect_.x, welcomeOpenRect_.y,
+                               welcomeOpenRect_.w, welcomeOpenRect_.h,
+                               6.0f * dpiScale_, uiTheme_.accent);
+    renderer_->drawText(L"Open project", welcomeOpenRect_.x + 14.0f * dpiScale_,
+                        welcomeOpenRect_.y + 8.0f * dpiScale_,
+                        welcomeOpenRect_.w - 28.0f * dpiScale_, metrics_.cellH,
+                        uiTheme_.workspaceBg, true);
+    renderer_->strokeRoundedRect(welcomePaletteRect_.x, welcomePaletteRect_.y,
+                                 welcomePaletteRect_.w, welcomePaletteRect_.h,
+                                 6.0f * dpiScale_, uiTheme_.border, 1.0f);
+    renderer_->drawText(L"Browse commands", welcomePaletteRect_.x + 14.0f * dpiScale_,
+                        welcomePaletteRect_.y + 8.0f * dpiScale_,
+                        welcomePaletteRect_.w - 28.0f * dpiScale_, metrics_.cellH,
+                        uiTheme_.text, true);
+    renderer_->drawText(L"Tip: Ctrl+Shift+P opens the command palette",
+                        x + 24.0f * dpiScale_, y + 174.0f * dpiScale_,
+                        width - 48.0f * dpiScale_, metrics_.cellH,
+                        uiTheme_.dim, false);
 }
 
 

@@ -15,7 +15,8 @@ enum class SemanticEventType {
     HyperlinkStart,
     HyperlinkEnd,
     ClipboardRequest,
-    AgentStatus
+    AgentStatus,
+    InlineImage
 };
 
 struct SemanticEvent {
@@ -23,6 +24,7 @@ struct SemanticEvent {
     std::string value; // exit code, URI, or OSC 52 base64 payload
     size_t streamOffset = 0; // bytes consumed through the OSC terminator
     uint64_t row = 0;        // filled by Terminal after applying those bytes
+    uint16_t column = 0;     // cursor column at the OSC terminator
 };
 
 // Streaming, bounded observer for OSC 133/8/52. It never modifies the byte
@@ -43,6 +45,7 @@ private:
     bool overflow_ = false;
     size_t streamOffset_ = 0;
     static constexpr size_t kMaxPayload = 64 * 1024;
+    static constexpr size_t kMaxImagePayload = 4 * 1024 * 1024;
     static constexpr size_t kMaxQueuedEvents = 256;
 };
 

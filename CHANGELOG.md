@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.10.1] - 2026-07-27
+
+- Added a scheduled two-hour reliability workflow with working-set,
+  handle/thread, GDI and USER-object growth budgets.
+- Added shell crash/reconnect, rapid tab/pane/resize, layout backup recovery,
+  and vim/less/fzf ConPTY smoke fixtures.
+- Added atomic layout backup recovery with clear in-app failure feedback.
+- Added unified non-blocking status toasts for workspace, clipboard, update,
+  diagnostic and recovery actions.
+- Added a first-run project/command welcome surface, explicit Git workspace
+  status labels, and stricter Settings validation.
+- Added isolated deterministic WARP screenshots with committed pixel-comparison
+  baselines.
+
 All notable changes to liney-win. Versioning follows [SemVer](https://semver.org)
 (0.x: minor bumps may change behavior).
 

@@ -22,6 +22,9 @@ build-tests/
 build-zig*/
 build-tests-zig/
 compatibility-*.json
+artifacts/
+.release-prev-*/
+.upgrade-test-*/
 
 # Local toolchain (e.g. pinned Zig)
 .toolchain/

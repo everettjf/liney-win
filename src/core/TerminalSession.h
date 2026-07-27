@@ -40,6 +40,14 @@ struct SessionContext {
     std::wstring testCommand;
 };
 
+struct InlineImage {
+    std::wstring path;       // private temporary file, decoded from OSC 1337
+    uint64_t row = 0;        // absolute terminal row
+    uint16_t column = 0;
+    uint16_t widthCells = 20;
+    uint16_t heightCells = 10;
+};
+
 // One terminal: a shell (ConPTY) feeding a terminal core (Terminal) whose
 // screen is snapshotted into a Grid for rendering. This is the unit a pane
 // hosts; tabs/splits compose many of these.
@@ -50,6 +58,7 @@ struct SessionContext {
 class TerminalSession {
 public:
     TerminalSession() = default;
+    ~TerminalSession();
 
     TerminalSession(const TerminalSession&) = delete;
     TerminalSession& operator=(const TerminalSession&) = delete;
@@ -67,6 +76,7 @@ public:
     void snapshot();
     const Grid& grid() const { return grid_; }
     Grid& grid() { return grid_; }  // UI stamps selection onto it before drawing
+    const std::vector<InlineImage>& inlineImages() const { return inlineImages_; }
 
     // Scroll the viewport over scrollback history.
     void scrollViewport(int deltaLines) { terminal_.scrollViewport(deltaLines); }
@@ -161,6 +171,7 @@ private:
     std::vector<CommandBlock> commandBlocks_;
     size_t commandNavigation_ = 0;
     std::string clipboardRequest_;
+    std::vector<InlineImage> inlineImages_;
     SessionContext context_;
     AgentActivity reportedAgentActivity_ = AgentActivity::Idle;
 };

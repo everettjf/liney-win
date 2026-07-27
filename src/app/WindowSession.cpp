@@ -9,6 +9,7 @@
 #include "util/Authenticode.h"
 #include "core/Update.h"
 #include "core/WindowGeometry.h"
+#include "core/RenderSignal.h"
 #include "workspace/Workspace.h"
 
 #include <fstream>
@@ -66,6 +67,7 @@ void Window::initTray() {
 }
 
 void Window::showBalloon(const std::wstring& title, const std::wstring& body) {
+    showToast(body);
     if (!trayAdded_) return;
     nid_.uFlags = NIF_INFO;
     nid_.dwInfoFlags = NIIF_INFO;
@@ -73,6 +75,15 @@ void Window::showBalloon(const std::wstring& title, const std::wstring& body) {
               _TRUNCATE);
     wcsncpy_s(nid_.szInfo, body.c_str(), _TRUNCATE);
     Shell_NotifyIconW(NIM_MODIFY, &nid_);
+}
+
+void Window::showToast(const std::wstring& message, bool error) {
+    if (message.empty()) return;
+    toastMessage_ = message;
+    toastError_ = error;
+    toastUntil_ = GetTickCount64() + (error ? 6500 : 3500);
+    markRenderDirty();
+    InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
 void Window::removeTray() {
@@ -386,9 +397,12 @@ void Window::openWorkspaceSnapshotMenu() {
     if (command == 1) {
         const std::wstring name = inputBox(hwnd_, L"Save workspace snapshot",
                                            L"Workspace name:", L"");
-        if (!name.empty() && !saveWorkspaceSnapshot(name))
-            MessageBoxW(hwnd_, L"The workspace snapshot could not be saved.",
-                        L"Liney", MB_OK | MB_ICONERROR);
+        if (!name.empty()) {
+            if (saveWorkspaceSnapshot(name))
+                showToast(L"Workspace snapshot saved");
+            else
+                showToast(L"Workspace snapshot could not be saved", true);
+        }
         return;
     }
     const size_t index = command >= 100 ? static_cast<size_t>(command - 100)
@@ -402,7 +416,12 @@ void Window::openWorkspaceSnapshotMenu() {
     clearSelection();
     tabs_.clear();
     activeTab_ = 0;
-    if (!restoreLayoutFrom(snapshots[index].second)) newTab(homeDir());
+    if (!restoreLayoutFrom(snapshots[index].second)) {
+        newTab(homeDir());
+        showToast(L"Workspace snapshot could not be restored", true);
+    } else {
+        showToast(L"Workspace snapshot restored");
+    }
 }
 
 std::unique_ptr<Pane> Window::paneFromJson(const Json& j, int cols, int rows) {
@@ -451,7 +470,27 @@ std::unique_ptr<Pane> Window::paneFromJson(const Json& j, int cols, int rows) {
 bool Window::restoreLayout() {
     const std::wstring dir = configDir();
     if (dir.empty()) return false;
-    return restoreLayoutFrom(dir + L"\\layout.json");
+    const std::wstring path = dir + L"\\layout.json";
+    if (restoreLayoutFrom(path)) return true;
+    const std::wstring backup = path + L".bak";
+    if (GetFileAttributesW(backup.c_str()) != INVALID_FILE_ATTRIBUTES &&
+        restoreLayoutFrom(backup)) {
+        // Repair the primary atomically only after the backup has been fully
+        // parsed and its sessions were recreated successfully. Do not use the
+        // backup-writing helper here: its first step would replace the known
+        // good backup with the corrupt primary.
+        std::ifstream backupFile(backup.c_str(), std::ios::binary);
+        std::ostringstream backupText;
+        backupText << backupFile.rdbuf();
+        if (backupFile.good() || backupFile.eof())
+            writeFileAtomic(path, backupText.str());
+        showToast(L"Layout was recovered from backup", true);
+        return true;
+    }
+    if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES)
+        showToast(L"Saved layout could not be restored; opened a fresh session",
+                  true);
+    return false;
 }
 
 bool Window::restoreLayoutFrom(const std::wstring& path) {
@@ -567,6 +606,8 @@ void Window::addWorkspaceFolder() {
     rememberRecentProject(dir);
     persistWorkspaceConfig();
     rescanWorkspace();
+    welcomeVisible_ = false;
+    showToast(L"Project added to workspace");
 }
 
 void Window::rememberRecentProject(const std::wstring& path) {
@@ -615,6 +656,7 @@ void Window::removeProject(const Repo& repo) {
         workspaceExclusions_.push_back(path);
     workspace_.removeRepoByPath(path);
     persistWorkspaceConfig();
+    showToast(L"Project removed from workspace");
 }
 
 void Window::setProjectIcon(const Repo& repo) {
@@ -630,6 +672,7 @@ void Window::setProjectIcon(const Repo& repo) {
         if (pi.first == name) { pi.second = icon; found = true; break; }
     if (!found) projectIcons_.push_back({ name, icon });
     persistWorkspaceConfig();
+    showToast(L"Project icon updated");
 }
 
 void Window::persistWorkspaceConfig() {

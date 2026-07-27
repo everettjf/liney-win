@@ -1,0 +1,57 @@
+name: Nightly Reliability
+
+on:
+  schedule:
+    - cron: '23 17 * * *'
+  workflow_dispatch:
+    inputs:
+      duration_seconds:
+        description: Soak duration in seconds
+        required: false
+        default: '7200'
+
+concurrency:
+  group: nightly-reliability
+  cancel-in-progress: false
+
+jobs:
+  soak:
+    runs-on: windows-2025
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Set up Zig 0.15.2
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+      - name: Build
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools\build.ps1
+      - name: Install TUI fixtures
+        shell: pwsh
+        run: choco install vim less fzf -y --no-progress
+      - name: Two-hour lifecycle and resource soak
+        shell: pwsh
+        env:
+          SOAK_SECONDS: ${{ inputs.duration_seconds || '7200' }}
+        run: >
+          powershell -ExecutionPolicy Bypass -File tools\stability-soak.ps1
+          -Exe build-ghostty\Liney.exe -DurationSeconds $env:SOAK_SECONDS
+          -Output nightly-soak.json
+      - name: Shell crash and interaction stress
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools\interaction-stress.ps1 -Exe build-ghostty\Liney.exe
+      - name: TUI compatibility smoke
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File tools\tui-smoke.ps1 -Exe build-ghostty\Liney.exe
+      - name: Upload reliability evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-reliability-${{ github.run_id }}
+          path: |
+            nightly-soak.json
+            artifacts/reliability/**
+          if-no-files-found: warn

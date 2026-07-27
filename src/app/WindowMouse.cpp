@@ -146,6 +146,16 @@ void Window::onMouseDown(int xi, int yi) {
     }
 
     if (panes.contains(x, y)) {
+        if (welcomeVisible_ && welcomeOpenRect_.contains(x, y)) {
+            welcomeVisible_ = false;
+            addWorkspaceFolder();
+            return;
+        }
+        if (welcomeVisible_ && welcomePaletteRect_.contains(x, y)) {
+            welcomeVisible_ = false;
+            openCommandPalette();
+            return;
+        }
         if (paneCloseRect_.contains(x, y)) {
             closeActivePaneConfirming();
             return;
@@ -470,6 +480,7 @@ void Window::onMouseDownRight(int xi, int yi) {
             } else if (action == 12) {
                 workspace_.refreshStatus(repo.worktrees[row.worktree]);
                 markRenderDirty();
+                showToast(L"Git status refreshed");
             } else if (action == 13 && !mainWorktree) {
                 std::wstring msg = L"Remove worktree?\n\n" + worktreePath +
                     L"\n\nGit will refuse if it contains uncommitted changes.";
@@ -618,17 +629,19 @@ void Window::copySelection() {
 void Window::setClipboardText(const std::wstring& text) {
     if (text.empty() || !OpenClipboard(hwnd_)) return;
     EmptyClipboard();
+    bool copied = false;
     const size_t bytes = (text.size() + 1) * sizeof(wchar_t);
     if (HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, bytes)) {
         if (void* p = GlobalLock(h)) {
             memcpy(p, text.c_str(), bytes);
             GlobalUnlock(h);
-            SetClipboardData(CF_UNICODETEXT, h);
+            copied = SetClipboardData(CF_UNICODETEXT, h) != nullptr;
         } else {
             GlobalFree(h);
         }
     }
     CloseClipboard();
+    if (copied) showToast(L"Copied to clipboard");
 }
 
 void Window::paste() {

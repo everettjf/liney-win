@@ -56,6 +56,8 @@ private:
     void rememberRecentProject(const std::wstring& path);
     void drawTabBar(const Rect& r);
     void drawPanes(const Rect& r);
+    void drawWelcome(const Rect& r);
+    void drawToast();
     void initializeTooltips();
     void updateChromeAccessibility();
     void reapExitedPanes();
@@ -143,6 +145,7 @@ private:
     // Tray icon + balloon notifications (driven by OSC 9/777).
     void initTray();
     void showBalloon(const std::wstring& title, const std::wstring& body);
+    void showToast(const std::wstring& message, bool error = false);
     void removeTray();
     void pollNotifications();  // drain OSC notifications from all sessions
     void pollClipboardRequests();
@@ -237,6 +240,7 @@ private:
     size_t activeTab_ = 0;
     bool sidebarVisible_ = true;      // left WORKSPACE/SSH/AGENTS panel
     bool filesPanelVisible_ = false;  // right FILES (folder tree) panel (Ctrl+Shift+F)
+    int headlessExitCode_ = 0; // nonzero when a required visual test path was absent
     bool keepAwake_ = false;          // SetThreadExecutionState keep-awake state
     int keepAwakeHours_ = 0;          // active preset (-1 forever, 0 off, else hours)
     ULONGLONG keepAwakeUntil_ = 0;    // GetTickCount64 deadline (0 = no deadline)
@@ -246,6 +250,7 @@ private:
     std::wstring shell_ = L"cmd.exe";
     std::wstring fontFamily_ = L"Cascadia Mono";
     float fontSize_ = 16.0f;          // logical (DPI-independent) point size
+    bool fontLigatures_ = false;
     float defaultFontSize_ = 16.0f;
     float dpiScale_ = 1.0f;           // device px per logical px (monitor DPI / 96)
     int scrollback_ = 10000;          // history lines retained per session
@@ -270,6 +275,9 @@ private:
     std::wstring lastTitle_;        // avoid redundant SetWindowText calls
     NOTIFYICONDATAW nid_{};
     bool trayAdded_ = false;
+    std::wstring toastMessage_;
+    ULONGLONG toastUntil_ = 0;
+    bool toastError_ = false;
     std::atomic<bool> updateReady_{ false };
     std::atomic<bool> installerReady_{ false };
     std::mutex updateMutex_;
@@ -322,6 +330,9 @@ private:
     Rect openButtonRect_{};
     Rect awakeButtonRect_{};
     Rect menuButtonRect_{};
+    Rect welcomeOpenRect_{};
+    Rect welcomePaletteRect_{};
+    bool welcomeVisible_ = false;
 
     // FILES panel: a navigable listing that follows the focused pane's cwd.
     void refreshFileList();   // re-list browsePath_ when it changes

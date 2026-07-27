@@ -1,4 +1,5 @@
 #include "app/Window.h"
+#include "app/ResponsiveLayout.h"
 
 #include <windowsx.h>  // GET_X_LPARAM / GET_WHEEL_DELTA_WPARAM
 #include <commdlg.h>   // ChooseFontW (the Font… picker)
@@ -168,9 +169,17 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     RECT wa{ 0, 0, 1280, 800 };
     SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0);
     const int waW = wa.right - wa.left, waH = wa.bottom - wa.top;
-    int w = waW * 7 / 10, h = waH * 7 / 10;
-    if (w < width) w = width;
-    if (h < height) h = height;
+    wchar_t exactTestSize[16]{};
+    const bool useExactTestSize =
+        GetEnvironmentVariableW(
+            L"LINEY_TEST_WIDTH", exactTestSize,
+            static_cast<DWORD>(_countof(exactTestSize))) > 0;
+    int w = useExactTestSize ? width : waW * 7 / 10;
+    int h = useExactTestSize ? height : waH * 7 / 10;
+    if (!useExactTestSize) {
+        if (w < width) w = width;
+        if (h < height) h = height;
+    }
     // Never exceed the work area (a tiny screen would otherwise push the
     // centered origin negative and open the title bar off the top/left edge).
     if (w > waW) w = waW;
@@ -201,6 +210,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     keybindings_ = cfg.keybindings;
     fontFamily_ = cfg.fontFamily;
     fontSize_ = cfg.fontSize;
+    fontLigatures_ = cfg.fontLigatures;
     defaultFontSize_ = cfg.fontSize;
     sessionStartHook_ = cfg.sessionStartHook;
     sessionExitHook_ = cfg.sessionExitHook;
@@ -252,6 +262,8 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     // Populate the explicitly configured workspace root/projects. An empty
     // root means no implicit discovery.
     rescanWorkspace();
+    welcomeVisible_ = workspace_.repos().empty() && projects_.empty() &&
+                      workspaceRoot_.empty();
 
     wchar_t autoClose[16]{};
     const DWORD autoCloseLength = GetEnvironmentVariableW(
@@ -341,6 +353,59 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
                 L"LINEY_TEST_PALETTE", testPalette,
                 static_cast<DWORD>(_countof(testPalette))) > 0)
             openCommandPalette();
+        wchar_t testFiles[8]{};
+        if (GetEnvironmentVariableW(
+                L"LINEY_TEST_FILES_PANEL", testFiles,
+                static_cast<DWORD>(_countof(testFiles))) > 0)
+            filesPanelVisible_ = true;
+        wchar_t testRenderText[8]{};
+        if (GetEnvironmentVariableW(
+                L"LINEY_TEST_RENDER_TEXT", testRenderText,
+                static_cast<DWORD>(_countof(testRenderText))) > 0) {
+            static const char command[] = "echo liney-d3d-glyph-test\r";
+            if (TerminalSession* session = activeSession())
+                session->sendBytes(command, sizeof(command) - 1);
+        }
+        wchar_t testLigatures[8]{};
+        if (GetEnvironmentVariableW(
+                L"LINEY_TEST_LIGATURES", testLigatures,
+                static_cast<DWORD>(_countof(testLigatures))) > 0) {
+            fontLigatures_ = true;
+            renderer_->setLigatures(true);
+            static const char command[] =
+                "echo liney-ligatures: != == -^> =^> ^<== :: ^&^& ^|^|\r";
+            if (TerminalSession* session = activeSession())
+                session->sendBytes(command, sizeof(command) - 1);
+        }
+        wchar_t stressOutput[8]{};
+        if (GetEnvironmentVariableW(
+                L"LINEY_TEST_STRESS_OUTPUT", stressOutput,
+                static_cast<DWORD>(_countof(stressOutput))) > 0) {
+            // Deterministic, shell-independent-enough Windows payload: mixed
+            // ASCII/ANSI output exercises parsing, scrollback and full-screen
+            // redraw while the headless timer samples the steady state.
+            static const char command[] =
+                "powershell.exe -NoLogo -NoProfile -Command "
+                "\"1..20000|%%{[Console]::WriteLine(('line {0:D5} "
+                "alpha beta gamma 0123456789' -f $_))};"
+                "[IO.File]::WriteAllText($env:LINEY_STRESS_MARKER,'done')\"\r";
+            if (TerminalSession* session = activeSession())
+                session->sendBytes(command, sizeof(command) - 1);
+        }
+        wchar_t testInlineImage[8]{};
+        if (GetEnvironmentVariableW(
+                L"LINEY_TEST_INLINE_IMAGE", testInlineImage,
+                static_cast<DWORD>(_countof(testInlineImage))) > 0) {
+            static const char command[] =
+                "powershell.exe -NoLogo -NoProfile -Command "
+                "\"$e=[char]27;[Console]::Write($e+"
+                "']1337;File=inline=1;width=4;height=2:"
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwC"
+                "AAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII='"
+                "+[char]7)\"\r";
+            if (TerminalSession* session = activeSession())
+                session->sendBytes(command, sizeof(command) - 1);
+        }
     }
     if (tabs_.empty()) {
         // No session could start — almost always the terminal core DLL is
@@ -512,7 +577,7 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
         if (info) {
             info->ptMinTrackSize.x = std::max<LONG>(
                 info->ptMinTrackSize.x,
-                static_cast<LONG>(std::lround(800.0f * dpiScale_)));
+                static_cast<LONG>(std::lround(640.0f * dpiScale_)));
             info->ptMinTrackSize.y = std::max<LONG>(
                 info->ptMinTrackSize.y,
                 static_cast<LONG>(std::lround(480.0f * dpiScale_)));
@@ -616,6 +681,30 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_TIMER:
         if (wParam == kHeadlessCloseTimerId) {
             KillTimer(hwnd_, kHeadlessCloseTimerId);
+            wchar_t requireShader[8]{};
+            if (GetEnvironmentVariableW(
+                    L"LINEY_REQUIRE_D3D_GLYPHS", requireShader,
+                    static_cast<DWORD>(_countof(requireShader))) > 0 &&
+                !GetPropW(hwnd_, L"Liney.D3DGlyphShaderActive")) {
+                headlessExitCode_ =
+                    !GetPropW(hwnd_, L"Liney.D3DGlyphAtlasReady") ? 72 :
+                    !GetPropW(hwnd_, L"Liney.D3DGlyphShaderReady") ? 73 :
+                    !GetPropW(hwnd_, L"Liney.D3DGlyphSlotReady") ? 74 :
+                    !GetPropW(hwnd_, L"Liney.D3DGlyphD2DCommitted") ? 75 :
+                    !GetPropW(hwnd_, L"Liney.D3DGlyphVertexUploaded") ? 76 : 71;
+            }
+            wchar_t requireInlineImage[8]{};
+            if (GetEnvironmentVariableW(
+                    L"LINEY_REQUIRE_INLINE_IMAGE", requireInlineImage,
+                    static_cast<DWORD>(_countof(requireInlineImage))) > 0 &&
+                !GetPropW(hwnd_, L"Liney.InlineImageActive"))
+                headlessExitCode_ = 77;
+            wchar_t requireLigatures[8]{};
+            if (GetEnvironmentVariableW(
+                    L"LINEY_REQUIRE_LIGATURES", requireLigatures,
+                    static_cast<DWORD>(_countof(requireLigatures))) > 0 &&
+                !GetPropW(hwnd_, L"Liney.LigatureRunActive"))
+                headlessExitCode_ = 78;
             DestroyWindow(hwnd_);
             return 0;
         }
@@ -635,7 +724,7 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
         return DefWindowProcW(hwnd_, msg, wParam, lParam);
     case WM_DESTROY:
         removeTray();
-        PostQuitMessage(0);
+        PostQuitMessage(headlessExitCode_);
         return 0;
     default:
         return DefWindowProcW(hwnd_, msg, wParam, lParam);
@@ -652,8 +741,11 @@ void Window::regions(Rect& leftBar, Rect& rightPanel, Rect& tabBar,
     GetClientRect(hwnd_, &rc);
     const float W = static_cast<float>(rc.right - rc.left);
     const float H = static_cast<float>(rc.bottom - rc.top);
-    const float sw = sidebarVisible_ ? metrics_.sidebarW() : 0.0f;
-    const float fw = filesPanelVisible_ ? metrics_.filesPanelW() : 0.0f;
+    const ResponsivePanelLayout responsive = layoutResponsivePanels(
+        W, sidebarVisible_, filesPanelVisible_, metrics_.sidebarW(),
+        metrics_.cellW * 18.0f, metrics_.cellW * 36.0f);
+    const float sw = responsive.leftWidth;
+    const float fw = responsive.rightWidth;
     const float tb = metrics_.tabBarH();
     const float midW = W - sw - fw;
     leftBar = { 0, 0, sw, H };
@@ -683,12 +775,12 @@ void Window::renderFrame() {
     sidebarRows_.clear();
     // Each region is clipped to its own bounds so nothing (long names, a wide
     // grid, the tab strip) can bleed across panel boundaries.
-    if (sidebarVisible_) {
+    if (sidebarVisible_ && leftBar.w > 0.0f) {
         renderer_->pushClip(leftBar.x, leftBar.y, leftBar.w, leftBar.h);
         drawLeftSidebar(leftBar);
         renderer_->popClip();
     }
-    if (filesPanelVisible_) {
+    if (filesPanelVisible_ && rightPanel.w > 0.0f) {
         renderer_->pushClip(rightPanel.x, rightPanel.y, rightPanel.w, rightPanel.h);
         drawFilesPanel(rightPanel);
         renderer_->popClip();
@@ -697,7 +789,9 @@ void Window::renderFrame() {
     drawTabBar(tabBar);
     renderer_->popClip();
     drawPanes(panes);
+    if (welcomeVisible_) drawWelcome(panes);
     drawCommandPalette();
+    drawToast();
     updateChromeAccessibility();
     renderer_->endFrame();
 }
@@ -822,7 +916,24 @@ void Window::updateChromeAccessibility() {
             {element.id, element.name, element.automationId, element.help,
              element.accelerator, element.accessKey, rect, element.enabled});
     }
-    updateAccessibilityProvider(accessibilityProvider_, elements);
+    AccessibleTextInfo terminalText;
+    if (Tab* tab = activeTab(); tab && tab->active() &&
+                                tab->active()->session) {
+        const Grid& grid = tab->active()->session->grid();
+        for (int y = 0; y < grid.rows; ++y) {
+            std::wstring row;
+            for (int x = 0; x < grid.cols; ++x) {
+                const Cell& cell = grid.at(x, y);
+                if (cell.flags & kFlagWideTail) continue;
+                row += cell.ch.empty() ? L" " : cell.ch;
+            }
+            while (!row.empty() && iswspace(row.back())) row.pop_back();
+            terminalText.text += row;
+            if (y + 1 < grid.rows) terminalText.text += L'\n';
+        }
+        terminalText.clientRect = toRect(tab->active()->rect);
+    }
+    updateAccessibilityProvider(accessibilityProvider_, elements, terminalText);
 }
 
 
@@ -1021,6 +1132,7 @@ void Window::applyFont() {
     // fontSize_ is logical; render at device pixels so glyphs use the monitor's
     // full resolution (sharp on HiDPI) instead of being bitmap-stretched.
     renderer_->setFont(fontFamily_, fontSize_ * dpiScale_);
+    renderer_->setLigatures(fontLigatures_);
     unsigned cw = 0, ch = 0;
     renderer_->cellSize(cw, ch);
     metrics_.cellW = cw ? static_cast<float>(cw) : 8.0f;
@@ -1159,6 +1271,7 @@ void Window::openSettingsDialog() {
     v.shell = shell_;
     v.fontFamily = fontFamily_;
     v.fontSize = fontSize_;
+    v.fontLigatures = fontLigatures_;
     v.themeName = themeName_;
     v.accent = configuredUiTheme_.accent;
     v.scrollback = scrollback_;
@@ -1193,10 +1306,12 @@ void Window::openSettingsDialog() {
     }
 
     const bool fontChanged =
-        v.fontFamily != fontFamily_ || v.fontSize != fontSize_;
+        v.fontFamily != fontFamily_ || v.fontSize != fontSize_ ||
+        v.fontLigatures != fontLigatures_;
     if (fontChanged) {
         fontFamily_ = v.fontFamily;
         fontSize_ = v.fontSize;
+        fontLigatures_ = v.fontLigatures;
         defaultFontSize_ = v.fontSize;
         applyFont();
     }
@@ -1222,6 +1337,7 @@ void Window::openSettingsDialog() {
         j.set("shell", Json::str(wideToUtf8(shell_)));
         j.set("fontFamily", Json::str(wideToUtf8(fontFamily_)));
         j.set("fontSize", Json::number(fontSize_));
+        j.set("fontLigatures", Json::boolean(fontLigatures_));
         // Only rewrite `theme` when a preset was chosen — leave a hand-authored
         // overrides object untouched otherwise.
         if (v.themePicked) j.set("theme", Json::str(wideToUtf8(themeName_)));
@@ -1387,8 +1503,7 @@ void Window::exportDiagnostics() {
                       (L"/select,\"" + std::wstring(path) + L"\"").c_str(),
                       nullptr, SW_SHOWNORMAL);
     } else {
-        MessageBoxW(hwnd_, L"The diagnostic bundle could not be created.",
-                    L"Liney", MB_OK | MB_ICONERROR);
+        showToast(L"Diagnostic bundle could not be created", true);
     }
 }
 

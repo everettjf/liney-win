@@ -3,6 +3,7 @@
   "shell": "cmd.exe",
   "fontFamily": "Cascadia Mono",
   "fontSize": 16,
+  "fontLigatures": false,
   "scrollback": 10000,
   "workspaceRoot": "",
   "unixTools": true,

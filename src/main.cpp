@@ -420,6 +420,40 @@ bool runCliIfRequested(int& exitCode) {
         exitCode = (!requireWsl || wslAvailable) ? 0 : 78;
         return true;
     }
+    if (cmd == L"tui-self-test") {
+        struct Fixture { const wchar_t* name; const wchar_t* command; };
+        static constexpr Fixture fixtures[] = {
+            {L"vim", L"cmd.exe /d /s /c \"vim --version\""},
+            {L"less", L"cmd.exe /d /s /c \"less --version\""},
+            {L"fzf", L"cmd.exe /d /s /c \"fzf --version\""},
+        };
+        for (size_t i = 0; i < _countof(fixtures); ++i) {
+            wchar_t found[MAX_PATH]{};
+            if (!SearchPathW(nullptr, fixtures[i].name, L".exe",
+                             static_cast<DWORD>(_countof(found)), found,
+                             nullptr)) {
+                exitCode = 80 + static_cast<int>(i);
+                return true;
+            }
+            liney::TerminalSession session;
+            if (!session.start(fixtures[i].command, L"", 100, 30, 500)) {
+                exitCode = 83 + static_cast<int>(i);
+                return true;
+            }
+            const ULONGLONG deadline = GetTickCount64() + 10000;
+            while (!session.exited() && GetTickCount64() < deadline) Sleep(10);
+            Sleep(100);
+            session.snapshot();
+            std::string output;
+            if (!session.exited() || !session.dumpBufferUtf8(output) ||
+                output.empty()) {
+                exitCode = 86 + static_cast<int>(i);
+                return true;
+            }
+        }
+        exitCode = 0;
+        return true;
+    }
     if (cmd == L"stability-self-test") {
         const ULONGLONG started = GetTickCount64();
         liney::TerminalSession large;
@@ -587,6 +621,13 @@ bool runCliIfRequested(int& exitCode) {
             }
         }
         if (powershell.empty()) { exitCode = 0; return true; }
+        // Preparing an already-integrated command must be idempotent. This is
+        // important when restored layouts and profile launchers both pass
+        // through the preparation path.
+        if (liney::prepareShellCommand(powershell) != powershell) {
+            exitCode = 39;
+            return true;
+        }
         liney::TerminalSession session;
         if (!session.start(powershell, L"", 80, 24, 100)) {
             exitCode = 36; return true;
@@ -618,6 +659,7 @@ bool runCliIfRequested(int& exitCode) {
         liney::Grid grid;
         bool passed = terminal.create(12, 4, 100);
         bool altPassed = false, reflowPassed = false;
+        bool selectionPassed = false, mousePassed = false;
         if (passed) {
             liney::Theme theme;
             terminal.setTheme(theme);
@@ -656,8 +698,40 @@ bool runCliIfRequested(int& exitCode) {
             passed = passed && buffer.find("abcdefghij") != std::string::npos;
             reflowPassed = passed;
         }
+        if (passed) {
+            // A selection is stored as tracked buffer references, so changing
+            // the viewport width must not make it jump to unrelated cells.
+            terminal.resize(10, 4, 8, 16);
+            terminal.write("\r\nselection-anchor", 18);
+            terminal.selectionBegin(0, 1);
+            passed = terminal.selectionDragTo(8, 1);
+            const std::string before = terminal.selectionUtf8();
+            terminal.resize(5, 6, 8, 16);
+            const std::string after = terminal.selectionUtf8();
+            selectionPassed = passed && !before.empty() && before == after;
+            passed = selectionPassed;
+        }
+        if (passed) {
+            // Exercise Ghostty's encoder through Liney's pixel/cell boundary.
+            // SGR reporting is what modern vim/tmux/fzf expect.
+            static const char mouseModes[] = "\x1b[?1000h\x1b[?1006h";
+            terminal.write(mouseModes, sizeof(mouseModes) - 1);
+            const std::string press =
+                terminal.encodeMouse(0, 1, 12.0f, 20.0f, false, true, false,
+                                     false, 8, 16, 80, 64);
+            const std::string release =
+                terminal.encodeMouse(1, 1, 12.0f, 20.0f, false, false, false,
+                                     true, 8, 16, 80, 64);
+            mousePassed = terminal.mouseTracking() &&
+                          press.rfind("\x1b[<", 0) == 0 &&
+                          !press.empty() && press.back() == 'M' &&
+                          release.rfind("\x1b[<", 0) == 0 &&
+                          !release.empty() && release.back() == 'm';
+            passed = mousePassed;
+        }
         exitCode = passed ? 0 : (!sawA ? 41 : !sawRed ? 42 : !sawWide ? 43 :
-                                 !altPassed ? 44 : !reflowPassed ? 45 : 46);
+                                 !altPassed ? 44 : !reflowPassed ? 45 :
+                                 !selectionPassed ? 46 : !mousePassed ? 47 : 48);
         return true;
     }
     if (cmd == L"font-self-test") {
@@ -717,8 +791,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);  // for WIC image loading
     int result = 1;
     {
+        auto testDimension = [](const wchar_t* name, int fallback) {
+            wchar_t value[16]{};
+            const DWORD length = GetEnvironmentVariableW(
+                name, value, static_cast<DWORD>(_countof(value)));
+            if (length == 0 || length >= _countof(value)) return fallback;
+            const long parsed = wcstol(value, nullptr, 10);
+            return static_cast<int>(std::clamp(parsed, 320l, 7680l));
+        };
+        const int initialWidth = testDimension(L"LINEY_TEST_WIDTH", 1000);
+        const int initialHeight = testDimension(L"LINEY_TEST_HEIGHT", 640);
         liney::Window window;
-        if (!window.create(hInstance, L"Liney", 1000, 640)) {
+        if (!window.create(hInstance, L"Liney", initialWidth, initialHeight)) {
             liney::diagnosticLog("window creation failed");
         } else {
             wchar_t headless[8]{};

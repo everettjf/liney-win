@@ -93,12 +93,16 @@ void Terminal::write(const char* data, size_t len) {
         if (terminal_) {
             GhosttyTerminalScrollbar sb{};
             uint16_t cursorY = 0;
+            uint16_t cursorX = 0;
             if (ghostty_terminal_get(terminal_, GHOSTTY_TERMINAL_DATA_SCROLLBAR,
                                      &sb) == GHOSTTY_SUCCESS &&
                 ghostty_terminal_get(terminal_, GHOSTTY_TERMINAL_DATA_CURSOR_Y,
-                                     &cursorY) == GHOSTTY_SUCCESS) {
+                                     &cursorY) == GHOSTTY_SUCCESS &&
+                ghostty_terminal_get(terminal_, GHOSTTY_TERMINAL_DATA_CURSOR_X,
+                                     &cursorX) == GHOSTTY_SUCCESS) {
                 const uint64_t top = sb.total > sb.len ? sb.total - sb.len : 0;
                 event.row = top + cursorY;
+                event.column = cursorX;
             }
         }
         if (semanticEvents_.size() >= 256) semanticEvents_.erase(semanticEvents_.begin());

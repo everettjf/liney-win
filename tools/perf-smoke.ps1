@@ -16,6 +16,9 @@ $saved = @{
     LINEY_TEST_TABS = $env:LINEY_TEST_TABS
     LINEY_TEST_PANES = $env:LINEY_TEST_PANES
     LINEY_TEST_FOLDER_PROJECT = $env:LINEY_TEST_FOLDER_PROJECT
+    LINEY_TEST_STRESS_OUTPUT = $env:LINEY_TEST_STRESS_OUTPUT
+    LINEY_STRESS_MARKER = $env:LINEY_STRESS_MARKER
+    LINEY_FRAME_METRICS = $env:LINEY_FRAME_METRICS
 }
 try {
     $env:LINEY_HEADLESS = '1'
@@ -46,6 +49,49 @@ try {
         $samples += [int]$watch.ElapsedMilliseconds
         $memorySamples += [int][Math]::Ceiling($iterationPeak / 1MB)
     }
+
+    # Sustained output gate: completion proves all 20k lines reached the PTY;
+    # peak memory catches unbounded scroll/render caches. The fixed close delay
+    # keeps repeated measurements comparable on the same runner.
+    $marker = Join-Path ([IO.Path]::GetTempPath()) ("liney-stress-" + [guid]::NewGuid() + ".txt")
+    $env:LINEY_TEST_STRESS_OUTPUT = '1'
+    $env:LINEY_STRESS_MARKER = $marker
+    $frameMetrics = Join-Path ([IO.Path]::GetTempPath()) ("liney-frames-" + [guid]::NewGuid() + ".json")
+    $env:LINEY_FRAME_METRICS = $frameMetrics
+    $env:LINEY_AUTOCLOSE_MS = '5000'
+    $start = [Diagnostics.ProcessStartInfo]::new()
+    $start.FileName = $resolved
+    $start.UseShellExecute = $false
+    $start.CreateNoWindow = $true
+    $stress = [Diagnostics.Process]::Start($start)
+    $stressPeak = 0
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    while (-not $stress.HasExited -and $watch.ElapsedMilliseconds -lt 10000) {
+        $stress.Refresh()
+        $stressPeak = [Math]::Max($stressPeak, $stress.WorkingSet64)
+        Start-Sleep -Milliseconds 10
+    }
+    if (-not $stress.HasExited) {
+        $stress.Kill()
+        throw 'Sustained-output scenario timed out'
+    }
+    if ($stress.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $marker)) {
+        throw 'Sustained-output scenario did not process all 20,000 lines'
+    }
+    if (-not (Test-Path -LiteralPath $frameMetrics)) {
+        throw 'Renderer did not publish frame-time metrics'
+    }
+    $frames = Get-Content -LiteralPath $frameMetrics -Raw | ConvertFrom-Json
+    if ($frames.frames -lt 10 -or $frames.p95Ms -gt 25) {
+        throw "Renderer frame gate failed: frames=$($frames.frames) p95=$($frames.p95Ms)ms"
+    }
+    Remove-Item -LiteralPath $marker -Force
+    Remove-Item -LiteralPath $frameMetrics -Force
+    $stressMB = [int][Math]::Ceiling($stressPeak / 1MB)
+    if ($stressMB -gt $MaxPeakWorkingSetMB) {
+        throw "Sustained-output peak ${stressMB}MB exceeds budget ${MaxPeakWorkingSetMB}MB"
+    }
+    Write-Host "20k-line sustained output: completed peak=${stressMB}MB elapsed=$($watch.ElapsedMilliseconds)ms frame-p95=$($frames.p95Ms)ms frame-p99=$($frames.p99Ms)ms"
 } finally {
     foreach ($entry in $saved.GetEnumerator()) {
         Set-Item -Path "Env:$($entry.Key)" -Value $entry.Value -ErrorAction SilentlyContinue
