@@ -124,6 +124,10 @@ std::string defaultJson(const Config& c) {
     for (const auto& project : c.projects)
         projects.push(Json::str(wideToUtf8(project)));
     j.set("projects", std::move(projects));
+    Json exclusions = Json::array();
+    for (const auto& project : c.workspaceExclusions)
+        exclusions.push(Json::str(wideToUtf8(project)));
+    j.set("workspaceExclusions", std::move(exclusions));
     Json recent = Json::array();
     for (const auto& project : c.recentProjects)
         recent.push(Json::str(wideToUtf8(project)));
@@ -345,6 +349,11 @@ Config loadConfig() {
         for (const Json& p : j["projects"].items())
             if (p.type() == Json::Type::String && !p.asString().empty())
                 cfg.projects.push_back(utf8ToWide(p.asString()));
+    if (j["workspaceExclusions"].isArray())
+        for (const Json& p : j["workspaceExclusions"].items())
+            if (p.type() == Json::Type::String && !p.asString().empty())
+                cfg.workspaceExclusions.push_back(
+                    utf8ToWide(p.asString()));
     if (j["recentProjects"].isArray())
         for (const Json& p : j["recentProjects"].items())
             if (p.type() == Json::Type::String && !p.asString().empty() &&

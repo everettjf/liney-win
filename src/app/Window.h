@@ -56,6 +56,8 @@ private:
     void rememberRecentProject(const std::wstring& path);
     void drawTabBar(const Rect& r);
     void drawPanes(const Rect& r);
+    void initializeTooltips();
+    void updateChromeAccessibility();
     void reapExitedPanes();
 
     // Workspace / tabs.
@@ -69,6 +71,7 @@ private:
     void equalizePanes();  // reset all split ratios evenly
     void closeOtherPanes();  // collapse the tab to just the active pane
     void runStartHook(TerminalSession* s);  // send sessionStart hook to a shell
+    void runSessionExitHooks(size_t paneCount);
     // The "default" starting directory: the first workspace repo when the
     // sidebar has one, else the user's home. Used for the split-in-workspace
     // option.
@@ -108,6 +111,7 @@ private:
     void restartSession(TerminalSession* session);
     void openKeepAwakeMenu();          // duration picker beside the coffee button
     void openTabMenu(int x, int y);  // right-click a tab: close / open in explorer…
+    void openTabOverflowMenu(int x, int y);  // hidden tabs when the strip is full
     void closeTab(size_t idx);       // close an entire tab (all its panes)
     void togglePinActiveTab();
     // Close a tab, but confirm first if any of its shells is running a command
@@ -118,6 +122,7 @@ private:
     // closing everything. Confirms once if any of them is running a command.
     void closeTabSet(const std::vector<size_t>& victims, Tab* keep);
     bool tabHasRunningProcess(size_t idx) const;
+    size_t runningPaneCount(const std::vector<Pane*>& panes) const;
     // Titles of the given tabs that are running a command, and a single
     // consolidated Yes/No dialog listing them (returns true to proceed / when
     // nothing is running). Used by every multi-tab and app-quit close path so
@@ -215,9 +220,14 @@ private:
     void executePaletteAction(int id);
     std::vector<int> filteredPaletteActions() const;
     std::wstring paletteActionLabel(int id) const;
+    std::wstring paletteActionCategory(int id) const;
+    std::wstring paletteActionShortcut(int id) const;
+    std::wstring paletteActionDisabledReason(int id) const;
+    void rememberPaletteAction(int id);
     bool executeConfiguredBinding(int virtualKey, bool ctrl, bool shift, bool alt);
 
     HWND hwnd_ = nullptr;
+    HWND tooltipHwnd_ = nullptr;
     ::IRawElementProviderSimple* accessibilityProvider_ = nullptr;
     std::unique_ptr<IRenderer> renderer_;
     Metrics metrics_;
@@ -230,6 +240,7 @@ private:
     bool keepAwake_ = false;          // SetThreadExecutionState keep-awake state
     int keepAwakeHours_ = 0;          // active preset (-1 forever, 0 off, else hours)
     ULONGLONG keepAwakeUntil_ = 0;    // GetTickCount64 deadline (0 = no deadline)
+    ULONGLONG scheduledShutdownUntil_ = 0; // known in-app shutdown deadline
     bool pendingMaximize_ = false;    // restore a maximized window on first show
 
     std::wstring shell_ = L"cmd.exe";
@@ -247,10 +258,14 @@ private:
     std::vector<AgentDef> agents_;
     std::vector<std::pair<std::wstring, std::wstring>> projectIcons_;
     std::vector<std::wstring> projects_;   // explicit sidebar project folders
+    std::vector<std::wstring> workspaceExclusions_;  // hidden scanned repos
     std::vector<std::wstring> recentProjects_;
     std::wstring workspaceRoot_;           // scanned root (empty = explicit only)
     Theme theme_;                  // terminal palette
     UiTheme uiTheme_;              // chrome palette (sidebar/tabs/accent/border)
+    Theme configuredTheme_;        // base palette restored after high contrast
+    UiTheme configuredUiTheme_;    // base chrome restored after high contrast
+    bool highContrastActive_ = false;
     std::wstring themeName_;       // active preset name (persisted)
     std::wstring lastTitle_;        // avoid redundant SetWindowText calls
     NOTIFYICONDATAW nid_{};
@@ -299,6 +314,8 @@ private:
     Rect workspaceAddRect_{};  // the WORKSPACE "+" (add project) button
     Rect sidebarToggleRect_{}; // tab-strip button; remains visible when collapsed
     Rect plusRect_{};
+    Rect tabOverflowRect_{};   // opens a checked list of every tab
+    Rect paneCloseRect_{};     // active split-pane close button
     int tabDragIndex_ = -1;  // tab being dragged in the strip (-1 = none)
 
     // Top-right icon menu buttons (rebuilt each frame in drawTabBar).
@@ -345,6 +362,7 @@ private:
     bool paletteActive_ = false;
     std::wstring paletteQuery_;
     size_t paletteSelected_ = 0;
+    std::vector<int> paletteRecentActions_;
 };
 
 } // namespace liney

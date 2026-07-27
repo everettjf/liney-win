@@ -34,6 +34,7 @@
 #include "util/Authenticode.h"
 #include "core/Update.h"
 #include "app/WindowInternal.h"
+#include "workspace/Workspace.h"
 
 namespace {
 
@@ -220,11 +221,13 @@ bool runCliIfRequested(int& exitCode) {
         SetEnvironmentVariableW(L"LINEY_HEADLESS", L"1");
         const std::wstring path = std::wstring(unique) + L"\\config.json";
         const std::string initial =
-            R"({"schemaVersion":1,"shell":"cmd.exe","fontSize":18})";
+            R"({"schemaVersion":1,"shell":"cmd.exe","fontSize":18,"workspaceExclusions":["C:\\hidden-repo"]})";
         bool passed = liney::writeFileAtomic(path, initial);
         if (passed) {
             const liney::Config first = liney::loadConfig();
-            passed = first.fontSize == 18.0f;
+            passed = first.fontSize == 18.0f &&
+                     first.workspaceExclusions.size() == 1 &&
+                     first.workspaceExclusions[0] == L"C:\\hidden-repo";
         }
         if (passed) liney::saveFontSize(20.0f); // creates .bak with fontSize 18
         if (passed) passed = liney::writeFileAtomic(path, "{broken");
@@ -253,6 +256,129 @@ bool runCliIfRequested(int& exitCode) {
         liney::runCapture(
             L"cmd.exe /d /s /c \"ping 127.0.0.1 -n 6 >nul\"", L"", &ok, 100);
         exitCode = !ok && GetTickCount64() - started < 3000 ? 0 : 24;
+        return true;
+    }
+    if (cmd == L"workspace-close-self-test") {
+        wchar_t temp[MAX_PATH]{}, unique[MAX_PATH]{};
+        if (!GetTempPathW(MAX_PATH, temp) ||
+            !GetTempFileNameW(temp, L"lnw", 0, unique)) {
+            exitCode = 51;
+            return true;
+        }
+        DeleteFileW(unique);
+        const std::wstring root = unique;
+        const std::wstring gitProject = root + L"\\git-project";
+        const std::wstring gitMarker = gitProject + L"\\.git";
+        const std::wstring linkedProject = root + L"\\linked-worktree";
+        const std::wstring linkedMarker = linkedProject + L"\\.git";
+        const std::wstring folderProject = root + L"\\plain-folder";
+        bool passed = CreateDirectoryW(root.c_str(), nullptr) &&
+                      CreateDirectoryW(gitProject.c_str(), nullptr) &&
+                      CreateDirectoryW(gitMarker.c_str(), nullptr) &&
+                      CreateDirectoryW(linkedProject.c_str(), nullptr) &&
+                      CreateDirectoryW(folderProject.c_str(), nullptr);
+        HANDLE linkedFile = passed
+            ? CreateFileW(linkedMarker.c_str(), GENERIC_WRITE, 0, nullptr,
+                          CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr)
+            : INVALID_HANDLE_VALUE;
+        if (linkedFile == INVALID_HANDLE_VALUE) {
+            passed = false;
+        } else {
+            CloseHandle(linkedFile);
+        }
+
+        liney::Workspace workspace;
+        if (passed) {
+            workspace.scan(root);
+            passed = workspace.repos().size() == 2 &&
+                     std::all_of(
+                         workspace.repos().begin(), workspace.repos().end(),
+                         [](const liney::Repo& project) {
+                             return project.isGit();
+                         });
+        }
+        if (passed) {
+            workspace.addProject(folderProject);
+            passed = workspace.repos().size() == 3;
+        }
+        liney::Repo* folder = nullptr;
+        if (passed) {
+            for (liney::Repo& project : workspace.repos())
+                if (liney::workspacePathsEqual(project.path, folderProject))
+                    folder = &project;
+            passed = folder && !folder->isGit();
+        }
+        if (passed) {
+            std::wstring alias = folderProject + L"\\";
+            if (!alias.empty() && alias[0] >= L'A' && alias[0] <= L'Z')
+                alias[0] = static_cast<wchar_t>(alias[0] - L'A' + L'a');
+            workspace.addProject(alias);
+            passed = workspace.repos().size() == 3;
+        }
+        if (passed && folder) {
+            workspace.loadWorktrees(*folder);
+            std::wstring error;
+            passed = folder->loaded && folder->worktrees.empty() &&
+                     workspace.addWorktree(*folder, L"not-allowed", &error)
+                         .empty() &&
+                     !error.empty();
+        }
+        if (passed) {
+            std::wstring alias = folderProject + L"\\";
+            if (!alias.empty() && alias[0] >= L'A' && alias[0] <= L'Z')
+                alias[0] = static_cast<wchar_t>(alias[0] - L'A' + L'a');
+            passed = workspace.removeRepoByPath(alias) &&
+                     workspace.repos().size() == 2;
+        }
+
+        auto makePaneTree = [](size_t leafCount) {
+            auto tree = std::make_unique<liney::Pane>();
+            for (size_t i = 1; i < leafCount; ++i) {
+                auto parent = std::make_unique<liney::Pane>();
+                parent->isSplit = true;
+                parent->dir = i % 2 ? liney::SplitDir::Cols
+                                    : liney::SplitDir::Rows;
+                parent->ratio = 0.2f +
+                    static_cast<float>(i % 6) * 0.1f;
+                parent->a = std::move(tree);
+                parent->b = std::make_unique<liney::Pane>();
+                tree = std::move(parent);
+            }
+            return tree;
+        };
+
+        if (passed) {
+            liney::Tab tab(makePaneTree(48));
+            while (tab.leaves().size() > 1 && passed) {
+                const auto before = tab.leaves();
+                tab.setActive(before[before.size() / 2]);
+                tab.setZoom(tab.active());
+                passed = tab.closeActive();
+                const auto after = tab.leaves();
+                passed = passed && tab.zoom() == nullptr &&
+                         after.size() + 1 == before.size() &&
+                         std::find(after.begin(), after.end(), tab.active()) !=
+                             after.end();
+            }
+            passed = passed && tab.leaves().size() == 1 &&
+                     !tab.closeActive();
+        }
+        if (passed) {
+            liney::Tab tab(makePaneTree(48));
+            const auto leaves = tab.leaves();
+            tab.setActive(leaves[37]);
+            tab.closeOthers();
+            passed = tab.leaves().size() == 1 && !tab.isSplit() &&
+                     tab.active() == tab.root();
+        }
+
+        RemoveDirectoryW(gitMarker.c_str());
+        RemoveDirectoryW(gitProject.c_str());
+        DeleteFileW(linkedMarker.c_str());
+        RemoveDirectoryW(linkedProject.c_str());
+        RemoveDirectoryW(folderProject.c_str());
+        RemoveDirectoryW(root.c_str());
+        exitCode = passed ? 0 : 52;
         return true;
     }
     if (cmd == L"remote-self-test") {

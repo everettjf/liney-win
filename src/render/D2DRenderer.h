@@ -36,8 +36,12 @@ public:
     void pushClip(float x, float y, float w, float h) override;
     void popClip() override;
     void fillRect(float x, float y, float w, float h, const Color& c) override;
+    void fillRoundedRect(float x, float y, float w, float h, float radius,
+                         const Color& c) override;
     void strokeRect(float x, float y, float w, float h, const Color& c,
                     float thickness) override;
+    void strokeRoundedRect(float x, float y, float w, float h, float radius,
+                           const Color& c, float thickness) override;
     void drawText(const std::wstring& text, float x, float y, float maxW,
                   float rowH, const Color& c, bool bold) override;
     bool drawImage(const std::wstring& path, float x, float y, float w,
@@ -54,6 +58,7 @@ private:
     bool buildTextFormats();
     bool createSwapChainResources();
     bool bindTarget();
+    bool captureBackBufferPng(const std::wstring& path);
     void releaseSwapChainResources();
     // Tear down and rebuild all device-bound state after device loss (driver
     // update, TDR, RDP GPU switch). Returns true when rendering can resume.
@@ -97,6 +102,10 @@ private:
     ComPtr<IDWriteTextFormat> textFormatBold_;
     ComPtr<IDWriteTextFormat> textFormatItalic_;
     ComPtr<IDWriteTextFormat> textFormatBoldItalic_;
+    // Application chrome uses the native Windows UI face; terminal cells keep
+    // the user-selected monospace family above.
+    ComPtr<IDWriteTextFormat> uiTextFormat_;
+    ComPtr<IDWriteTextFormat> uiTextFormatBold_;
     ComPtr<IWICImagingFactory> wicFactory_;
     // Cache of loaded images by path (null entry = failed-to-load, don't retry).
     std::unordered_map<std::wstring, ComPtr<ID2D1Bitmap>> imageCache_;
@@ -113,6 +122,7 @@ private:
     bool frameOpen_ = false;    // BeginDraw issued; endFrame may EndDraw
     bool atlasNeedsReset_ = false;  // atlas overflowed mid-frame; wipe between frames
     bool simulatedDeviceLoss_ = false; // one-shot headless recovery test hook
+    bool capturedFrame_ = false; // one-shot LINEY_CAPTURE_PNG diagnostic
     // Per-cell find-highlight overlay, rebuilt at the top of drawGrid
     // (0 none, 1 match, 2 active match). Member to avoid per-frame realloc.
     std::vector<uint8_t> findOverlay_;

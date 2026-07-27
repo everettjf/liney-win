@@ -9,34 +9,51 @@ $ErrorActionPreference = 'Stop'
 $resolved = (Resolve-Path -LiteralPath $Exe).Path
 $samples = @()
 $memorySamples = @()
-$previousHeadless = $env:LINEY_HEADLESS
-$previousAutoClose = $env:LINEY_AUTOCLOSE_MS
-$env:LINEY_HEADLESS = '1'
-$env:LINEY_AUTOCLOSE_MS = '50'
-for ($i = 0; $i -lt $Iterations; $i++) {
-    $start = [Diagnostics.ProcessStartInfo]::new()
-    $start.FileName = $resolved
-    $start.UseShellExecute = $false
-    $start.CreateNoWindow = $true
-    $watch = [Diagnostics.Stopwatch]::StartNew()
-    $process = [Diagnostics.Process]::Start($start)
-    $iterationPeak = 0
-    while (-not $process.HasExited -and $watch.ElapsedMilliseconds -lt 5000) {
-        $process.Refresh()
-        $iterationPeak = [Math]::Max($iterationPeak, $process.WorkingSet64)
-        Start-Sleep -Milliseconds 5
-    }
-    if (-not $process.HasExited) {
-        $process.Kill()
-        throw "Iteration $i timed out"
-    }
-    $watch.Stop()
-    if ($process.ExitCode -ne 0) { throw "Iteration $i failed" }
-    $samples += [int]$watch.ElapsedMilliseconds
-    $memorySamples += [int][Math]::Ceiling($iterationPeak / 1MB)
+$saved = @{
+    LINEY_HEADLESS = $env:LINEY_HEADLESS
+    LINEY_AUTOCLOSE_MS = $env:LINEY_AUTOCLOSE_MS
+    LINEY_CAPTURE_PNG = $env:LINEY_CAPTURE_PNG
+    LINEY_TEST_TABS = $env:LINEY_TEST_TABS
+    LINEY_TEST_PANES = $env:LINEY_TEST_PANES
+    LINEY_TEST_FOLDER_PROJECT = $env:LINEY_TEST_FOLDER_PROJECT
 }
-$env:LINEY_HEADLESS = $previousHeadless
-$env:LINEY_AUTOCLOSE_MS = $previousAutoClose
+try {
+    $env:LINEY_HEADLESS = '1'
+    $env:LINEY_AUTOCLOSE_MS = '50'
+    $env:LINEY_CAPTURE_PNG = $null
+    $env:LINEY_TEST_TABS = $null
+    $env:LINEY_TEST_PANES = $null
+    $env:LINEY_TEST_FOLDER_PROJECT = $null
+    for ($i = 0; $i -lt $Iterations; $i++) {
+        $start = [Diagnostics.ProcessStartInfo]::new()
+        $start.FileName = $resolved
+        $start.UseShellExecute = $false
+        $start.CreateNoWindow = $true
+        $watch = [Diagnostics.Stopwatch]::StartNew()
+        $process = [Diagnostics.Process]::Start($start)
+        $iterationPeak = 0
+        while (-not $process.HasExited -and $watch.ElapsedMilliseconds -lt 5000) {
+            $process.Refresh()
+            $iterationPeak = [Math]::Max($iterationPeak, $process.WorkingSet64)
+            Start-Sleep -Milliseconds 5
+        }
+        if (-not $process.HasExited) {
+            $process.Kill()
+            throw "Iteration $i timed out"
+        }
+        $watch.Stop()
+        if ($process.ExitCode -ne 0) { throw "Iteration $i failed" }
+        $samples += [int]$watch.ElapsedMilliseconds
+        $memorySamples += [int][Math]::Ceiling($iterationPeak / 1MB)
+    }
+} finally {
+    foreach ($entry in $saved.GetEnumerator()) {
+        Set-Item -Path "Env:$($entry.Key)" -Value $entry.Value -ErrorAction SilentlyContinue
+        if ($null -eq $entry.Value) {
+            Remove-Item -Path "Env:$($entry.Key)" -ErrorAction SilentlyContinue
+        }
+    }
+}
 $sorted = $samples | Sort-Object
 $index = [Math]::Min($sorted.Count - 1,
                      [Math]::Ceiling($sorted.Count * 0.95) - 1)

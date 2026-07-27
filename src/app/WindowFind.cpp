@@ -203,8 +203,11 @@ void Window::drawFindBar(const Rect& pr) {
     const float y = pr.y + 6.0f;
     findBarRect_ = { x, y, w, h };
 
-    renderer_->fillRect(x, y, w, h, Color{ 30, 30, 36 });
-    renderer_->strokeRect(x, y, w, h, uiTheme_.accent, 1.0f);
+    const float radius = 6.0f * dpiScale_;
+    renderer_->fillRoundedRect(x + 3.0f, y + 4.0f, w, h, radius,
+                               uiTheme_.workspaceBg);
+    renderer_->fillRoundedRect(x, y, w, h, radius, uiTheme_.tabActiveBg);
+    renderer_->strokeRoundedRect(x, y, w, h, radius, uiTheme_.border, 1.0f);
 
     const float pad = 8.0f;
     const std::wstring shown = L"Find: " + findQuery_;

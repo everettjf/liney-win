@@ -541,14 +541,28 @@ void Window::rescanWorkspace() {
     // Empty intentionally disables discovery. Depending on the launch
     // directory made the sidebar silently change between shortcuts/shells.
     workspace_.scan(workspaceRoot_);
+    for (const std::wstring& p : workspaceExclusions_)
+        workspace_.removeRepoByPath(p);
     for (const std::wstring& p : projects_) workspace_.addProject(p);
 }
 
 void Window::addWorkspaceFolder() {
     std::wstring dir = pickFolder(hwnd_, L"Add a project folder to the workspace");
     if (dir.empty()) return;
+    dir = normalizeWorkspacePath(dir);
+    workspaceExclusions_.erase(
+        std::remove_if(workspaceExclusions_.begin(),
+                       workspaceExclusions_.end(),
+                       [&](const std::wstring& item) {
+                           return workspacePathsEqual(item, dir);
+                       }),
+        workspaceExclusions_.end());
     for (const std::wstring& p : projects_)
-        if (p == dir) return;  // already added
+        if (workspacePathsEqual(p, dir)) {
+            persistWorkspaceConfig();
+            rescanWorkspace();
+            return;
+        }
     projects_.push_back(dir);
     rememberRecentProject(dir);
     persistWorkspaceConfig();
@@ -575,9 +589,30 @@ void Window::rememberRecentProject(const std::wstring& path) {
 }
 
 void Window::removeProject(const Repo& repo) {
-    const std::wstring path = repo.path;
-    for (auto it = projects_.begin(); it != projects_.end();)
-        it = (*it == path) ? projects_.erase(it) : it + 1;
+    const std::wstring path = normalizeWorkspacePath(repo.path);
+    projects_.erase(
+        std::remove_if(projects_.begin(), projects_.end(),
+                       [&](const std::wstring& item) {
+                           return workspacePathsEqual(item, path);
+                       }),
+        projects_.end());
+
+    // A root-scanned Git repository would otherwise reappear after the next
+    // rescan/restart. Persist a path exclusion only when the root would
+    // discover it automatically; ordinary explicit folders need no tombstone.
+    Workspace rootOnly;
+    rootOnly.scan(workspaceRoot_);
+    const bool autoDiscovered = std::any_of(
+        rootOnly.repos().begin(), rootOnly.repos().end(),
+        [&](const Repo& item) {
+            return workspacePathsEqual(item.path, path);
+        });
+    if (autoDiscovered &&
+        std::none_of(workspaceExclusions_.begin(), workspaceExclusions_.end(),
+                     [&](const std::wstring& item) {
+                         return workspacePathsEqual(item, path);
+                     }))
+        workspaceExclusions_.push_back(path);
     workspace_.removeRepoByPath(path);
     persistWorkspaceConfig();
 }
@@ -605,6 +640,11 @@ void Window::persistWorkspaceConfig() {
         for (const std::wstring& p : projects_)
             projs.push(Json::str(wideToUtf8(p)));
         root.set("projects", std::move(projs));
+
+        Json exclusions = Json::array();
+        for (const std::wstring& p : workspaceExclusions_)
+            exclusions.push(Json::str(wideToUtf8(p)));
+        root.set("workspaceExclusions", std::move(exclusions));
 
         Json icons = Json::object();
         for (const auto& pi : projectIcons_)

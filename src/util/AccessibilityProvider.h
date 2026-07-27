@@ -4,8 +4,37 @@
 #include <unknwn.h> // COM's `interface` macro required by generated UIA headers
 #include <UIAutomation.h>
 
+#include <string>
+#include <vector>
+
 namespace liney {
 
+inline constexpr UINT kAccessibilityInvokeMessage = WM_APP + 0x41;
+
+enum class AccessibleElementId : int {
+    SidebarToggle = 1,
+    NewTab = 2,
+    TabOverflow = 3,
+    OpenFolder = 4,
+    KeepAwake = 5,
+    MainMenu = 6,
+    ClosePane = 7,
+};
+
+struct AccessibleElementInfo {
+    AccessibleElementId id{};
+    std::wstring name;
+    std::wstring automationId;
+    std::wstring helpText;
+    std::wstring accelerator;
+    std::wstring accessKey;
+    RECT clientRect{};
+    bool enabled = true;
+};
+
 IRawElementProviderSimple* createAccessibilityProvider(HWND hwnd);
+void updateAccessibilityProvider(
+    IRawElementProviderSimple* provider,
+    const std::vector<AccessibleElementInfo>& elements);
 
 } // namespace liney

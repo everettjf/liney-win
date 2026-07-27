@@ -7,25 +7,42 @@
 
 namespace liney {
 
+enum class ProjectKind {
+    Folder,
+    GitRepository,
+};
+
 // One checkout of a repo (the main worktree plus any `git worktree add`ed ones).
 struct Worktree {
     std::wstring path;
     std::wstring label;  // branch name or short path, for the sidebar
     GitWorktreeStatus status;
+    bool git = false;
 };
 
-// A git repository discovered in the workspace root.
+// A Workspace project. Explicit projects may be ordinary folders; projects
+// discovered below workspaceRoot are Git repositories.
 struct Repo {
     std::wstring name;
     std::wstring path;
+    ProjectKind kind = ProjectKind::Folder;
     std::vector<Worktree> worktrees;
     bool expanded = false;  // sidebar disclosure state
     bool loaded = false;    // worktrees fetched yet?
+
+    bool isGit() const { return kind == ProjectKind::GitRepository; }
 };
 
-// The sidebar's data model: git repositories found one level under a root
-// directory, each expandable to its worktrees. Worktrees are loaded lazily
-// (a `git worktree list` per repo) the first time a repo is expanded.
+// Normalize paths for stable, case-insensitive Workspace identity. This keeps
+// the same folder from appearing twice due to slash, case, or trailing-slash
+// differences in hand-edited configuration.
+std::wstring normalizeWorkspacePath(const std::wstring& path);
+bool workspacePathsEqual(const std::wstring& a, const std::wstring& b);
+bool isGitRepositoryPath(const std::wstring& path);
+
+// The sidebar's data model: Git repositories found one level under a root plus
+// explicitly added Git repositories or ordinary folders. Git worktrees are
+// loaded lazily the first time their repository is expanded.
 class Workspace {
 public:
     // Discover repos directly under `root` (dirs containing a .git entry).
@@ -42,7 +59,8 @@ public:
     std::vector<Repo>& repos() { return repos_; }
     const std::vector<Repo>& repos() const { return repos_; }
 
-    // Populate repo.worktrees via `git worktree list` (no-op if already loaded).
+    // Populate repo.worktrees via `git worktree list`. Ordinary folders have
+    // no worktree children and never invoke Git.
     void loadWorktrees(Repo& repo);
     void refreshStatus(Worktree& worktree);
 
