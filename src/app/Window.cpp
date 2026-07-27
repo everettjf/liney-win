@@ -174,8 +174,21 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
         GetEnvironmentVariableW(
             L"LINEY_TEST_WIDTH", exactTestSize,
             static_cast<DWORD>(_countof(exactTestSize))) > 0;
+    constexpr DWORD windowStyle = WS_OVERLAPPEDWINDOW;
     int w = useExactTestSize ? width : waW * 7 / 10;
     int h = useExactTestSize ? height : waH * 7 / 10;
+    if (useExactTestSize) {
+        // Visual fixtures specify the client/back-buffer dimensions. Native
+        // frame metrics differ between Windows Server 2022, Windows 2025 and
+        // desktop Windows, so passing these values directly to CreateWindow
+        // makes otherwise identical screenshots have different dimensions.
+        RECT outer{0, 0, width, height};
+        const UINT dpi = GetDpiForSystem();
+        if (AdjustWindowRectExForDpi(&outer, windowStyle, FALSE, 0, dpi)) {
+            w = outer.right - outer.left;
+            h = outer.bottom - outer.top;
+        }
+    }
     if (!useExactTestSize) {
         if (w < width) w = width;
         if (h < height) h = height;
@@ -189,7 +202,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     if (x < wa.left) x = wa.left;
     if (y < wa.top) y = wa.top;
 
-    hwnd_ = CreateWindowExW(0, kClassName, title, WS_OVERLAPPEDWINDOW,
+    hwnd_ = CreateWindowExW(0, kClassName, title, windowStyle,
                             x, y, w, h, nullptr, nullptr, hInstance, this);
     if (!hwnd_) return false;
     accessibilityProvider_ = createAccessibilityProvider(hwnd_);
