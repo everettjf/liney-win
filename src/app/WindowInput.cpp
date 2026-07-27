@@ -5,6 +5,8 @@
 
 #include <string>
 
+#include "core/RenderSignal.h"
+
 namespace liney {
 
 void Window::sendToActive(const char* data, size_t len) {
@@ -153,6 +155,36 @@ bool Window::onKeyDown(WPARAM vk) {
     if (alt && !ctrl) {
         Tab* t = activeTab();
         switch (vk) {
+        case 'B':
+            sidebarVisible_ = !sidebarVisible_;
+            markRenderDirty();
+            swallowNextChar_ = true;
+            return true;
+        case 'K':
+            openKeepAwakeMenu();
+            swallowNextChar_ = true;
+            return true;
+        case 'L':
+            if (tabOverflowRect_.w > 0.0f)
+                openTabOverflowMenu(
+                    static_cast<int>(tabOverflowRect_.right()),
+                    static_cast<int>(tabOverflowRect_.bottom()));
+            else
+                openCommandPalette();
+            swallowNextChar_ = true;
+            return true;
+        case 'M':
+            openMainMenu();
+            swallowNextChar_ = true;
+            return true;
+        case 'N':
+            executePaletteAction(1);
+            swallowNextChar_ = true;
+            return true;
+        case 'O':
+            openDirectoryMenu();
+            swallowNextChar_ = true;
+            return true;
         case VK_LEFT:  if (t) t->focusDir(SplitDir::Cols, false); swallowNextChar_ = true; return true;
         case VK_RIGHT: if (t) t->focusDir(SplitDir::Cols, true);  swallowNextChar_ = true; return true;
         case VK_UP:    if (t) t->focusDir(SplitDir::Rows, false); swallowNextChar_ = true; return true;

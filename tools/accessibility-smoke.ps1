@@ -59,9 +59,53 @@ try {
     if ($element.Current.AcceleratorKey -ne 'Ctrl+Shift+P') {
         throw "Command-palette accelerator is not exposed to UIA."
     }
+    $expectedButtons = @{
+        'Liney.Toolbar.Sidebar' = 'Alt+B'
+        'Liney.Toolbar.NewTab' = 'Alt+N'
+        'Liney.Toolbar.OpenFolder' = 'Alt+O'
+        'Liney.Toolbar.KeepAwake' = 'Alt+K'
+        'Liney.Toolbar.MoreCommands' = 'Alt+M'
+    }
+    $foundButtons = @{}
+    foreach ($entry in $expectedButtons.GetEnumerator()) {
+        $condition =
+            [System.Windows.Automation.PropertyCondition]::new(
+                [System.Windows.Automation.AutomationElement]::AutomationIdProperty,
+                $entry.Key)
+        $button = $element.FindFirst(
+            [System.Windows.Automation.TreeScope]::Descendants, $condition)
+        if (-not $button) {
+            throw "Missing UI Automation toolbar button: $($entry.Key)"
+        }
+        if ($button.Current.ControlType -ne
+            [System.Windows.Automation.ControlType]::Button) {
+            throw "$($entry.Key) is not exposed as a button."
+        }
+        if ($button.Current.AccessKey -ne $entry.Value) {
+            throw "$($entry.Key) access key is '$($button.Current.AccessKey)', expected '$($entry.Value)'."
+        }
+        if (-not $button.GetCurrentPropertyValue(
+                [System.Windows.Automation.AutomationElement]::IsInvokePatternAvailableProperty)) {
+            throw "$($entry.Key) does not expose the Invoke pattern."
+        }
+        $foundButtons[$entry.Key] = $button
+    }
+    $newTabInvoke = $foundButtons['Liney.Toolbar.NewTab'].GetCurrentPattern(
+        [System.Windows.Automation.InvokePattern]::Pattern)
+    $newTabInvoke.Invoke()
+    Start-Sleep -Milliseconds 150
+    if ($process.HasExited) { throw 'UI Automation Invoke caused the app to exit.' }
+
     [void][Microsoft.VisualBasic.Interaction]::AppActivate($process.Id)
     [System.Windows.Forms.SendKeys]::SendWait('^+p')
     Start-Sleep -Milliseconds 150
+    [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
+    [System.Windows.Forms.SendKeys]::SendWait('%m')
+    Start-Sleep -Milliseconds 100
+    [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
+    [System.Windows.Forms.SendKeys]::SendWait('%o')
+    Start-Sleep -Milliseconds 100
+    [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
     if ($process.HasExited) { throw 'Keyboard command caused the app to exit.' }
 } finally {
     if ($process -and -not $process.HasExited) {
@@ -73,4 +117,4 @@ try {
     Remove-Item -LiteralPath (Join-Path $testConfig 'config.json') -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath (Join-Path $testConfig 'config.json.bak') -Force -ErrorAction SilentlyContinue
 }
-Write-Host 'UI Automation identity and keyboard command-palette smoke passed.'
+Write-Host 'UI Automation toolbar identity, Invoke, access keys and command-palette smoke passed.'

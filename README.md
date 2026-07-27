@@ -68,12 +68,21 @@ nothing but the OS.
 **🗂️ Workspace** — liney's differentiator
 - Tabs (with a **× close button** and right-click **close to the right / left /
   others / all**) + binary **splits** (drag dividers to resize, drag tabs to
-  reorder), `Alt+Arrows` to move focus
+  reorder), `Alt+Arrows` to move focus. Crowded tab strips keep the active tab
+  visible; every open tab is searchable from `Ctrl+Shift+P`.
+- Split layouts show an active-pane count/close control. Closing one pane, the
+  whole tab, other panes, or other tabs is also available by name in the
+  command palette, with consolidated running-command warnings.
 - **Pane zoom** (`Ctrl+Shift+Z`) maximizes the focused pane; **Equalize**
   (`Ctrl+Shift+E`) evens them out — so a deep split layout stays workable
-- A **repository** sidebar with **per-project icons**, expandable to **worktrees**
-- **Manage projects**: the WORKSPACE **+** adds a project folder; right-click a
-  project for **New worktree… / Set icon… / Remove from workspace** (persisted)
+- A **folder + Git repository** sidebar with per-project icons. Ordinary
+  folders open directly; Git repositories expand into worktrees with branch,
+  ahead/behind and changed-file status.
+- **Manage projects**: the WORKSPACE **+** adds either kind. Git projects expose
+  **New worktree… / Review changes / Refresh Git status**; every project offers
+  **Open / Open folder in File Explorer / Set icon… / Remove from workspace**.
+  Removing an
+  auto-discovered repository stays persisted across rescans.
 - A right-side **folder tree** that follows the focused pane
 - **SSH** hosts and **agent** sessions, each with its own icon, one click to open
 - **Layout persistence** — tabs + split tree + per-pane cwd restored next launch
@@ -109,7 +118,9 @@ nothing but the OS.
 - **Named workspace snapshots** and isolated Agent worktrees with Git/test/review
   actions; Agent sessions remain available after exit for inspection
 - **Fuzzy command palette** (`Ctrl+Shift+P`) searches actions, shell profiles,
-  workspaces, worktrees, recent projects, SSH hosts and agents
+  workspaces, worktrees, recent projects, SSH hosts and agents. Results expose
+  categories and unavailable-action reasons; use `tabs:`, `pane:`, `git:`,
+  `ssh:` or `agent:` to filter.
 - **Flexible tabs and panes**: pin, rename or duplicate tabs; swap panes or move
   a pane into its own tab, with tab metadata preserved in workspace snapshots
 
@@ -155,10 +166,12 @@ The first build fetches Ghostty and compiles `libghostty-vt`, so it takes a whil
 | Key | Action |
 |---|---|
 | `Ctrl+Shift+T` / `Ctrl+Shift+W` | New tab / close current pane |
-| `Alt+D` / `Shift+Alt+D` | Split side by side (left∣right) / stacked (top/bottom) |
+| `Alt+D` / `Shift+Alt+D` | Split right (left∣right) / split down (top/bottom) |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous tab |
 | `Ctrl+1`…`Ctrl+8` / `Ctrl+9` | Jump to tab N / last tab |
 | `Alt+Arrows` | Move focus between split panes |
+| `Alt+B` / `Alt+N` / `Alt+L` | Sidebar / new tab / all tabs |
+| `Alt+O` / `Alt+K` / `Alt+M` | Open folder menu / keep-awake menu / main menu |
 | `Ctrl+Shift+B` / `Ctrl+Shift+F` | Toggle the left sidebar / right files panel |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | Copy selection / paste |
 | `Ctrl+C` / `Ctrl+V` | Copy when text is selected (else ^C) / paste |
@@ -200,6 +213,8 @@ The first run writes `%USERPROFILE%\.liney\config.json` (mirroring macOS liney's
 |---|---|
 | `shell` | Shell for new tabs (`powershell.exe` / `pwsh.exe` / `wsl.exe`; `wsl tmux` for tmux) |
 | `workspaceRoot` | Directory scanned for repos; empty disables discovery and shows explicit projects only |
+| `projects` | Explicit ordinary folders or Git repositories shown in Workspace |
+| `workspaceExclusions` | Auto-discovered repositories intentionally hidden from Workspace |
 | `keybindings` | Object mapping action names to chords such as `Ctrl+Shift+P`; duplicate chords are reported and ignored |
 | `unixTools` | Append Git's `usr\bin` to PATH so `ls`/`cat`/`grep`/… work |
 | `copyOnSelect` | Copy to the clipboard as soon as a selection ends (PuTTY-style) |
@@ -226,7 +241,8 @@ Custom shortcut action names include `newTab`, `splitRight`, `splitDown`,
 `toggleSidebar`, `toggleFiles`, `zoomPane`, `equalize`, `find`, `settings`,
 `workspaceSnapshots`, `checkUpdates`, `keepAwake`, `commandPalette`,
 `newWindow`, `newAdminWindow`, `searchHistory`, `exportDiagnostics`,
-`renameTab`, `pinTab`, `duplicateTab`, `swapPane`, `movePane`, and `detachPane`.
+`renameTab`, `pinTab`, `duplicateTab`, `swapPane`, `movePane`, `detachPane`,
+`closePane`, `closeTab`, `closeOtherPanes`, and `closeOtherTabs`.
 
 The window layout is saved to `%USERPROFILE%\.liney\layout.json` and restored on
 the next launch.

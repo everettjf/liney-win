@@ -58,6 +58,8 @@ struct Config {
     std::vector<std::pair<std::wstring, std::wstring>> projectIcons;
     // Explicit project folders added to the sidebar (besides scanned ones).
     std::vector<std::wstring> projects;
+    // Auto-discovered repositories explicitly removed from the sidebar.
+    std::vector<std::wstring> workspaceExclusions;
     std::vector<std::wstring> recentProjects;
 };
 

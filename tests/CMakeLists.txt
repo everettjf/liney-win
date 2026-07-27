@@ -11,6 +11,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(liney_tests
   test_main.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../src/app/TabStripLayout.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/vt/OscParser.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/workspace/GitStatusParser.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/util/Base64.cpp
@@ -20,6 +21,7 @@ add_executable(liney_tests
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/core/Update.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/core/WindowGeometry.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/core/Ai.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../src/core/CommandPalette.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/util/Json.cpp)
 target_include_directories(liney_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 
