@@ -21,7 +21,10 @@ fully self-drawn **Win32 / Direct2D**. Builds with **MSVC + Zig**.
 
 </div>
 
-![liney-win screenshot](docs/screenshot.png)
+<p align="center">
+  <img src="docs/screenshot.png"
+       alt="liney-win workspace with repositories, terminal tabs, and file browser" />
+</p>
 
 ---
 
@@ -126,9 +129,19 @@ nothing but the OS.
 
 ## 📸 Screenshots
 
-| Workspace + sidebar | Split panes |
-|---|---|
-| ![workspace](docs/screenshot.png) | ![splits](docs/screenshot-splits.png) |
+### Split panes
+
+Keep multiple shells visible, move focus with the keyboard, and resize the layout
+without leaving the workspace.
+
+![liney-win split-pane layout](docs/screenshot-splits.png)
+
+### Command palette
+
+Search tabs, panes, Git actions, worktrees, SSH hosts, agents, and settings from
+one keyboard-first interface.
+
+![liney-win command palette](docs/screenshot-palette.png)
 
 ## 📦 Install
 

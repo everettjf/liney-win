@@ -20,7 +20,10 @@ Direct2D**。用 **MSVC + Zig** 构建。
 
 </div>
 
-![liney-win 截图](docs/screenshot.png)
+<p align="center">
+  <img src="docs/screenshot.png"
+       alt="liney-win 工作区、终端标签与文件浏览器" />
+</p>
 
 ---
 
@@ -84,9 +87,17 @@ Direct2D**。用 **MSVC + Zig** 构建。
 
 ## 📸 截图
 
-| 工作区 + 侧边栏 | 分屏 |
-|---|---|
-| ![workspace](docs/screenshot.png) | ![splits](docs/screenshot-splits.png) |
+### 多 Pane 分屏
+
+多个 Shell 同屏显示，可用键盘切换焦点、拖动调整布局，全程不离开当前工作区。
+
+![liney-win 多 Pane 分屏](docs/screenshot-splits.png)
+
+### 命令面板
+
+在一个键盘优先的入口中搜索标签、Pane、Git 操作、worktree、SSH、Agent 与设置。
+
+![liney-win 命令面板](docs/screenshot-palette.png)
 
 ## 📦 安装
 
