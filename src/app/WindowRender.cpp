@@ -80,14 +80,15 @@ void Window::drawLeftSidebar(const Rect& r) {
     };
 
     // A section header ("WORKSPACE" / "SSH" / "AGENTS"), vertically centered.
-    auto header = [&](const wchar_t* txt) {
+    auto header = [&](const wchar_t* txt, float lineRight) {
         renderer_->drawText(txt, r.x + pad, y + tDY, r.w - pad * 2.0f, th,
                             uiTheme_.sidebarHdr, true);
         const float lineX = r.x + pad + metrics_.cellW *
             (static_cast<float>(std::wstring(txt).size()) + 2.0f);
-        if (lineX < r.right() - pad)
+        lineRight = std::min(lineRight, r.right() - pad);
+        if (lineX < lineRight)
             renderer_->fillRect(lineX, y + rowH * 0.5f,
-                                r.right() - pad - lineX, 1.0f, uiTheme_.border);
+                                lineRight - lineX, 1.0f, uiTheme_.border);
     };
     // Draw a small vector icon at ix, then the label after it — both centered
     // vertically against the (roomier) row height.
@@ -100,20 +101,24 @@ void Window::drawLeftSidebar(const Rect& r) {
                             false);
     };
 
-    header(L"WORKSPACE");
+    const float workspaceAddW = rowH;
+    const float workspaceAddX =
+        r.x + r.w - workspaceAddW - pad * 0.5f;
+    header(L"WORKSPACE", workspaceAddX - 6.0f * dpiScale_);
     // "+" add-project button at the right of the header row.
     {
-        const float bw = rowH;
-        const float bx = r.x + r.w - bw - pad * 0.5f;
+        const float bw = workspaceAddW;
+        const float bx = workspaceAddX;
         workspaceAddRect_ = { bx, y, bw, rowH };
         if (hot(workspaceAddRect_))
             renderer_->fillRoundedRect(
                 bx + 4.0f, y + 3.0f, bw - 8.0f, rowH - 6.0f,
                 std::min(6.0f * dpiScale_, rowH * 0.22f),
                 uiTheme_.tabActiveBg);
-        renderer_->drawText(L"+", bx + bw * 0.30f, y + tDY, bw, th,
-                            hot(workspaceAddRect_) ? uiTheme_.text : uiTheme_.accent,
-                            true);
+        renderer_->drawTextCentered(
+            L"+", workspaceAddRect_.x, workspaceAddRect_.y,
+            workspaceAddRect_.w, workspaceAddRect_.h,
+            hot(workspaceAddRect_) ? uiTheme_.text : uiTheme_.accent, true);
     }
     y += rowH + 4.0f;
 
@@ -129,7 +134,7 @@ void Window::drawLeftSidebar(const Rect& r) {
         y += rowH;
         if (!recentProjects_.empty()) {
             y += metrics_.sectionGap();
-            header(L"RECENT");
+            header(L"RECENT", r.right() - pad);
             y += rowH + 4.0f;
             for (size_t i = 0; i < recentProjects_.size() && i < 5; ++i) {
                 if (y > r.bottom()) break;
@@ -221,7 +226,7 @@ void Window::drawLeftSidebar(const Rect& r) {
     // ---- SSH: configured hosts; click to open `ssh <host>` in a new tab -----
     if (!sshHosts_.empty()) {
         y += metrics_.sectionGap();
-        header(L"SSH");
+        header(L"SSH", r.right() - pad);
         y += rowH + 4.0f;
         for (int i = 0; i < static_cast<int>(sshHosts_.size()); ++i) {
             if (y > r.bottom()) break;
@@ -237,7 +242,7 @@ void Window::drawLeftSidebar(const Rect& r) {
     // ---- AGENTS: configured agent sessions; click to open in a new tab ------
     if (!agents_.empty()) {
         y += metrics_.sectionGap();
-        header(L"AGENTS");
+        header(L"AGENTS", r.right() - pad);
         y += rowH + 4.0f;
         for (int i = 0; i < static_cast<int>(agents_.size()); ++i) {
             if (y > r.bottom()) break;
@@ -432,10 +437,10 @@ void Window::drawTabBar(const Rect& r) {
         renderer_->fillRoundedRect(
             r.x + controlInset, r.y + controlInset, toggleW - 2 * controlInset,
             r.h - 2 * controlInset, radius * 0.75f, hoverBg);
-    renderer_->drawText(sidebarEffectiveVisible_ ? L"‹" : L"›",
-                        r.x + toggleW * 0.34f, textY, toggleW,
-                        metrics_.cellH, toggleHot ? uiTheme_.text : uiTheme_.dim,
-                        true);
+    renderer_->drawTextCentered(
+        sidebarEffectiveVisible_ ? L"‹" : L"›", sidebarToggleRect_.x,
+        sidebarToggleRect_.y, sidebarToggleRect_.w, sidebarToggleRect_.h,
+        toggleHot ? uiTheme_.text : uiTheme_.dim, true);
 
     const float tabsStart = r.x + toggleW;
     const float plusW = std::max(metrics_.cellW * 3.0f, 34.0f * dpiScale_);
@@ -523,9 +528,9 @@ void Window::drawTabBar(const Rect& r) {
                     closeRect.h - controlInset * 1.5f, radius * 0.65f,
                     blendColor(hoverBg, uiTheme_.text,
                                light ? 0.05f : 0.08f));
-            renderer_->drawText(L"×", closeRect.x + closeW * 0.28f, textY,
-                                closeW, metrics_.cellH,
-                                hotClose ? uiTheme_.text : uiTheme_.dim, true);
+            renderer_->drawTextCentered(
+                L"×", closeRect.x, closeRect.y, closeRect.w, closeRect.h,
+                hotClose ? uiTheme_.text : uiTheme_.dim, true);
         }
         tabRects_[i] = {x, r.y, tw, r.h};
         visibleEnd = item.x + item.width;
@@ -541,9 +546,10 @@ void Window::drawTabBar(const Rect& r) {
                 controlsX + controlInset, r.y + controlInset,
                 overflowW - 2 * controlInset, r.h - 2 * controlInset,
                 radius * 0.75f, hoverBg);
-        renderer_->drawText(L"⋯", controlsX + overflowW * 0.27f, textY,
-                            overflowW, metrics_.cellH,
-                            overflowHot ? uiTheme_.text : uiTheme_.dim, true);
+        renderer_->drawTextCentered(
+            L"⋯", tabOverflowRect_.x, tabOverflowRect_.y, tabOverflowRect_.w,
+            tabOverflowRect_.h,
+            overflowHot ? uiTheme_.text : uiTheme_.dim, true);
         controlsX += overflowW;
     }
 
@@ -558,9 +564,9 @@ void Window::drawTabBar(const Rect& r) {
             plusX + controlInset, r.y + controlInset,
             plusW - 2 * controlInset, r.h - 2 * controlInset,
             radius * 0.75f, hoverBg);
-    renderer_->drawText(L"+", plusX + plusW * 0.34f, textY, plusW,
-                        metrics_.cellH, plusHot ? uiTheme_.text : uiTheme_.dim,
-                        true);
+    renderer_->drawTextCentered(L"+", plusRect_.x, plusRect_.y, plusRect_.w,
+                                plusRect_.h,
+                                plusHot ? uiTheme_.text : uiTheme_.dim, true);
 
     // ---- top-right contextual menus: folder, coffee, more -----------------
     // Mask any overflowing tab title before painting the fixed toolbar.
@@ -748,9 +754,9 @@ void Window::drawPanes(const Rect& r) {
                 paneCloseRect_.x + 3.0f, y + 3.0f, closeW - 6.0f, h - 6.0f,
                 radius * 0.75f,
                 blendColor(uiTheme_.tabActiveBg, uiTheme_.text, 0.12f));
-        renderer_->drawText(L"×", paneCloseRect_.x + closeW * 0.31f,
-                            y + 3.0f, closeW, metrics_.cellH,
-                            closeHot ? uiTheme_.text : uiTheme_.dim, true);
+        renderer_->drawTextCentered(
+            L"×", paneCloseRect_.x, paneCloseRect_.y, paneCloseRect_.w,
+            paneCloseRect_.h, closeHot ? uiTheme_.text : uiTheme_.dim, true);
     }
 
     // A solid accent "ZOOM" pill in the zoomed pane's top-right corner so it's

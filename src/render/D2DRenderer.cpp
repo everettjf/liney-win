@@ -558,7 +558,32 @@ void D2DRenderer::drawText(const std::wstring& text, float x, float y,
     brush_->SetColor(toColorF(c));
     d2dContext_->DrawText(text.c_str(), static_cast<UINT32>(text.size()), fmt,
                           D2D1::RectF(x, y, x + maxW, y + rowH), brush_.Get(),
+                           D2D1_DRAW_TEXT_OPTIONS_CLIP);
+}
+
+void D2DRenderer::drawTextCentered(const std::wstring& text, float x, float y,
+                                   float w, float h, const Color& c, bool bold) {
+    if (!d2dContext_ || !brush_ || text.empty() || w <= 0.0f || h <= 0.0f)
+        return;
+    IDWriteTextFormat* fmt =
+        bold && uiTextFormatBold_ ? uiTextFormatBold_.Get()
+                                 : (uiTextFormat_ ? uiTextFormat_.Get()
+                                                  : textFormat_.Get());
+    if (!fmt) return;
+
+    const DWRITE_TEXT_ALIGNMENT oldTextAlignment = fmt->GetTextAlignment();
+    const DWRITE_PARAGRAPH_ALIGNMENT oldParagraphAlignment =
+        fmt->GetParagraphAlignment();
+    fmt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+    fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+
+    brush_->SetColor(toColorF(c));
+    d2dContext_->DrawText(text.c_str(), static_cast<UINT32>(text.size()), fmt,
+                          D2D1::RectF(x, y, x + w, y + h), brush_.Get(),
                           D2D1_DRAW_TEXT_OPTIONS_CLIP);
+
+    fmt->SetTextAlignment(oldTextAlignment);
+    fmt->SetParagraphAlignment(oldParagraphAlignment);
 }
 
 bool D2DRenderer::drawImage(const std::wstring& path, float x, float y, float w,

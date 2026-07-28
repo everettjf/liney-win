@@ -47,6 +47,8 @@ public:
                            const Color& c, float thickness) override;
     void drawText(const std::wstring& text, float x, float y, float maxW,
                   float rowH, const Color& c, bool bold) override;
+    void drawTextCentered(const std::wstring& text, float x, float y, float w,
+                          float h, const Color& c, bool bold) override;
     bool drawImage(const std::wstring& path, float x, float y, float w,
                    float h) override;
     void drawIcon(IconKind kind, float x, float y, float size,

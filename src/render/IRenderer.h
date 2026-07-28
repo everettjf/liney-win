@@ -63,6 +63,10 @@ public:
     // Single line of UI text, clipped to [x, x+maxW] x [y, y+rowH].
     virtual void drawText(const std::wstring& text, float x, float y, float maxW,
                           float rowH, const Color& c, bool bold = false) = 0;
+    // Single-line UI glyph/text centered in the supplied control rectangle.
+    virtual void drawTextCentered(const std::wstring& text, float x, float y,
+                                  float w, float h, const Color& c,
+                                  bool bold = false) = 0;
 
     // Draw an image file (png/ico/…) into the rect, loaded + cached by path.
     // Returns false if the image couldn't be loaded.
