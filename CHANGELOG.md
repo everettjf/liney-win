@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.10.5] - 2026-07-28
+
+- Show the pane focus marker only when a tab is split, avoiding a redundant
+  accent line above single-pane terminals.
 - Added a dedicated Microsoft Store build using the Partner Center identity
   assigned to Liney Terminal.
 - Disabled GitHub update checks, installer downloads, and related UI in Store

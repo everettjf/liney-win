@@ -683,9 +683,10 @@ void Window::drawPanes(const Rect& r) {
         }
         const bool focused = (leaf == t->active());
         renderer_->strokeRect(pr.x, pr.y, pr.w, pr.h, uiTheme_.border, 1.0f);
-        // A short edge marker identifies keyboard focus without surrounding
-        // the entire terminal in a high-salience neon rectangle.
-        if (focused) {
+        // In split layouts, a short edge marker identifies keyboard focus
+        // without surrounding the entire terminal in a high-salience neon
+        // rectangle. A single pane needs no extra focus decoration.
+        if (focused && t->isSplit()) {
             const float marker = std::min(pr.w, 42.0f * dpiScale_);
             renderer_->fillRoundedRect(
                 pr.x + (pr.w - marker) * 0.5f, pr.y,
