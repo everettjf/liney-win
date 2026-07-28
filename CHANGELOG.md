@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.10.4] - 2026-07-28
+
+- Added a categorized picker with 100 built-in project icons and automatic
+  random icon assignment for newly added projects.
+- Preserved legacy PNG/ICO project icon paths while documenting stable
+  `builtin:<id>` configuration values.
+- Hardened self-updates with a `SHA256SUMS.txt` fallback when GitHub's native
+  release-asset digest is unavailable; malformed, missing or ambiguous
+  checksums are rejected before download and execution.
+- Corrected the roadmap to reflect that terminal resize reflow is complete.
+
 ## [0.10.3] - 2026-07-28
 
 - Added explicit responsive panel state so narrow-window auto-collapse is

@@ -1,5 +1,8 @@
 #include "core/Update.h"
 
+#include <cctype>
+#include <sstream>
+
 namespace liney {
 namespace {
 
@@ -41,6 +44,43 @@ bool parseTrustedInstallerUrl(const std::wstring& url, std::wstring& host,
     path = url.substr(pathStart);
     return path.find(L"..") == std::wstring::npos &&
            path.find(L'\\') == std::wstring::npos;
+}
+
+std::string parseReleaseSha256(const std::string& manifest,
+                               const std::string& assetName) {
+    if (assetName.empty() || assetName.find_first_of("/\\\r\n") !=
+                                 std::string::npos)
+        return {};
+
+    std::istringstream lines(manifest);
+    std::string line;
+    std::string result;
+    while (std::getline(lines, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line.size() < 67) continue;
+
+        const std::string digest = line.substr(0, 64);
+        bool valid = true;
+        for (char ch : digest)
+            if (!std::isxdigit(static_cast<unsigned char>(ch))) {
+                valid = false;
+                break;
+            }
+        if (!valid || line[64] != ' ') continue;
+
+        size_t nameStart = 65;
+        if (nameStart < line.size() &&
+            (line[nameStart] == ' ' || line[nameStart] == '*'))
+            ++nameStart;
+        if (line.substr(nameStart) != assetName) continue;
+        if (!result.empty()) return {};  // ambiguous duplicate entry
+
+        result = digest;
+        for (char& ch : result)
+            ch = static_cast<char>(
+                std::tolower(static_cast<unsigned char>(ch)));
+    }
+    return result;
 }
 
 bool updatePreservesPublisherTrust(bool currentSigned, bool candidateSigned,

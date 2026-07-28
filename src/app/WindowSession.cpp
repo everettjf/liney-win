@@ -124,20 +124,42 @@ void Window::checkForUpdates(bool quiet) {
         } else if (versionNewer(tag, local)) {
             // Find the installer asset (prefer *setup.exe, else any .exe;
             // case-insensitive).
-            std::string assetUrl, assetDigest;
+            std::string assetUrl, assetDigest, assetName, checksumUrl;
+            bool selectedSetup = false;
             const Json& assets = j["assets"];
             if (assets.isArray())
                 for (const Json& a : assets.items()) {
-                    std::string name = a["name"].asString();
+                    const std::string originalName = a["name"].asString();
+                    std::string name = originalName;
                     for (char& ch : name) ch = static_cast<char>(std::tolower(
                         static_cast<unsigned char>(ch)));
+                    if (name == "sha256sums.txt")
+                        checksumUrl = a["browser_download_url"].asString();
                     if (name.size() >= 4 &&
-                        name.compare(name.size() - 4, 4, ".exe") == 0) {
+                        name.compare(name.size() - 4, 4, ".exe") == 0 &&
+                        (!selectedSetup ||
+                         name.find("setup") != std::string::npos)) {
                         assetUrl = a["browser_download_url"].asString();
                         assetDigest = a["digest"].asString();
-                        if (name.find("setup") != std::string::npos) break;
+                        assetName = originalName;
+                        selectedSetup =
+                            name.find("setup") != std::string::npos;
                     }
                 }
+            if (!assetUrl.empty() &&
+                (assetDigest.rfind("sha256:", 0) != 0 ||
+                 assetDigest.size() != 71) &&
+                !checksumUrl.empty()) {
+                std::wstring checksumHost, checksumPath;
+                if (parseTrustedInstallerUrl(utf8ToWide(checksumUrl),
+                                             checksumHost, checksumPath)) {
+                    const std::string manifest =
+                        httpsGet(checksumHost, checksumPath);
+                    const std::string fallback =
+                        parseReleaseSha256(manifest, assetName);
+                    if (!fallback.empty()) assetDigest = "sha256:" + fallback;
+                }
+            }
             msg = L"Update available: " + utf8ToWide(tag);
             if (!assetUrl.empty() && assetDigest.rfind("sha256:", 0) == 0 &&
                 assetDigest.size() == 71) {
@@ -147,7 +169,7 @@ void Window::checkForUpdates(bool quiet) {
             } else if (assetUrl.empty()) {
                 msg += L" (no installer asset)";
             } else {
-                msg += L" (installer has no SHA-256 digest; refusing unsafe update)";
+                msg += L" (no valid SHA-256 checksum; refusing unsafe update)";
             }
         } else if (!quiet) {
             msg = std::wstring(L"You're up to date (") + kAppVersion + L")";

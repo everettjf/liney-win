@@ -288,6 +288,23 @@ void testUpdatePolicy() {
     check(!liney::parseTrustedInstallerUrl(
               L"https://github.com/other/repo/releases/download/v1/a.exe", host, path),
           "foreign GitHub repository rejected");
+    const std::string digest(64, 'A');
+    check(liney::parseReleaseSha256(
+              digest + "  liney-setup.exe\r\n", "liney-setup.exe") ==
+              std::string(64, 'a'),
+          "release checksum manifest accepts and normalizes exact asset");
+    check(liney::parseReleaseSha256(
+              std::string(63, 'a') + "z  liney-setup.exe\n",
+              "liney-setup.exe").empty(),
+          "malformed release checksum is rejected");
+    check(liney::parseReleaseSha256(
+              digest + "  another.exe\n", "liney-setup.exe").empty(),
+          "missing installer checksum is rejected");
+    check(liney::parseReleaseSha256(
+              digest + "  liney-setup.exe\n" +
+              std::string(64, 'b') + " *liney-setup.exe\n",
+              "liney-setup.exe").empty(),
+          "ambiguous duplicate installer checksum is rejected");
     check(liney::updatePreservesPublisherTrust(false, false, false),
           "unsigned install may receive checksum-verified unsigned update");
     check(liney::updatePreservesPublisherTrust(false, true, false),
