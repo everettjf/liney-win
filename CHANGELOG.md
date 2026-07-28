@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+- Added a dedicated Microsoft Store build using the Partner Center identity
+  assigned to Liney Terminal.
+- Disabled GitHub update checks, installer downloads, and related UI in Store
+  packages so updates are delivered exclusively by Microsoft Store.
+- Added the public privacy policy required for Store submission.
+
 ## [0.10.4] - 2026-07-28
 
 - Added a categorized picker with 100 built-in project icons and automatic

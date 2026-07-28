@@ -122,7 +122,9 @@ void resetActivePage(State* st) {
         SendMessageW(st->unixTools, BM_SETCHECK, BST_CHECKED, 0);
         SendMessageW(st->rememberLayout, BM_SETCHECK, BST_UNCHECKED, 0);
         SendMessageW(st->splitWorkspaceDir, BM_SETCHECK, BST_UNCHECKED, 0);
+#ifndef LINEY_STORE_BUILD
         SendMessageW(st->autoUpdate, BM_SETCHECK, BST_CHECKED, 0);
+#endif
         break;
     case 2:
         SetWindowTextW(st->root, L"");
@@ -592,9 +594,11 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
         L"New splits open in the workspace / home dir (else inherit the pane's)",
         v.splitUseWorkspaceDir, r);
     r += 22;
+#ifndef LINEY_STORE_BUILD
     st.autoUpdate = checkbox(
         kIdAutoUpdate, L"Check for stable updates when Liney starts",
         v.checkForUpdatesOnStartup, r);
+#endif
 
     // ---- Workspace --------------------------------------------------------
     st.buildingPage = 2;
@@ -734,8 +738,12 @@ bool showSettingsDialog(HWND owner, SettingsValues& v) {
             SendMessageW(st.rememberLayout, BM_GETCHECK, 0, 0) == BST_CHECKED;
         v.splitUseWorkspaceDir =
             SendMessageW(st.splitWorkspaceDir, BM_GETCHECK, 0, 0) == BST_CHECKED;
+#ifdef LINEY_STORE_BUILD
+        v.checkForUpdatesOnStartup = false;
+#else
         v.checkForUpdatesOnStartup =
             SendMessageW(st.autoUpdate, BM_GETCHECK, 0, 0) == BST_CHECKED;
+#endif
         const int provider = static_cast<int>(
             SendMessageW(st.aiProvider, CB_GETCURSEL, 0, 0));
         static const wchar_t* providers[] = {L"off", L"openai", L"codex", L"custom"};

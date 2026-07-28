@@ -247,7 +247,11 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
     multiLinePasteWarning_ = cfg.multiLinePasteWarning;
     rememberLayout_ = cfg.rememberLayout;
     splitUseWorkspaceDir_ = cfg.splitUseWorkspaceDir;
+#ifdef LINEY_STORE_BUILD
+    checkForUpdatesOnStartup_ = false;
+#else
     checkForUpdatesOnStartup_ = cfg.checkForUpdatesOnStartup;
+#endif
     aiProvider_ = cfg.aiProvider;
     aiModel_ = cfg.aiModel;
     aiEndpoint_ = cfg.aiEndpoint;
@@ -468,7 +472,9 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
             L"Welcome to Liney", MB_YESNO | MB_ICONINFORMATION | MB_DEFBUTTON1);
         if (configure == IDYES) openSettingsDialog();
     }
+#ifndef LINEY_STORE_BUILD
     if (checkForUpdatesOnStartup_ && !headless) checkForUpdates(true);
+#endif
     return true;
 }
 
@@ -1451,7 +1457,11 @@ void Window::openSettingsDialog() {
     multiLinePasteWarning_ = v.multiLinePasteWarning;
     rememberLayout_ = v.rememberLayout;
     splitUseWorkspaceDir_ = v.splitUseWorkspaceDir;
+#ifdef LINEY_STORE_BUILD
+    checkForUpdatesOnStartup_ = false;
+#else
     checkForUpdatesOnStartup_ = v.checkForUpdatesOnStartup;
+#endif
     aiProvider_ = v.aiProvider;
     aiModel_ = v.aiModel;
     aiIncludeCwd_ = v.aiIncludeCwd;
@@ -1505,7 +1515,9 @@ void Window::openSettingsDialog() {
         j.set("unixTools", Json::boolean(unixToolsEnabled_));
         j.set("rememberLayout", Json::boolean(rememberLayout_));
         j.set("splitUseWorkspaceDir", Json::boolean(splitUseWorkspaceDir_));
+#ifndef LINEY_STORE_BUILD
         j.set("checkForUpdatesOnStartup", Json::boolean(checkForUpdatesOnStartup_));
+#endif
         Json ai = j["ai"].isObject() ? j["ai"] : Json::object();
         ai.set("provider", Json::str(wideToUtf8(aiProvider_)));
         ai.set("model", Json::str(wideToUtf8(aiModel_)));
@@ -1863,7 +1875,9 @@ void Window::openMainMenu() {
     AppendMenuW(support, MF_STRING, 20, L"Export diagnostic bundle…");
     AppendMenuW(tools, MF_POPUP, reinterpret_cast<UINT_PTR>(support),
                 L"Support & diagnostics");
+#ifndef LINEY_STORE_BUILD
     AppendMenuW(tools, MF_STRING, 8, L"Check for updates\tCtrl+Shift+U");
+#endif
     AppendMenuW(m, MF_POPUP, reinterpret_cast<UINT_PTR>(tools), L"Tools");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING, 11, L"Settings…\tCtrl+,");
@@ -1888,7 +1902,9 @@ void Window::openMainMenu() {
     case 5: splitActive(SplitDir::Cols); break;
     case 6: splitActive(SplitDir::Rows); break;
     case 7: openConfigFile(); break;
+#ifndef LINEY_STORE_BUILD
     case 8: checkForUpdates(); break;
+#endif
     case 9: openFind(); break;
     case 10: chooseFontDialog(); break;
     case 11: openSettingsDialog(); break;

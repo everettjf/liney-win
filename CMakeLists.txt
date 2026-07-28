@@ -3,6 +3,8 @@ project(liney_win LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+option(LINEY_STORE_BUILD
+  "Build the Microsoft Store package without external self-updates" OFF)
 
 # Source files are UTF-8; tell MSVC so wide literals (em-dash, ellipsis, …) are
 # decoded correctly instead of as the system codepage (which caused mojibake in
@@ -82,6 +84,9 @@ target_include_directories(liney_win PRIVATE src)
 target_compile_definitions(liney_win PRIVATE
   UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN
   WINVER=0x0A00 _WIN32_WINNT=0x0A00)
+if(LINEY_STORE_BUILD)
+  target_compile_definitions(liney_win PRIVATE LINEY_STORE_BUILD=1)
+endif()
 
 target_link_libraries(liney_win PRIVATE
   d2d1 dwrite d3d11 d3dcompiler dxgi imm32 winhttp bcrypt windowscodecs ole32 oleaut32

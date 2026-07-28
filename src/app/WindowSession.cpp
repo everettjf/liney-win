@@ -104,6 +104,11 @@ void Window::pollNotifications() {
 }
 
 void Window::checkForUpdates(bool quiet) {
+#ifdef LINEY_STORE_BUILD
+    if (!quiet)
+        showBalloon(L"Liney", L"Updates are delivered by Microsoft Store");
+    return;
+#else
     if (!quiet) showBalloon(L"Liney", L"Checking for updates…");
     // Query GitHub off the UI thread; renderFrame shows the result + prompt.
     updateThreads_.emplace_back([this, quiet]() {
@@ -183,10 +188,17 @@ void Window::checkForUpdates(bool quiet) {
         }
         updateReady_ = true;
     });
+#endif
 }
 
 void Window::startDownloadAndInstall(const std::wstring& url,
                                      const std::string& sha256) {
+#ifdef LINEY_STORE_BUILD
+    (void)url;
+    (void)sha256;
+    showBalloon(L"Liney", L"Updates are delivered by Microsoft Store");
+    return;
+#else
     std::wstring host, path;
     if (!parseTrustedInstallerUrl(url, host, path)) {
         showBalloon(L"Liney", L"Untrusted update URL blocked");
@@ -227,6 +239,7 @@ void Window::startDownloadAndInstall(const std::wstring& url,
         if (dl) installerReady_ = true;
         else updateReady_ = true;
     });
+#endif
 }
 
 void Window::pollUpdateResult() {

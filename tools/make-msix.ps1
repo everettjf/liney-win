@@ -9,15 +9,44 @@
 #   # optional self-signed local install:
 #   powershell -ExecutionPolicy Bypass -File tools\make-msix.ps1 -SelfSign
 
-param([switch]$SelfSign, [string]$BuildDir = "build-ghostty")
+param([switch]$SelfSign, [string]$BuildDir = "build-store")
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $build = if ([System.IO.Path]::IsPathRooted($BuildDir)) { $BuildDir } else { Join-Path $root $BuildDir }
 $pkgSrc = Join-Path $build 'msix-src'
 $out = Join-Path $root 'dist\liney-win.msix'
 
-# 1) Build Release + assets.
-& (Join-Path $PSScriptRoot 'make-portable.ps1') -BuildDir $BuildDir | Out-Null  # ensures a build
+# 1) Build a dedicated Store binary + assets. Keep this in a separate build
+# tree so configuring MSIX never turns the normal GitHub/portable build into a
+# Store build (or vice versa).
+$sharedZigCache = Join-Path $root 'build-ghostty\zig-global-cache'
+$env:ZIG_GLOBAL_CACHE_DIR = if (Test-Path $sharedZigCache) {
+    $sharedZigCache
+} else {
+    Join-Path $build 'zig-global-cache'
+}
+$zig = (Get-Command zig -ErrorAction SilentlyContinue).Source
+if (-not $zig) {
+    $zig = Get-ChildItem (Join-Path $root '.toolchain') -Recurse -Filter zig.exe `
+        -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+}
+if (-not $zig) {
+    throw 'Zig 0.15.2 not found on PATH or under .toolchain.'
+}
+$cmakeArgs = @(
+    '-S', $root, '-B', $build, '-G', 'Ninja',
+    '-DCMAKE_BUILD_TYPE=Release',
+    '-DLINEY_STORE_BUILD=ON',
+    "-DZIG_EXECUTABLE=$zig"
+)
+$cachedGhostty = Join-Path $root 'build-ghostty\_deps\ghostty-src'
+if (Test-Path (Join-Path $cachedGhostty 'build.zig')) {
+    $cmakeArgs += "-DFETCHCONTENT_SOURCE_DIR_GHOSTTY=$cachedGhostty"
+}
+& cmake @cmakeArgs | Out-Host
+if ($LASTEXITCODE -ne 0) { throw 'Store CMake configure failed' }
+& cmake --build $build --config Release | Out-Host
+if ($LASTEXITCODE -ne 0) { throw 'Store build failed' }
 & (Join-Path $PSScriptRoot 'gen-assets.ps1')
 
 # 2) Locate the built executable.
@@ -58,7 +87,9 @@ Write-Host "MSIX package: $out"
 
 if ($SelfSign) {
     $signtool = Join-Path $sdkBin.FullName 'x64\signtool.exe'
-    $cert = New-SelfSignedCertificate -Type Custom -Subject 'CN=liney-win' `
+    $manifest = [xml](Get-Content (Join-Path $root 'packaging\AppxManifest.xml') -Raw)
+    $publisher = $manifest.Package.Identity.Publisher
+    $cert = New-SelfSignedCertificate -Type Custom -Subject $publisher `
         -KeyUsage DigitalSignature -FriendlyName 'liney-win dev' `
         -CertStoreLocation 'Cert:\CurrentUser\My' `
         -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.3', '2.5.29.19={text}')

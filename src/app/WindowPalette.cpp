@@ -71,8 +71,10 @@ constexpr PaletteAction kActions[] = {
         L"actions workspace", L"save restore layout sessions"},
     {9, L"Settings", L"Ctrl+,", L"Tools", L"actions tools",
         L"preferences configuration"},
+#ifndef LINEY_STORE_BUILD
     {11, L"Check for updates", L"Ctrl+Shift+U", L"Tools", L"actions tools",
         L"upgrade release version"},
+#endif
     {12, L"Toggle keep awake", L"Ctrl+Shift+K", L"Tools", L"actions tools",
         L"sleep power coffee"},
     {17, L"Export diagnostic bundle", L"", L"Tools", L"actions tools",
@@ -406,7 +408,9 @@ void Window::executePaletteAction(int id) {
     case 8: openFind(); break;
     case 9: openSettingsDialog(); break;
     case 10: openWorkspaceSnapshotMenu(); break;
+#ifndef LINEY_STORE_BUILD
     case 11: checkForUpdates(); break;
+#endif
     case 12: toggleKeepAwake(); break;
     case 14: openNewWindow(false); break;
     case 15: openNewWindow(true); break;
