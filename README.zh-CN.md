@@ -157,7 +157,7 @@ powershell -ExecutionPolicy Bypass -File tools\build.ps1
   "hooks": { "sessionStart": "", "sessionExit": "", "appExit": "" },
   "sshHosts": ["user@host"],
   "agents": [{ "name": "agent", "command": "claude", "cwd": "" }],
-  "projectIcons": { "my-repo": "C:\\path\\to\\icon.png" },
+  "projectIcons": { "my-repo": "builtin:rocket" },
   "theme": { "background": "#102840", "foreground": "#e8e8d0", "palette": ["#000000", "..."] }
 }
 ```
@@ -172,7 +172,7 @@ powershell -ExecutionPolicy Bypass -File tools\build.ps1
 | `fontSize` | 终端字号;`Ctrl +/-/0` 与 `Ctrl+滚轮` 会更新并记忆 |
 | `scrollback` | 每个会话保留的历史行数(默认 10000) |
 | `sshHosts` / `agents` | 侧边栏 SSH / AGENTS 区的入口 |
-| `projectIcons` | 每个仓库的侧边栏图标(否则用仓库自带的 `icon.png`/`logo.png`) |
+| `projectIcons` | 每个项目的内置侧边栏图标 ID；新项目会随机分配一个 |
 | `theme` | 终端前景/背景 + 16 色 ANSI 调色板 |
 | `hooks` | session 启停 / app 退出执行的命令 |
 

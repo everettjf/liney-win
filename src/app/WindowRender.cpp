@@ -1,6 +1,7 @@
 #include "app/Window.h"
 #include "app/WindowInternal.h"
 #include "app/TabStripLayout.h"
+#include "app/BuiltinIcons.h"
 
 #include <algorithm>
 #include <cmath>
@@ -164,8 +165,12 @@ void Window::drawLeftSidebar(const Rect& r) {
         const float iconX = r.x + pad + metrics_.cellW * 1.5f;
         const float iconY = y + (rowH - iconSz) * 0.5f;
         std::wstring iconPath = resolveRepoIcon(repo);
-        if (iconPath.empty() ||
-            !renderer_->drawImage(iconPath, iconX, iconY, iconSz, iconSz)) {
+        const BuiltinIcon* builtin = findBuiltinIcon(iconPath);
+        if (builtin) {
+            renderer_->drawText(builtin->glyph, iconX, iconY, iconSz + 4.0f,
+                                iconSz + 4.0f, uiTheme_.accent, true);
+        } else if (iconPath.empty() ||
+                   !renderer_->drawImage(iconPath, iconX, iconY, iconSz, iconSz)) {
             // Default: a folder glyph (tinted by repo) instead of a blank box.
             static const Color kRepoTints[] = {
                 { 120, 200, 160 }, { 130, 170, 230 }, { 220, 170, 110 },

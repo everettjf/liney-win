@@ -1,5 +1,6 @@
 #include "app/Window.h"
 #include "app/WindowInternal.h"
+#include "app/BuiltinIcons.h"
 #include "util/Dialogs.h"
 #include "util/InputBox.h"
 #include "util/Http.h"
@@ -622,6 +623,12 @@ void Window::addWorkspaceFolder() {
             return;
         }
     projects_.push_back(dir);
+    size_t slash = dir.find_last_of(L"\\/");
+    const std::wstring projectName =
+        slash == std::wstring::npos ? dir : dir.substr(slash + 1);
+    if (std::none_of(projectIcons_.begin(), projectIcons_.end(),
+                     [&](const auto& item) { return item.first == projectName; }))
+        projectIcons_.push_back({projectName, randomBuiltinIconValue()});
     rememberRecentProject(dir);
     persistWorkspaceConfig();
     rescanWorkspace();
@@ -679,17 +686,63 @@ void Window::removeProject(const Repo& repo) {
 }
 
 void Window::setProjectIcon(const Repo& repo) {
-    static const wchar_t filt[] =
-        L"Images (*.png;*.ico)\0*.png;*.ico\0All files (*.*)\0*.*\0";
-    const std::wstring filter(filt, sizeof(filt) / sizeof(wchar_t));
-    std::wstring icon =
-        pickFile(hwnd_, L"Choose a project icon (PNG or ICO)", filter);
-    if (icon.empty()) return;
+    HMENU root = CreatePopupMenu();
+    if (!root) return;
+    const BuiltinIcon* icons = builtinIcons();
+    const size_t count = builtinIconCount();
+    std::wstring current;
+    for (const auto& item : projectIcons_)
+        if (item.first == repo.name) { current = item.second; break; }
+
+    HMENU categoryMenu = nullptr;
+    std::wstring category;
+    for (size_t i = 0; i < count; ++i) {
+        if (category != icons[i].category) {
+            category = icons[i].category;
+            categoryMenu = CreatePopupMenu();
+            AppendMenuW(root, MF_POPUP,
+                        reinterpret_cast<UINT_PTR>(categoryMenu),
+                        category.c_str());
+        }
+        const std::wstring value =
+            std::wstring(kBuiltinIconPrefix) + icons[i].id;
+        const std::wstring label =
+            std::wstring(icons[i].glyph) + L"  " + icons[i].name;
+        UINT flags = MF_STRING;
+        if (current == value) flags |= MF_CHECKED;
+        AppendMenuW(categoryMenu, flags, 1000 + static_cast<UINT>(i),
+                    label.c_str());
+    }
+    AppendMenuW(root, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(root, MF_STRING, 999, L"Use automatic icon");
+    POINT point{};
+    GetCursorPos(&point);
+    const int selected = TrackPopupMenu(
+        root, TPM_RETURNCMD | TPM_RIGHTBUTTON, point.x, point.y, 0, hwnd_, nullptr);
+    DestroyMenu(root);
+    if (selected == 0) return;
+
     const std::wstring name = repo.name;
-    bool found = false;
-    for (auto& pi : projectIcons_)
-        if (pi.first == name) { pi.second = icon; found = true; break; }
-    if (!found) projectIcons_.push_back({ name, icon });
+    if (selected == 999) {
+        projectIcons_.erase(
+            std::remove_if(projectIcons_.begin(), projectIcons_.end(),
+                           [&](const auto& item) { return item.first == name; }),
+            projectIcons_.end());
+    } else if (selected >= 1000 &&
+               selected < 1000 + static_cast<int>(count)) {
+        const std::wstring value = std::wstring(kBuiltinIconPrefix) +
+            icons[static_cast<size_t>(selected - 1000)].id;
+        bool found = false;
+        for (auto& item : projectIcons_)
+            if (item.first == name) {
+                item.second = value;
+                found = true;
+                break;
+            }
+        if (!found) projectIcons_.push_back({name, value});
+    } else {
+        return;
+    }
     persistWorkspaceConfig();
     showToast(L"Project icon updated");
 }

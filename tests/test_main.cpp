@@ -11,6 +11,7 @@
 
 #include "app/TabStripLayout.h"
 #include "app/ResponsiveLayout.h"
+#include "app/BuiltinIcons.h"
 #include "app/Layout.h"
 #include "util/Json.h"
 #include "vt/OscParser.h"
@@ -29,6 +30,20 @@ namespace {
 
 int g_failures = 0;
 int g_checks = 0;
+void check(bool cond, const char* what);
+
+void testBuiltinIcons() {
+    std::printf("Built-in project icons\n");
+    check(liney::builtinIconCount() == 100, "catalog contains exactly 100 icons");
+    check(liney::findBuiltinIcon(L"builtin:rocket") != nullptr,
+          "prefixed icon id resolves");
+    check(liney::findBuiltinIcon(L"rocket") != nullptr,
+          "bare icon id resolves");
+    check(liney::findBuiltinIcon(L"builtin:not-real") == nullptr,
+          "unknown icon id is rejected");
+    check(liney::randomBuiltinIconValue().starts_with(L"builtin:"),
+          "random icon persists as a built-in id");
+}
 
 void check(bool cond, const char* what) {
     ++g_checks;
@@ -573,6 +588,7 @@ void testSshProfiles() {
 } // namespace
 
 int main() {
+    testBuiltinIcons();
     testScheduledShutdown();
     testKeyEncoder();
     testResponsivePanels();

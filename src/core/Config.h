@@ -55,7 +55,8 @@ struct Config {
     std::wstring aiEndpoint = L"https://api.openai.com/v1/responses";
     bool aiIncludeCwd = false;              // explicit privacy opt-in
     Osc52Policy osc52Clipboard = Osc52Policy::Ask;
-    // Per-project sidebar icons: repo name -> icon file path (png/ico).
+    // Per-project sidebar icons: repo name -> "builtin:<id>".
+    // Legacy png/ico paths remain readable for backwards compatibility.
     std::vector<std::pair<std::wstring, std::wstring>> projectIcons;
     // Explicit project folders added to the sidebar (besides scanned ones).
     std::vector<std::wstring> projects;

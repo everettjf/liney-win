@@ -347,7 +347,7 @@ Config loadConfig() {
                              policy == "deny" ? Osc52Policy::Deny :
                                                   Osc52Policy::Ask;
     }
-    // projectIcons: { "<repoName>": "<icon path>" }
+    // projectIcons: { "<repoName>": "builtin:<id>" }
     const Json& pi = j["projectIcons"];
     if (pi.isObject())
         for (const auto& kv : pi.members())

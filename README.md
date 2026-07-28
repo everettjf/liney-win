@@ -205,7 +205,7 @@ The first run writes `%USERPROFILE%\.liney\config.json` (mirroring macOS liney's
   "hooks": { "sessionStart": "", "sessionExit": "", "appExit": "" },
   "sshHosts": ["user@host"],
   "agents": [{ "name": "agent", "command": "claude", "cwd": "" }],
-  "projectIcons": { "my-repo": "C:\\path\\to\\icon.png" },
+  "projectIcons": { "my-repo": "builtin:rocket" },
   "theme": { "background": "#102840", "foreground": "#e8e8d0", "palette": ["#000000", "..."] }
 }
 ```
@@ -224,7 +224,7 @@ The first run writes `%USERPROFILE%\.liney\config.json` (mirroring macOS liney's
 | `fontLigatures` | Opt-in DirectWrite shaping for common programming operators; off by default for strict cell compatibility |
 | `scrollback` | History lines retained per session (default 10000) |
 | `sshHosts` / `agents` | Entries in the sidebar SSH / AGENTS sections |
-| `projectIcons` | Per-repo sidebar icons (else a repo-local `icon.png`/`logo.png`) |
+| `projectIcons` | Per-project built-in sidebar icon IDs; new projects receive one at random |
 | `theme` | Terminal fg/bg + the 16-color ANSI palette |
 | `hooks` | Commands run on session start/exit and app exit |
 | `ai.provider` | `off` (default), `openai`, `codex`, or `custom` |
