@@ -60,7 +60,7 @@ Invoke-DemoGit @('-C', $demoRoot, 'commit', '-q', '-m',
 Invoke-DemoGit @('-C', $demoRoot, 'commit', '-q', '--allow-empty', '-m',
     'Prepare Microsoft Store package')
 Invoke-DemoGit @('-C', $demoRoot, 'commit', '-q', '--allow-empty', '-m',
-    'Release 0.10.5')
+    'Release 0.10.6')
 Invoke-DemoGit @('-C', $demoRoot, 'commit', '-q', '--allow-empty', '-m',
     'Align small button glyphs')
 Invoke-DemoGit @('-C', $demoRoot, 'remote', 'add', 'origin',

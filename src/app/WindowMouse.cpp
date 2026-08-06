@@ -29,7 +29,7 @@ void Window::onMouseDown(int xi, int yi) {
                 if (GetFileAttributesW(row.path.c_str()) !=
                     INVALID_FILE_ATTRIBUTES) {
                     rememberRecentProject(row.path);
-                    newTab(row.path);
+                    openWorkspaceSession(row.path, row.path);
                 } else {
                     showToast(L"Recent project is no longer available", true);
                 }
@@ -45,12 +45,7 @@ void Window::onMouseDown(int xi, int yi) {
                     if (repo.expanded) workspace_.loadWorktrees(repo);
                 } else {
                     rememberRecentProject(repo.path);
-                    newTab(repo.path);
-                    if (TerminalSession* session = activeSession()) {
-                        SessionContext context;
-                        context.projectPath = repo.path;
-                        session->setContext(std::move(context));
-                    }
+                    openWorkspaceSession(repo.path, repo.path);
                 }
                 break;
             }
@@ -61,13 +56,7 @@ void Window::onMouseDown(int xi, int yi) {
                 if (row.worktree >= 0 &&
                     row.worktree < static_cast<int>(repo.worktrees.size())) {
                     const Worktree& wt = repo.worktrees[row.worktree];
-                    newTab(wt.path);
-                    if (TerminalSession* session = activeSession()) {
-                        SessionContext context;
-                        context.projectPath = repo.path;
-                        context.worktreePath = wt.path;
-                        session->setContext(std::move(context));
-                    }
+                    openWorkspaceSession(wt.path, repo.path, wt.path);
                 }
                 break;
             }

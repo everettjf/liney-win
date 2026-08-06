@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.10.6] - 2026-08-06
+
+- Fixed terminal contents disappearing when returning to a tab that was
+  resized while inactive by taking render snapshots after layout updates.
+- Reused an existing project or worktree terminal when its Workspace row is
+  selected again instead of opening duplicate tabs.
+- Added regression coverage for project, worktree and legacy cwd-based session
+  reuse, plus automated tab/pane resize, recovery and visual verification.
+
 ## [0.10.5] - 2026-07-28
 
 - Show the pane focus marker only when a tab is split, avoiding a redundant

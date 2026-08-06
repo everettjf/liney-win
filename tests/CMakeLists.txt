@@ -16,6 +16,7 @@ add_executable(liney_tests
   test_main.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/app/TabStripLayout.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/app/ResponsiveLayout.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../src/app/WorkspaceNavigation.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/app/BuiltinIcons.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/vt/OscParser.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/vt/KeyEncoder.cpp

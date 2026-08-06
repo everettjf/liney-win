@@ -616,7 +616,12 @@ void Window::drawPanes(const Rect& r) {
     paneCloseRect_ = {};
     Tab* t = activeTab();
     if (!t) return;
+    // Layout can resize a tab that was inactive while the window changed.
+    // Snapshot only after that resize so the grid always matches the terminal
+    // core's current dimensions when a tab becomes visible again.
     t->layout(r, metrics_);
+    for (Pane* leaf : t->leaves())
+        if (leaf->session) leaf->session->snapshot();
 
     // Refresh find highlights on the owning pane; clear elsewhere. (Selection
     // highlights arrive with the snapshot — the terminal core owns them.)

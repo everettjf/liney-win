@@ -43,6 +43,7 @@ add_executable(liney_win WIN32
   src/app/Tab.cpp
   src/app/TabStripLayout.cpp
   src/app/ResponsiveLayout.cpp
+  src/app/WorkspaceNavigation.cpp
   src/app/BuiltinIcons.cpp
   src/core/TerminalSession.cpp
   src/core/Config.cpp

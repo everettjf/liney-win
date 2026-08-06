@@ -20,6 +20,7 @@
 #include "app/SettingsDialog.h"
 #include "app/TabStripLayout.h"
 #include "app/WindowInternal.h"
+#include "app/WorkspaceNavigation.h"
 #include "util/AccessibilityProvider.h"
 #include "util/Diagnostics.h"
 #include "util/InputBox.h"
@@ -836,10 +837,6 @@ void Window::renderFrame() {
     pollWorkspaceStatusRefresh();
     updateTitle();        // reflect OSC 0/2 title changes live
 
-    Tab* t = activeTab();
-    if (t) for (Pane* leaf : t->leaves())
-        if (leaf->session) leaf->session->snapshot();
-
     Rect leftBar, rightPanel, tabBar, panes;
     regions(leftBar, rightPanel, tabBar, panes);
 
@@ -1120,6 +1117,41 @@ void Window::cellsForRect(const Rect& r, int& cols, int& rows) const {
 }
 
 void Window::newTab(const std::wstring& cwd) { newTabShell(shell_, cwd); }
+
+TerminalSession* Window::openWorkspaceSession(
+    const std::wstring& path, const std::wstring& projectPath,
+    const std::wstring& worktreePath) {
+    // Sidebar rows are navigation targets, not unconditional "new tab"
+    // actions. Re-selecting a project/worktree should return to its existing
+    // terminal and preserve the buffer the user left there.
+    for (size_t tabIndex = 0; tabIndex < tabs_.size(); ++tabIndex) {
+        for (Pane* leaf : tabs_[tabIndex]->leaves()) {
+            if (!leaf || !leaf->session) continue;
+            const SessionContext& context = leaf->session->context();
+            const bool reusable = workspaceSessionIsReusable(
+                !worktreePath.empty(), !context.worktreePath.empty(),
+                workspacePathsEqual(context.worktreePath, worktreePath),
+                workspacePathsEqual(context.projectPath, projectPath),
+                workspacePathsEqual(leaf->session->cwd(), path));
+            if (!reusable)
+                continue;
+            clearSelection();
+            activeTab_ = tabIndex;
+            tabs_[tabIndex]->setActive(leaf);
+            updateTitle();
+            return leaf->session.get();
+        }
+    }
+
+    TerminalSession* session = newTabShell(shell_, path);
+    if (session) {
+        SessionContext context;
+        context.projectPath = projectPath;
+        context.worktreePath = worktreePath;
+        session->setContext(std::move(context));
+    }
+    return session;
+}
 
 TerminalSession* Window::newTabShell(const std::wstring& shellCmd,
                                      const std::wstring& cwd) {

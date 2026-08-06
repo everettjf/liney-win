@@ -10,6 +10,7 @@
 #include <string>
 
 #include "app/TabStripLayout.h"
+#include "app/WorkspaceNavigation.h"
 #include "app/ResponsiveLayout.h"
 #include "app/BuiltinIcons.h"
 #include "app/Layout.h"
@@ -252,6 +253,20 @@ void testTabStripLayout() {
         check(layout.items.back().x + layout.items.back().width <= 764.01f,
               "high-count tab layout keeps overflow control unobstructed");
     }
+}
+
+void testWorkspaceNavigation() {
+    std::printf("Workspace sidebar session reuse\n");
+    check(liney::workspaceSessionIsReusable(false, false, false, true, false),
+          "a project click reuses its existing project terminal");
+    check(liney::workspaceSessionIsReusable(true, true, true, false, false),
+          "a worktree click reuses its existing worktree terminal");
+    check(liney::workspaceSessionIsReusable(false, false, false, false, true),
+          "legacy sessions without context can be reused by cwd");
+    check(!liney::workspaceSessionIsReusable(false, true, false, true, false),
+          "a project target does not steal a contextual worktree session");
+    check(!liney::workspaceSessionIsReusable(true, true, false, true, false),
+          "a different worktree creates a separate terminal");
 }
 
 void testScheduledShutdown() {
@@ -613,6 +628,7 @@ int main() {
     testWindowGeometry();
     testCommandPalette();
     testTabStripLayout();
+    testWorkspaceNavigation();
     testJson();
     testJsonHardening();
     testOscParser();

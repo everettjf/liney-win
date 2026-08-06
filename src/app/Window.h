@@ -70,6 +70,9 @@ private:
     void cellsForRect(const Rect& r, int& cols, int& rows) const;
     void newTab(const std::wstring& cwd);
     TerminalSession* newTabShell(const std::wstring& shellCmd, const std::wstring& cwd);
+    TerminalSession* openWorkspaceSession(const std::wstring& path,
+                                          const std::wstring& projectPath,
+                                          const std::wstring& worktreePath = L"");
     void splitActive(SplitDir dir);
     void toggleZoom();     // Ctrl+Shift+Z: maximize/restore the active pane
     void equalizePanes();  // reset all split ratios evenly
