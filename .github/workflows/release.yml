@@ -9,6 +9,12 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing version tag to publish (for example v0.10.6)'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -18,10 +24,13 @@ jobs:
   release:
     runs-on: windows-latest
     env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
       LINEY_SIGNING_CERT_BASE64: ${{ secrets.LINEY_SIGNING_CERT_BASE64 }}
       LINEY_SIGNING_CERT_PASSWORD: ${{ secrets.LINEY_SIGNING_CERT_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Set up MSVC
         uses: ilammy/msvc-dev-cmd@v1
@@ -39,7 +48,10 @@ jobs:
             throw 'FILEVERSION not found in res\resource.rc'
           }
           $ver = "$($matches[1]).$($matches[2]).$($matches[3])"
-          $tag = '${{ github.ref_name }}'.TrimStart('v')
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') {
+            throw "Invalid release tag: $env:RELEASE_TAG"
+          }
+          $tag = $env:RELEASE_TAG.TrimStart('v')
           if ($ver -ne $tag) {
             throw "Tag v$tag != resource.rc version $ver. Bump res\resource.rc, src\app\WindowInternal.h and packaging manifests first."
           }
@@ -174,7 +186,8 @@ jobs:
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          name: liney-win ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: liney-win ${{ env.RELEASE_TAG }}
           body_path: release-body.md
           generate_release_notes: true
           files: |
