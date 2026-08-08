@@ -45,7 +45,7 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File tools\interaction-stress.ps1 -Exe build-ghostty\Liney.exe
       - name: Daily-use tabs, output, and CPU stress
         shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -File tools\daily-use-stress.ps1 -Exe build-ghostty\Liney.exe -Switches 2000 -Output artifacts\reliability\daily-use-stress.json
+        run: powershell -ExecutionPolicy Bypass -File tools\daily-use-stress.ps1 -Exe build-ghostty\Liney.exe -Switches 2000 -MaxFrameP95Milliseconds 35 -Output artifacts\reliability\daily-use-stress.json
       - name: TUI compatibility smoke
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\tui-smoke.ps1 -Exe build-ghostty\Liney.exe

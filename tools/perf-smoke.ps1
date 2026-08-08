@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory = $true)] [string]$Exe,
     [int]$Iterations = 20,
     [int]$MaxP95Milliseconds = 2000,
-    [int]$MaxPeakWorkingSetMB = 250
+    [int]$MaxPeakWorkingSetMB = 250,
+    [double]$MaxFrameP95Milliseconds = 25
 )
 
 $ErrorActionPreference = 'Stop'
@@ -82,7 +83,8 @@ try {
         throw 'Renderer did not publish frame-time metrics'
     }
     $frames = Get-Content -LiteralPath $frameMetrics -Raw | ConvertFrom-Json
-    if ($frames.frames -lt 10 -or $frames.p95Ms -gt 25) {
+    if ($frames.frames -lt 10 -or
+        $frames.p95Ms -gt $MaxFrameP95Milliseconds) {
         throw "Renderer frame gate failed: frames=$($frames.frames) p95=$($frames.p95Ms)ms"
     }
     Remove-Item -LiteralPath $marker -Force

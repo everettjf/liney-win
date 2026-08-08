@@ -45,10 +45,12 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File tools\smoke-test.ps1 -Exe build-ghostty\Liney.exe
       - name: Startup regression budget
         shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -File tools\perf-smoke.ps1 -Exe build-ghostty\Liney.exe
+        # Hosted runners use a virtualized display adapter; real-client and
+        # local gates retain the stricter default 25 ms frame-p95 budget.
+        run: powershell -ExecutionPolicy Bypass -File tools\perf-smoke.ps1 -Exe build-ghostty\Liney.exe -MaxFrameP95Milliseconds 35
       - name: Daily-use tabs, output, and CPU stress
         shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -File tools\daily-use-stress.ps1 -Exe build-ghostty\Liney.exe -Output artifacts\daily-use-stress.json
+        run: powershell -ExecutionPolicy Bypass -File tools\daily-use-stress.ps1 -Exe build-ghostty\Liney.exe -MaxFrameP95Milliseconds 35 -Output artifacts\daily-use-stress.json
       - name: GPU recovery, WARP, and DPI matrix
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\display-smoke.ps1 -Exe build-ghostty\Liney.exe
