@@ -33,7 +33,7 @@ Status meanings:
 | Terminal cells | Shader-rendered batched quads sampling a GPU glyph atlas; D2D fallback for color glyphs and WARP limitations | Hardware shader-path and WARP-fallback display gate |
 | Shaping | DirectWrite analyzer/fallback with configurable ligatures and stable cell advance | Forced DirectWrite typography-run display gate |
 | Images | At least one documented terminal image protocol with bounded decoding, memory and placement | OSC 1337 inline PNG/JPEG/GIF parser and end-to-end display gate |
-| Performance | Frame-time percentiles for steady output, full-screen scroll, resize and mixed Unicode; no dropped-input gate | Startup/memory, 20k-line output and renderer frame-p95 gate; nightly resource-growth sampling; mixed-Unicode scenario planned |
+| Performance | Frame-time percentiles for steady output, full-screen scroll, resize and mixed Unicode; no dropped-input gate | Startup/memory, 20k-line output, renderer frame-p95, and 8-tab/100k-line/3-CPU-worker/400-switch daily-use gate; nightly resource-growth sampling; mixed-Unicode scenario planned |
 | Competitors | Same machine, shell, font, grid, warm-up, payload and measurement harness for Windows Terminal, WezTerm and Alacritty | Reproducible 20k-line harness; Liney/Windows Terminal evidence recorded, WezTerm/Alacritty unavailable on the test host |
 
 ## Workspace UI

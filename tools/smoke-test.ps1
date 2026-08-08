@@ -119,7 +119,18 @@ if ($semanticTest.ExitCode -ne 0) {
 }
 Write-Host 'OSC 133 semantic command self-test passed.'
 
-$shellIntegration = [Diagnostics.Process]::Start($resolved, 'shell-integration-self-test')
+$integrationConfig = Join-Path ([IO.Path]::GetTempPath()) `
+    ('liney-shell-integration-' + [guid]::NewGuid().ToString('N'))
+$null = New-Item -ItemType Directory -Path $integrationConfig
+$oldConfigDir = $env:LINEY_CONFIG_DIR
+$env:LINEY_CONFIG_DIR = $integrationConfig
+$shellIntegration = [Diagnostics.Process]::Start(
+    $resolved, 'shell-integration-self-test')
+if ($null -eq $oldConfigDir) {
+    Remove-Item Env:LINEY_CONFIG_DIR -ErrorAction SilentlyContinue
+} else {
+    $env:LINEY_CONFIG_DIR = $oldConfigDir
+}
 # Cold Windows PowerShell startup and ConPTY cleanup can exceed 15 seconds on
 # contended GitHub-hosted Windows runners even after the assertions complete.
 if (-not $shellIntegration.WaitForExit(30000)) {
@@ -129,6 +140,7 @@ if (-not $shellIntegration.WaitForExit(30000)) {
 if ($shellIntegration.ExitCode -ne 0) {
     throw "PowerShell integration self-test failed with exit code $($shellIntegration.ExitCode)."
 }
+Remove-Item -LiteralPath $integrationConfig -Recurse -Force
 Write-Host 'PowerShell profile integration self-test passed.'
 
 $vtTest = [Diagnostics.Process]::Start($resolved, 'vt-regression-self-test')

@@ -45,6 +45,7 @@ static constexpr UINT kIdleRenderMs = 100;
 static constexpr UINT_PTR kKeepAwakeTimerId = 0x4B41;  // 'KA'
 static constexpr UINT_PTR kHeadlessCloseTimerId = 0x4843; // 'HC'
 static constexpr UINT_PTR kRecoveryTimerId = 0x5243; // 'RC'
+static constexpr UINT_PTR kTestTabSwitchTimerId = 0x5453; // 'TS'
 
 // Monitor DPI as a 96-relative scale. GetDpiForWindow is Win10 1607+, so load it
 // dynamically and fall back to the device caps.
@@ -421,11 +422,49 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
             // redraw while the headless timer samples the steady state.
             static const char command[] =
                 "powershell.exe -NoLogo -NoProfile -Command "
-                "\"1..20000|%%{[Console]::WriteLine(('line {0:D5} "
+                "\"1..20000|%{[Console]::WriteLine(('line {0:D5} "
                 "alpha beta gamma 0123456789' -f $_))};"
                 "[IO.File]::WriteAllText($env:LINEY_STRESS_MARKER,'done')\"\r";
             if (TerminalSession* session = activeSession())
                 session->sendBytes(command, sizeof(command) - 1);
+        }
+        wchar_t dailyMarker[32768]{};
+        const DWORD dailyMarkerLength = GetEnvironmentVariableW(
+            L"LINEY_TEST_DAILY_MARKER_PREFIX", dailyMarker,
+            static_cast<DWORD>(_countof(dailyMarker)));
+        if (dailyMarkerLength > 0 && dailyMarkerLength < _countof(dailyMarker)) {
+            const std::string prefix = wideToUtf8(dailyMarker);
+            for (size_t i = 0; i < tabs_.size() && i < 4; ++i) {
+                Tab* tab = tabs_[i].get();
+                if (!tab || !tab->active() || !tab->active()->session) continue;
+                std::string command;
+                if (i == 0) {
+                    command =
+                        "powershell.exe -NoLogo -NoProfile -Command \""
+                        "1..100000|%{[Console]::WriteLine(('daily {0:D6} "
+                        "alpha beta gamma 0123456789' -f $_))};"
+                        "[IO.File]::WriteAllText('" + prefix +
+                        "-output.done','done')\"\r";
+                } else {
+                    command =
+                        "powershell.exe -NoLogo -NoProfile -Command \""
+                        "$e=[DateTime]::UtcNow.AddSeconds(8);$x=1.0;"
+                        "while([DateTime]::UtcNow-lt$e){1..2000|%{"
+                        "$x=[Math]::Sqrt($x+$_)}};"
+                        "[IO.File]::WriteAllText('" + prefix + "-cpu" +
+                        std::to_string(i) + ".done','done')\"\r";
+                }
+                tab->active()->session->sendBytes(command.data(), command.size());
+            }
+        }
+        wchar_t testSwitches[16]{};
+        const DWORD switchLength = GetEnvironmentVariableW(
+            L"LINEY_TEST_TAB_SWITCHES", testSwitches,
+            static_cast<DWORD>(_countof(testSwitches)));
+        if (switchLength > 0 && switchLength < _countof(testSwitches)) {
+            testTabSwitchTarget_ = static_cast<unsigned>(std::clamp(
+                wcstoul(testSwitches, nullptr, 10), 1ul, 100000ul));
+            SetTimer(hwnd_, kTestTabSwitchTimerId, 16, nullptr);
         }
         wchar_t testInlineImage[8]{};
         if (GetEnvironmentVariableW(
@@ -772,6 +811,9 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
                     static_cast<DWORD>(_countof(requireLigatures))) > 0 &&
                 !GetPropW(hwnd_, L"Liney.LigatureRunActive"))
                 headlessExitCode_ = 78;
+            if (testTabSwitchTarget_ > 0 &&
+                testTabSwitchCount_ < testTabSwitchTarget_)
+                headlessExitCode_ = 79;
             DestroyWindow(hwnd_);
             return 0;
         }
@@ -786,6 +828,15 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
             if (!path.empty() && !tabs_.empty()) {
                 writeLayoutTo(path);
             }
+            return 0;
+        }
+        if (wParam == kTestTabSwitchTimerId) {
+            if (testTabSwitchCount_ < testTabSwitchTarget_) {
+                switchTab(1);
+                ++testTabSwitchCount_;
+            }
+            if (testTabSwitchCount_ >= testTabSwitchTarget_)
+                KillTimer(hwnd_, kTestTabSwitchTimerId);
             return 0;
         }
         return DefWindowProcW(hwnd_, msg, wParam, lParam);

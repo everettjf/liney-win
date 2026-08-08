@@ -20,6 +20,7 @@ cmake_install.cmake
 build-ghostty/
 build-store/
 build-tests/
+build-vs*/
 build-zig*/
 build-tests-zig/
 compatibility-*.json
