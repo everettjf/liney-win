@@ -75,7 +75,20 @@ if ($env:LINEY_SHELL_INTEGRATION_ACTIVE) { return }
 $env:LINEY_SHELL_INTEGRATION_ACTIVE = '1'
 $script:LineyEsc = [char]27
 $script:LineyOriginalPrompt = $function:prompt
+function script:Install-LineyEnterHandler {
+    if ($script:LineyEnterHandlerInstalled -or
+        -not (Get-Module -Name PSReadLine)) { return }
+    Set-PSReadLineKeyHandler -Key Enter -ScriptBlock {
+        [Console]::Write("$script:LineyEsc]133;C$script:LineyEsc\")
+        [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
+    }
+    $script:LineyEnterHandlerInstalled = $true
+}
 function global:prompt {
+    # PSReadLine is commonly imported after a -Command bootstrap script runs.
+    # Install the handler lazily from the first prompt so command-start OSC 133
+    # markers are present on both Windows PowerShell and PowerShell 7.
+    Install-LineyEnterHandler
     $code = if ($null -eq $global:LASTEXITCODE) { 0 } else { $global:LASTEXITCODE }
     $cwd = (Get-Location).Path.Replace('\', '/')
     [Console]::Write("$script:LineyEsc]133;D;$code$script:LineyEsc\")
@@ -84,12 +97,7 @@ function global:prompt {
     $text = if ($script:LineyOriginalPrompt) { & $script:LineyOriginalPrompt } else { "PS $cwd> " }
     return "$text$script:LineyEsc]133;B$script:LineyEsc\"
 }
-if (Get-Module -Name PSReadLine) {
-    Set-PSReadLineKeyHandler -Key Enter -ScriptBlock {
-        [Console]::Write("$script:LineyEsc]133;C$script:LineyEsc\")
-        [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
-    }
-}
+Install-LineyEnterHandler
 )PS1";
     if (!writeFileAtomic(path, script)) return command;
     // -NoExit keeps the profile interactive after the bootstrap command.

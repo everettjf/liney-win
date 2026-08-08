@@ -377,6 +377,11 @@ private:
     bool unixToolsEnabled_ = true; // Git's usr/bin appended to shells' PATH
     int mouseButtonsDown_ = 0;     // forwarded-to-app buttons, bitmask by number
 
+    // Headless daily-use stress fixture: exercise the same switchTab/render
+    // path as Ctrl+Tab while output and CPU-heavy child processes are active.
+    unsigned testTabSwitchCount_ = 0;
+    unsigned testTabSwitchTarget_ = 0;
+
     // Double / triple-click tracking (for word / line selection).
     DWORD lastClickTick_ = 0;
     int lastClickCY_ = -1;
