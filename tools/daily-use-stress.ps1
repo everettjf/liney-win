@@ -2,6 +2,7 @@ param(
     [Parameter(Mandatory = $true)] [string]$Exe,
     [int]$Tabs = 8,
     [int]$Switches = 400,
+    [int]$SwitchIntervalMilliseconds = 50,
     [int]$MaxPeakWorkingSetMB = 300,
     [double]$MaxFrameP95Milliseconds = 25,
     [string]$Output = 'artifacts/daily-use-stress.json'
@@ -16,25 +17,34 @@ $markerPrefix = Join-Path $scratch 'workload'
 $frameMetrics = Join-Path $scratch 'frames.json'
 $saved = @{}
 $names = @(
-    'LINEY_HEADLESS', 'LINEY_CONFIG_DIR', 'LINEY_AUTOCLOSE_MS',
+    'LINEY_HEADLESS', 'LINEY_TEST_VISIBLE', 'LINEY_CONFIG_DIR',
+    'LINEY_AUTOCLOSE_MS',
     'LINEY_TEST_TABS', 'LINEY_TEST_TAB_SWITCHES',
+    'LINEY_TEST_TAB_SWITCH_INTERVAL_MS',
     'LINEY_TEST_DAILY_MARKER_PREFIX', 'LINEY_FRAME_METRICS'
 )
 foreach ($name in $names) { $saved[$name] = [Environment]::GetEnvironmentVariable($name) }
 
 try {
     $env:LINEY_HEADLESS = '1'
+    # A hidden swap chain is intentionally throttled by DWM. Keep this fixture
+    # visible so frame latency and output backpressure match real daily use.
+    $env:LINEY_TEST_VISIBLE = '1'
     $env:LINEY_CONFIG_DIR = Join-Path $scratch 'profile'
-    $env:LINEY_AUTOCLOSE_MS = '15000'
+    # Workload completion closes the fixture immediately; this is only a hard
+    # safety ceiling for a stalled producer or tab-switch loop.
+    $env:LINEY_AUTOCLOSE_MS = '60000'
     $env:LINEY_TEST_TABS = [string][Math]::Max(4, $Tabs)
     $env:LINEY_TEST_TAB_SWITCHES = [string][Math]::Max(1, $Switches)
+    $env:LINEY_TEST_TAB_SWITCH_INTERVAL_MS =
+        [string][Math]::Max(10, $SwitchIntervalMilliseconds)
     $env:LINEY_TEST_DAILY_MARKER_PREFIX = $markerPrefix
     $env:LINEY_FRAME_METRICS = $frameMetrics
 
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $process = [Diagnostics.Process]::Start($resolved)
     $peak = 0L
-    while (-not $process.HasExited -and $watch.ElapsedMilliseconds -lt 25000) {
+    while (-not $process.HasExited -and $watch.ElapsedMilliseconds -lt 65000) {
         $process.Refresh()
         $peak = [Math]::Max($peak, $process.WorkingSet64)
         Start-Sleep -Milliseconds 20
@@ -71,6 +81,8 @@ try {
         executable = $resolved
         tabs = [Math]::Max(4, $Tabs)
         completedTabSwitches = [Math]::Max(1, $Switches)
+        tabSwitchIntervalMilliseconds = [Math]::Max(
+            10, $SwitchIntervalMilliseconds)
         outputLines = 100000
         cpuIntensiveTabs = 3
         elapsedMilliseconds = $watch.ElapsedMilliseconds

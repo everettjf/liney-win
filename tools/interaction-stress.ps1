@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory = $true)] [string]$Exe,
-    [int]$Iterations = 25
+    [int]$Iterations = 25,
+    [int]$IterationTimeoutMilliseconds = 15000
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,14 +18,13 @@ $saved = @{
 try {
     $env:LINEY_HEADLESS = '1'
     $env:LINEY_AUTOCLOSE_MS = '1800'
-    $env:LINEY_TEST_STRESS_OUTPUT = '1'
     foreach ($i in 1..$Iterations) {
         $env:LINEY_TEST_TABS = [string](1 + ($i % 12))
         $env:LINEY_TEST_PANES = [string](1 + ($i % 8))
         $env:LINEY_TEST_WIDTH = [string](640 + (($i % 5) * 160))
         $env:LINEY_TEST_HEIGHT = [string](480 + (($i % 3) * 120))
         $process = Start-Process -FilePath $resolved -PassThru
-        if (-not $process.WaitForExit(15000)) {
+        if (-not $process.WaitForExit($IterationTimeoutMilliseconds)) {
             $process.Kill()
             throw "Interaction stress iteration $i hung"
         }

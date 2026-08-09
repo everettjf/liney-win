@@ -809,7 +809,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
             const bool isHeadless = GetEnvironmentVariableW(
                 L"LINEY_HEADLESS", headless,
                 static_cast<DWORD>(_countof(headless))) > 0;
-            window.show(isHeadless ? SW_HIDE : nCmdShow);
+            wchar_t testVisible[8]{};
+            const bool keepTestVisible = GetEnvironmentVariableW(
+                L"LINEY_TEST_VISIBLE", testVisible,
+                static_cast<DWORD>(_countof(testVisible))) > 0;
+            window.show(isHeadless && !keepTestVisible ? SW_HIDE : nCmdShow);
             result = window.runMessageLoop();
         }
     }

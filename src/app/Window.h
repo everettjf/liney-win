@@ -381,6 +381,7 @@ private:
     // path as Ctrl+Tab while output and CPU-heavy child processes are active.
     unsigned testTabSwitchCount_ = 0;
     unsigned testTabSwitchTarget_ = 0;
+    std::wstring testDailyMarkerPrefix_;
 
     // Double / triple-click tracking (for word / line selection).
     DWORD lastClickTick_ = 0;

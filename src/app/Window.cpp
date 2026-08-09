@@ -433,6 +433,7 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
             L"LINEY_TEST_DAILY_MARKER_PREFIX", dailyMarker,
             static_cast<DWORD>(_countof(dailyMarker)));
         if (dailyMarkerLength > 0 && dailyMarkerLength < _countof(dailyMarker)) {
+            testDailyMarkerPrefix_ = dailyMarker;
             const std::string prefix = wideToUtf8(dailyMarker);
             for (size_t i = 0; i < tabs_.size() && i < 4; ++i) {
                 Tab* tab = tabs_[i].get();
@@ -464,7 +465,20 @@ bool Window::create(HINSTANCE hInstance, const wchar_t* title, int width,
         if (switchLength > 0 && switchLength < _countof(testSwitches)) {
             testTabSwitchTarget_ = static_cast<unsigned>(std::clamp(
                 wcstoul(testSwitches, nullptr, 10), 1ul, 100000ul));
-            SetTimer(hwnd_, kTestTabSwitchTimerId, 16, nullptr);
+            wchar_t testSwitchInterval[16]{};
+            const DWORD intervalLength = GetEnvironmentVariableW(
+                L"LINEY_TEST_TAB_SWITCH_INTERVAL_MS", testSwitchInterval,
+                static_cast<DWORD>(_countof(testSwitchInterval)));
+            const unsigned long interval = intervalLength > 0 &&
+                                                    intervalLength <
+                                                        _countof(testSwitchInterval)
+                                                ? std::clamp(wcstoul(
+                                                      testSwitchInterval,
+                                                      nullptr, 10),
+                                                      10ul, 1000ul)
+                                                : 50ul;
+            SetTimer(hwnd_, kTestTabSwitchTimerId,
+                     static_cast<UINT>(interval), nullptr);
         }
         wchar_t testInlineImage[8]{};
         if (GetEnvironmentVariableW(
@@ -835,8 +849,28 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
                 switchTab(1);
                 ++testTabSwitchCount_;
             }
-            if (testTabSwitchCount_ >= testTabSwitchTarget_)
-                KillTimer(hwnd_, kTestTabSwitchTimerId);
+            if (testTabSwitchCount_ >= testTabSwitchTarget_) {
+                if (testDailyMarkerPrefix_.empty()) {
+                    KillTimer(hwnd_, kTestTabSwitchTimerId);
+                } else {
+                    bool complete = true;
+                    static constexpr const wchar_t* suffixes[] = {
+                        L"-output.done", L"-cpu1.done", L"-cpu2.done",
+                        L"-cpu3.done"};
+                    for (const wchar_t* suffix : suffixes) {
+                        if (GetFileAttributesW(
+                                (testDailyMarkerPrefix_ + suffix).c_str()) ==
+                            INVALID_FILE_ATTRIBUTES) {
+                            complete = false;
+                            break;
+                        }
+                    }
+                    if (complete) {
+                        KillTimer(hwnd_, kTestTabSwitchTimerId);
+                        DestroyWindow(hwnd_);
+                    }
+                }
+            }
             return 0;
         }
         return DefWindowProcW(hwnd_, msg, wParam, lParam);

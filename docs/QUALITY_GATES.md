@@ -50,6 +50,9 @@ Status meanings:
 
 - Every pull request runs the fast lifecycle, layout-backup recovery,
   interaction stress, resource sampling and visual comparison gates.
+- Frame-p95 defaults to 25 ms on real clients. GitHub-hosted Windows runners
+  use a 35 ms ceiling because their display adapter is virtualized; this does
+  not replace the stricter client evidence used for release claims.
 - `.github/workflows/nightly-reliability.yml` runs the same release binary for
   two hours by default, records working set plus handle/thread/GDI/USER growth,
   and retains JSON evidence.

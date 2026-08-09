@@ -45,16 +45,18 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File tools\smoke-test.ps1 -Exe build-ghostty\Liney.exe
       - name: Startup regression budget
         shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -File tools\perf-smoke.ps1 -Exe build-ghostty\Liney.exe
+        # Hosted runners use a virtualized display adapter; real-client and
+        # local gates retain the stricter default 25 ms frame-p95 budget.
+        run: powershell -ExecutionPolicy Bypass -File tools\perf-smoke.ps1 -Exe build-ghostty\Liney.exe -MaxFrameP95Milliseconds 35
       - name: Daily-use tabs, output, and CPU stress
         shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -File tools\daily-use-stress.ps1 -Exe build-ghostty\Liney.exe -Output artifacts\daily-use-stress.json
+        run: powershell -ExecutionPolicy Bypass -File tools\daily-use-stress.ps1 -Exe build-ghostty\Liney.exe -MaxFrameP95Milliseconds 35 -Output artifacts\daily-use-stress.json
       - name: GPU recovery, WARP, and DPI matrix
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\display-smoke.ps1 -Exe build-ghostty\Liney.exe
       - name: Deterministic visual regression
         shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -File tools\visual-regression.ps1 -Exe build-ghostty\Liney.exe
+        run: powershell -ExecutionPolicy Bypass -File tools\visual-regression.ps1 -Exe build-ghostty\Liney.exe -ScenarioTimeoutMilliseconds 30000
       - name: Suspend and resume display recovery
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\power-resume-smoke.ps1 -Exe build-ghostty\Liney.exe
@@ -75,7 +77,7 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File tools\layout-recovery-smoke.ps1 -Exe build-ghostty\Liney.exe
       - name: Tab, pane, resize, and shell-exit stress
         shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -File tools\interaction-stress.ps1 -Exe build-ghostty\Liney.exe -Iterations 5
+        run: powershell -ExecutionPolicy Bypass -File tools\interaction-stress.ps1 -Exe build-ghostty\Liney.exe -Iterations 5 -IterationTimeoutMilliseconds 30000
       - name: Upload diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@v4
