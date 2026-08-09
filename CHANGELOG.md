@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.10.7] - 2026-08-08
+
+- Coalesced terminal-output render wakeups so heavy output no longer floods
+  the UI message queue; an 8-tab workload with 100,000 output lines, three
+  CPU-intensive tasks and 400 tab switches now stays within one 60 Hz frame
+  at p95 on the local certification machine.
+- Added automated daily-use stress coverage for large output, rapid tab
+  switching, CPU-heavy child processes, memory usage and renderer latency.
+- Fixed the PowerShell stress fixture and lazy PSReadLine shell integration.
+- Hardened hosted Windows 2022/2025 CI with realistic virtual-display budgets,
+  workload-completion markers and configurable interaction/visual timeouts.
+
 ## [0.10.6] - 2026-08-06
 
 - Fixed terminal contents disappearing when returning to a tab that was
