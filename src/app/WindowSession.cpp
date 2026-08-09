@@ -210,7 +210,17 @@ void Window::startDownloadAndInstall(const std::wstring& url,
         showBalloon(L"Liney", L"Could not create a temporary update file");
         return;
     }
-    const std::wstring out = unique;
+    // GetTempFileName creates a .tmp file. ShellExecute does not reliably
+    // recognize an executable stored under that extension, so the verified
+    // download could succeed and then appear to do nothing. Keep the unique,
+    // already-created file but give it an executable extension before writing
+    // the installer payload.
+    const std::wstring out = std::wstring(unique) + L".exe";
+    if (!MoveFileExW(unique, out.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+        DeleteFileW(unique);
+        showBalloon(L"Liney", L"Could not prepare the update installer");
+        return;
+    }
 
     showBalloon(L"Liney", L"Downloading update…");
     updateThreads_.emplace_back([this, host, path, out, sha256]() {

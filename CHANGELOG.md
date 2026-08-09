@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Fixed GitHub-distributed updates downloading the verified installer with a
+  `.tmp` extension, which could prevent Windows from launching it. Store builds
+  continue to rely exclusively on Microsoft Store updates.
+
 ## [0.10.7] - 2026-08-08
 
 - Coalesced terminal-output render wakeups so heavy output no longer floods
