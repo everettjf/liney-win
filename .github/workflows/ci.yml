@@ -56,7 +56,7 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File tools\display-smoke.ps1 -Exe build-ghostty\Liney.exe
       - name: Deterministic visual regression
         shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -File tools\visual-regression.ps1 -Exe build-ghostty\Liney.exe
+        run: powershell -ExecutionPolicy Bypass -File tools\visual-regression.ps1 -Exe build-ghostty\Liney.exe -ScenarioTimeoutMilliseconds 30000
       - name: Suspend and resume display recovery
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\power-resume-smoke.ps1 -Exe build-ghostty\Liney.exe

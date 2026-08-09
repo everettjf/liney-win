@@ -4,7 +4,8 @@ param(
     [string]$OutputDir = 'artifacts/visual-regression',
     [switch]$UpdateBaselines,
     [double]$MaxChangedPixelRatio = 0.01,
-    [int]$ChannelTolerance = 12
+    [int]$ChannelTolerance = 12,
+    [int]$ScenarioTimeoutMilliseconds = 15000
 )
 
 $ErrorActionPreference = 'Stop'
@@ -82,7 +83,7 @@ try {
         $env:LINEY_TEST_PANES = $scenario.Panes
         $env:LINEY_TEST_FILES_PANEL = $scenario.Files
         $process = Start-Process -FilePath $resolved -PassThru
-        if (-not $process.WaitForExit(15000)) {
+        if (-not $process.WaitForExit($ScenarioTimeoutMilliseconds)) {
             $process.Kill()
             throw "Visual scenario $($scenario.Name) timed out"
         }
