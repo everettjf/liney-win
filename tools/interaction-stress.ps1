@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory = $true)] [string]$Exe,
-    [int]$Iterations = 25
+    [int]$Iterations = 25,
+    [int]$IterationTimeoutMilliseconds = 15000
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,7 +25,7 @@ try {
         $env:LINEY_TEST_WIDTH = [string](640 + (($i % 5) * 160))
         $env:LINEY_TEST_HEIGHT = [string](480 + (($i % 3) * 120))
         $process = Start-Process -FilePath $resolved -PassThru
-        if (-not $process.WaitForExit(15000)) {
+        if (-not $process.WaitForExit($IterationTimeoutMilliseconds)) {
             $process.Kill()
             throw "Interaction stress iteration $i hung"
         }

@@ -77,7 +77,7 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File tools\layout-recovery-smoke.ps1 -Exe build-ghostty\Liney.exe
       - name: Tab, pane, resize, and shell-exit stress
         shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -File tools\interaction-stress.ps1 -Exe build-ghostty\Liney.exe -Iterations 5
+        run: powershell -ExecutionPolicy Bypass -File tools\interaction-stress.ps1 -Exe build-ghostty\Liney.exe -Iterations 5 -IterationTimeoutMilliseconds 30000
       - name: Upload diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@v4

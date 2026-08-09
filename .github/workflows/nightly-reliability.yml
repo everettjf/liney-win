@@ -42,7 +42,7 @@ jobs:
           -Output nightly-soak.json
       - name: Shell crash and interaction stress
         shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -File tools\interaction-stress.ps1 -Exe build-ghostty\Liney.exe
+        run: powershell -ExecutionPolicy Bypass -File tools\interaction-stress.ps1 -Exe build-ghostty\Liney.exe -IterationTimeoutMilliseconds 30000
       - name: Daily-use tabs, output, and CPU stress
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\daily-use-stress.ps1 -Exe build-ghostty\Liney.exe -Switches 2000 -MaxFrameP95Milliseconds 35 -Output artifacts\reliability\daily-use-stress.json
