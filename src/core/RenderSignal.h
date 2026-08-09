@@ -22,9 +22,13 @@ inline std::atomic<bool> g_renderDirty{ true };   // start true: paint the first
 inline std::atomic<HWND> g_wakeHwnd{ nullptr };   // UI window, set once at startup
 
 inline void markRenderDirty() {
-    g_renderDirty.store(true, std::memory_order_relaxed);
-    if (HWND h = g_wakeHwnd.load(std::memory_order_relaxed))
-        PostMessageW(h, WM_LINEY_WAKE, 0, 0);
+    // Coalesce bursts of PTY output into one queued wake. Posting for every
+    // output chunk can flood the UI message queue and make the wake traffic
+    // itself trigger redundant frames long after the latest output is visible.
+    if (!g_renderDirty.exchange(true, std::memory_order_acq_rel)) {
+        if (HWND h = g_wakeHwnd.load(std::memory_order_relaxed))
+            PostMessageW(h, WM_LINEY_WAKE, 0, 0);
+    }
 }
 
 } // namespace liney
