@@ -18,7 +18,6 @@ $saved = @{
 try {
     $env:LINEY_HEADLESS = '1'
     $env:LINEY_AUTOCLOSE_MS = '1800'
-    $env:LINEY_TEST_STRESS_OUTPUT = '1'
     foreach ($i in 1..$Iterations) {
         $env:LINEY_TEST_TABS = [string](1 + ($i % 12))
         $env:LINEY_TEST_PANES = [string](1 + ($i % 8))
