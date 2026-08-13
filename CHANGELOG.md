@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.8] - 2026-08-13
+
 - Fixed GitHub-distributed updates downloading the verified installer with a
   `.tmp` extension, which could prevent Windows from launching it. Store builds
   continue to rely exclusively on Microsoft Store updates.

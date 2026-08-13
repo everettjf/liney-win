@@ -1,6 +1,6 @@
 # WinGet version manifest (template).
 PackageIdentifier: everettjf.liney-win
-PackageVersion: 0.10.7
+PackageVersion: 0.10.8
 DefaultLocale: en-US
 ManifestType: version
 ManifestVersion: 1.6.0
