@@ -116,7 +116,7 @@ endforeach()
 # Fetch pinned Windows foundation and terminal dependencies.
 include(FetchContent)
 set(LINEY_MWFL_VERSION "v0.2.1" CACHE STRING
-    "Pinned mwfl release used for Windows deployment primitives")
+    "Pinned mwfl release used for Windows foundation primitives")
 FetchContent_Declare(mwfl
   GIT_REPOSITORY https://github.com/mwfl/mwfl.git
   GIT_TAG ${LINEY_MWFL_VERSION}
@@ -132,10 +132,10 @@ if(NOT mwfl_POPULATED)
     cmake_policy(POP)
   endif()
   # mwfl is a component library. Keep unrelated UI, examples and tests out of
-  # Liney's default build; mwfl::deployment brings in only mwfl::core.
+  # Liney's default build; the requested components bring in only mwfl::core.
   add_subdirectory("${mwfl_SOURCE_DIR}" "${mwfl_BINARY_DIR}" EXCLUDE_FROM_ALL)
 endif()
-target_link_libraries(liney_win PRIVATE mwfl::deployment)
+target_link_libraries(liney_win PRIVATE mwfl::deployment mwfl::diagnostics)
 
 # Fetch Ghostty and build its libghostty-vt (via Zig) as the terminal core.
 set(LINEY_GHOSTTY_REVISION
