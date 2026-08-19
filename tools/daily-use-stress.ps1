@@ -15,6 +15,14 @@ $scratch = Join-Path ([IO.Path]::GetTempPath()) `
 $null = New-Item -ItemType Directory -Path $scratch
 $markerPrefix = Join-Path $scratch 'workload'
 $frameMetrics = Join-Path $scratch 'frames.json'
+$outputPath = [IO.Path]::GetFullPath($Output)
+$outputParent = Split-Path -Parent $outputPath
+$switchDurationMilliseconds =
+    [Math]::Max(1, $Switches) * [Math]::Max(10, $SwitchIntervalMilliseconds)
+# Leave a full minute for startup, terminal output and shutdown in addition to
+# the requested tab-switch workload.  The old fixed 60-second ceiling made the
+# 800-switch nightly fixture time-sensitive on busy hosted runners.
+$workloadTimeoutMilliseconds = [Math]::Max(65000, $switchDurationMilliseconds + 60000)
 $saved = @{}
 $names = @(
     'LINEY_HEADLESS', 'LINEY_TEST_VISIBLE', 'LINEY_CONFIG_DIR',
@@ -33,7 +41,7 @@ try {
     $env:LINEY_CONFIG_DIR = Join-Path $scratch 'profile'
     # Workload completion closes the fixture immediately; this is only a hard
     # safety ceiling for a stalled producer or tab-switch loop.
-    $env:LINEY_AUTOCLOSE_MS = '60000'
+    $env:LINEY_AUTOCLOSE_MS = [string]($workloadTimeoutMilliseconds - 5000)
     $env:LINEY_TEST_TABS = [string][Math]::Max(4, $Tabs)
     $env:LINEY_TEST_TAB_SWITCHES = [string][Math]::Max(1, $Switches)
     $env:LINEY_TEST_TAB_SWITCH_INTERVAL_MS =
@@ -44,7 +52,8 @@ try {
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $process = [Diagnostics.Process]::Start($resolved)
     $peak = 0L
-    while (-not $process.HasExited -and $watch.ElapsedMilliseconds -lt 65000) {
+    while (-not $process.HasExited -and
+           $watch.ElapsedMilliseconds -lt $workloadTimeoutMilliseconds) {
         $process.Refresh()
         $peak = [Math]::Max($peak, $process.WorkingSet64)
         Start-Sleep -Milliseconds 20
@@ -91,8 +100,6 @@ try {
         frameP95Ms = $frames.p95Ms
         frameP99Ms = $frames.p99Ms
     }
-    $outputPath = [IO.Path]::GetFullPath($Output)
-    $outputParent = Split-Path -Parent $outputPath
     if ($outputParent) { $null = New-Item -ItemType Directory -Force -Path $outputParent }
     $report | ConvertTo-Json | Set-Content -LiteralPath $outputPath -Encoding utf8
     Write-Host ('Daily-use stress passed: ' + ($report | ConvertTo-Json -Compress))

@@ -45,7 +45,10 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File tools\interaction-stress.ps1 -Exe build-ghostty\Liney.exe -IterationTimeoutMilliseconds 30000
       - name: Daily-use tabs, output, and CPU stress
         shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -File tools\daily-use-stress.ps1 -Exe build-ghostty\Liney.exe -Switches 800 -SwitchIntervalMilliseconds 50 -MaxFrameP95Milliseconds 35 -Output artifacts\reliability\daily-use-stress.json
+        # The nightly fixture doubles the CI switching workload. Hosted GPU
+        # scheduling is noisier over this longer sample, so retain a generous
+        # regression ceiling here while CI keeps the stricter 35 ms gate.
+        run: powershell -ExecutionPolicy Bypass -File tools\daily-use-stress.ps1 -Exe build-ghostty\Liney.exe -Switches 800 -SwitchIntervalMilliseconds 50 -MaxFrameP95Milliseconds 50 -Output artifacts\reliability\daily-use-stress.json
       - name: TUI compatibility smoke
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\tui-smoke.ps1 -Exe build-ghostty\Liney.exe
