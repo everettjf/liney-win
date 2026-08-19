@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.21)
 project(liney_win LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -113,8 +113,31 @@ foreach(runtime_dll IN LISTS CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS)
     COMMENT "Copying MSVC runtime: ${runtime_dll}")
 endforeach()
 
-# Fetch Ghostty and build its libghostty-vt (via Zig) as the terminal core.
+# Fetch pinned Windows foundation and terminal dependencies.
 include(FetchContent)
+set(LINEY_MWFL_VERSION "v0.2.1" CACHE STRING
+    "Pinned mwfl release used for Windows deployment primitives")
+FetchContent_Declare(mwfl
+  GIT_REPOSITORY https://github.com/mwfl/mwfl.git
+  GIT_TAG ${LINEY_MWFL_VERSION}
+  GIT_SHALLOW TRUE)
+FetchContent_GetProperties(mwfl)
+if(NOT mwfl_POPULATED)
+  if(POLICY CMP0169)
+    cmake_policy(PUSH)
+    cmake_policy(SET CMP0169 OLD)
+  endif()
+  FetchContent_Populate(mwfl)
+  if(POLICY CMP0169)
+    cmake_policy(POP)
+  endif()
+  # mwfl is a component library. Keep unrelated UI, examples and tests out of
+  # Liney's default build; mwfl::deployment brings in only mwfl::core.
+  add_subdirectory("${mwfl_SOURCE_DIR}" "${mwfl_BINARY_DIR}" EXCLUDE_FROM_ALL)
+endif()
+target_link_libraries(liney_win PRIVATE mwfl::deployment)
+
+# Fetch Ghostty and build its libghostty-vt (via Zig) as the terminal core.
 set(LINEY_GHOSTTY_REVISION
     "a887df42c56f6de86c0fe6da9c4eeca37931e083"
     CACHE STRING "Verified Ghostty commit used to build libghostty-vt")

@@ -1,33 +1,20 @@
 #include "util/Authenticode.h"
 
+#include <mwfl/deployment.h>
+
 #include <windows.h>
-#include <wintrust.h>
-#include <softpub.h>
 #include <wincrypt.h>
 
+#include <filesystem>
 #include <vector>
 
 namespace liney {
 
 bool verifyAuthenticode(const std::wstring& path) {
-    WINTRUST_FILE_INFO file{};
-    file.cbStruct = sizeof(file);
-    file.pcwszFilePath = path.c_str();
-
-    WINTRUST_DATA data{};
-    data.cbStruct = sizeof(data);
-    data.dwUIChoice = WTD_UI_NONE;
-    data.fdwRevocationChecks = WTD_REVOKE_WHOLECHAIN;
-    data.dwUnionChoice = WTD_CHOICE_FILE;
-    data.pFile = &file;
-    data.dwStateAction = WTD_STATEACTION_VERIFY;
-    data.dwProvFlags = WTD_CACHE_ONLY_URL_RETRIEVAL |
-                       WTD_REVOCATION_CHECK_CHAIN_EXCLUDE_ROOT;
-    GUID policy = WINTRUST_ACTION_GENERIC_VERIFY_V2;
-    const LONG status = WinVerifyTrust(nullptr, &policy, &data);
-    data.dwStateAction = WTD_STATEACTION_CLOSE;
-    WinVerifyTrust(nullptr, &policy, &data);
-    return status == ERROR_SUCCESS;
+    const auto verification = mwfl::VerifyAuthenticode(
+        std::filesystem::path(path), mwfl::RevocationPolicy::Offline);
+    return verification &&
+           verification.Value().status == mwfl::SignatureStatus::Valid;
 }
 
 namespace {
