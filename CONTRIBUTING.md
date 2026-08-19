@@ -9,9 +9,9 @@ You need **all three** on PATH:
 
 | Tool | Version | Notes |
 |---|---|---|
-| **Visual Studio 2022** (Desktop C++) | any recent | Provides MSVC `cl`, CMake ≥ 3.20, Ninja. Build from the **"x64 Native Tools Command Prompt for VS 2022"** (so `cl` is on PATH). |
+| **Visual Studio 2022** (Desktop C++) | any recent | Provides MSVC `cl`, CMake ≥ 3.21, Ninja. Build from the **"x64 Native Tools Command Prompt for VS 2022"** (so `cl` is on PATH). |
 | **Zig** | **exactly 0.15.2** | The terminal core (libghostty-vt) is built from Ghostty via Zig. See the warning below. |
-| **Git** | any | CMake fetches Ghostty over Git. |
+| **Git** | any | CMake fetches pinned mwfl and Ghostty releases over Git. |
 
 ### ⚠️ Zig must be 0.15.2 (not 0.16.x)
 

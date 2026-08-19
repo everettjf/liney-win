@@ -160,7 +160,7 @@ show an **Unknown publisher** warning. Download only from this repository's
 Releases page and verify the included `SHA256SUMS.txt` when needed.
 
 **Build from source** — Windows 10 1809+/11, with:
-- **Visual Studio 2022** Desktop C++ (bundles CMake ≥ 3.20 + Ninja)
+- **Visual Studio 2022** Desktop C++ (bundles CMake ≥ 3.21 + Ninja)
 - **[Zig 0.15.2](https://ziglang.org/download/)** on PATH — the terminal core is
   built from Ghostty via Zig
 
@@ -172,7 +172,7 @@ powershell -ExecutionPolicy Bypass -File tools\build.ps1
 
 `tools\build.ps1` configures + builds and points Zig's cache at the build drive
 (a Zig 0.15.2 quirk panics when the source and cache are on different drives).
-The first build fetches Ghostty and compiles `libghostty-vt`, so it takes a while;
+The first build fetches mwfl 0.2.1 plus Ghostty and compiles `libghostty-vt`, so it takes a while;
 `ghostty-vt.dll` is copied next to the exe automatically.
 
 > Prefer raw CMake? `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build`
@@ -330,6 +330,7 @@ style.
 ## 🙏 Acknowledgements
 
 - [liney](https://github.com/everettjf/liney) by [@everettjf](https://github.com/everettjf) — the macOS original this follows, and the source of the app icon.
+- [mwfl](https://github.com/mwfl/mwfl) — provides pinned Windows deployment and Authenticode primitives.
 - [Ghostty](https://github.com/ghostty-org/ghostty) — provides `libghostty-vt`, liney-win's terminal core (built from Ghostty via Zig).
 
 ## 📄 License

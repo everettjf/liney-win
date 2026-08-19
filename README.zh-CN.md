@@ -116,7 +116,7 @@ Direct2D**。用 **MSVC + Zig** 构建。
 `SHA256SUMS.txt` 校验文件。
 
 **从源码构建** —— Windows 10 1809+/11,需要:
-- **Visual Studio 2022** Desktop C++(自带 CMake ≥ 3.20 + Ninja)
+- **Visual Studio 2022** Desktop C++(自带 CMake ≥ 3.21 + Ninja)
 - PATH 上有 **[Zig 0.15.2](https://ziglang.org/download/)** —— 终端核心从 Ghostty 经 Zig 构建
 
 ```powershell
@@ -126,7 +126,7 @@ powershell -ExecutionPolicy Bypass -File tools\build.ps1
 ```
 
 `tools\build.ps1` 会配置 + 构建,并把 Zig 缓存指到构建所在盘符(Zig 0.15.2 的一个怪癖:
-源码与缓存在不同盘符时构建会 panic)。首次构建会拉取 Ghostty 并编译 `libghostty-vt`,
+源码与缓存在不同盘符时构建会 panic)。首次构建会拉取 mwfl 0.2.1 和 Ghostty,并编译 `libghostty-vt`,
 耗时较长;`ghostty-vt.dll` 会自动拷到 exe 旁边。
 
 > 想用原始 CMake?`cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build`
@@ -236,6 +236,7 @@ Direct2D,已拆成小而内聚的文件(见 [`src/`](src)),新增代码请与周
 ## 🙏 致谢
 
 - [liney](https://github.com/everettjf/liney) by [@everettjf](https://github.com/everettjf) —— 本项目对标的 macOS 原版,也是应用图标的来源。
+- [mwfl](https://github.com/mwfl/mwfl) —— 提供固定版本的 Windows 部署与 Authenticode 基础能力。
 - [Ghostty](https://github.com/ghostty-org/ghostty) —— 提供 `libghostty-vt`,liney-win 的终端核心(经 Zig 从 Ghostty 构建)。
 
 ## 📄 许可
