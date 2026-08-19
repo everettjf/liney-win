@@ -552,6 +552,8 @@ bool runCliIfRequested(int& exitCode) {
             std::string bytes((std::istreambuf_iterator<char>(archive)), {});
             passed = bytes.size() >= 22 && bytes.compare(0, 4, "PK\x03\x04", 4) == 0 &&
                      bytes.compare(bytes.size() - 22, 4, "PK\x05\x06", 4) == 0 &&
+                     bytes.find("[info] liney/1") != std::string::npos &&
+                     bytes.find("message=self-test log") != std::string::npos &&
                      bytes.find("history-ok") == std::string::npos &&
                      bytes.find("super-secret") == std::string::npos &&
                      bytes.find("terminal-memory-secret") == std::string::npos;

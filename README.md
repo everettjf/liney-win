@@ -330,7 +330,7 @@ style.
 ## 🙏 Acknowledgements
 
 - [liney](https://github.com/everettjf/liney) by [@everettjf](https://github.com/everettjf) — the macOS original this follows, and the source of the app icon.
-- [mwfl](https://github.com/mwfl/mwfl) — provides pinned Windows deployment and Authenticode primitives.
+- [mwfl](https://github.com/mwfl/mwfl) — provides pinned Windows deployment, Authenticode, and structured diagnostics primitives.
 - [Ghostty](https://github.com/ghostty-org/ghostty) — provides `libghostty-vt`, liney-win's terminal core (built from Ghostty via Zig).
 
 ## 📄 License

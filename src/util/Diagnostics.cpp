@@ -1,5 +1,7 @@
 #include "util/Diagnostics.h"
 
+#include <mwfl/diagnostics.h>
+
 #include <windows.h>
 #include <dbghelp.h>
 
@@ -7,6 +9,7 @@
 #include <algorithm>
 #include <fstream>
 #include <mutex>
+#include <utility>
 #include <vector>
 #include <cstdint>
 
@@ -206,16 +209,25 @@ void diagnosticLog(const std::string& message) {
             MoveFileExW(path.c_str(), previous.c_str(), MOVEFILE_REPLACE_EXISTING);
         }
     }
+    auto wideMessage = mwfl::Utf8ToWide(message);
+    if (!wideMessage) return;
+    auto event = mwfl::DiagnosticEventBuilder(
+                     mwfl::EventLevel::Information, L"liney", 1)
+                     .Public(L"message", std::move(wideMessage.Value()))
+                     .Build();
+    auto formatted = mwfl::WideToUtf8(
+        mwfl::FormatDiagnosticEvent(mwfl::SanitizeDiagnosticEvent(event)));
+    if (!formatted) return;
     std::ofstream out(path.c_str(), std::ios::binary | std::ios::app);
     if (!out) return;
     const std::wstring stamp = timestamp(false);
     int bytes = WideCharToMultiByte(CP_UTF8, 0, stamp.data(),
                                     static_cast<int>(stamp.size()), nullptr, 0,
                                     nullptr, nullptr);
-    std::string utf8(static_cast<size_t>(bytes), '\0');
+    std::string utf8Stamp(static_cast<size_t>(bytes), '\0');
     WideCharToMultiByte(CP_UTF8, 0, stamp.data(), static_cast<int>(stamp.size()),
-                        utf8.data(), bytes, nullptr, nullptr);
-    out << utf8 << " " << message << "\r\n";
+                        utf8Stamp.data(), bytes, nullptr, nullptr);
+    out << utf8Stamp << " " << formatted.Value() << "\r\n";
 }
 
 std::wstring diagnosticSummary(const wchar_t* appVersion) {

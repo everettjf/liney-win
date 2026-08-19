@@ -236,7 +236,7 @@ Direct2D,已拆成小而内聚的文件(见 [`src/`](src)),新增代码请与周
 ## 🙏 致谢
 
 - [liney](https://github.com/everettjf/liney) by [@everettjf](https://github.com/everettjf) —— 本项目对标的 macOS 原版,也是应用图标的来源。
-- [mwfl](https://github.com/mwfl/mwfl) —— 提供固定版本的 Windows 部署与 Authenticode 基础能力。
+- [mwfl](https://github.com/mwfl/mwfl) —— 提供固定版本的 Windows 部署、Authenticode 与结构化诊断基础能力。
 - [Ghostty](https://github.com/ghostty-org/ghostty) —— 提供 `libghostty-vt`,liney-win 的终端核心(经 Zig 从 Ghostty 构建)。
 
 ## 📄 许可

@@ -19,7 +19,9 @@ std::wstring previousRecoveryLayoutPath();
 // shutdown. Crash/power-loss paths intentionally never reach this call.
 void markCleanShutdown();
 
-// Append a timestamped UTF-8 line to the local diagnostic log.
+// Append a timestamped, structured UTF-8 event to the local diagnostic log.
+// mwfl supplies the stable event envelope, process/thread identity and Unicode
+// boundary; Liney retains local rotation and privacy-conscious export policy.
 void diagnosticLog(const std::string& message);
 
 // Directory containing liney.log and crash-*.dmp. Empty on failure.
