@@ -126,7 +126,7 @@ powershell -ExecutionPolicy Bypass -File tools\build.ps1
 ```
 
 `tools\build.ps1` 会配置 + 构建,并把 Zig 缓存指到构建所在盘符(Zig 0.15.2 的一个怪癖:
-源码与缓存在不同盘符时构建会 panic)。首次构建会拉取 mwfl 0.2.1 和 Ghostty,并编译 `libghostty-vt`,
+源码与缓存在不同盘符时构建会 panic)。首次构建会拉取 mwfl 0.3.0 和 Ghostty,并编译 `libghostty-vt`,
 耗时较长;`ghostty-vt.dll` 会自动拷到 exe 旁边。
 
 > 想用原始 CMake?`cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build`
