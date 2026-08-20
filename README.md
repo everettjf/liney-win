@@ -172,7 +172,7 @@ powershell -ExecutionPolicy Bypass -File tools\build.ps1
 
 `tools\build.ps1` configures + builds and points Zig's cache at the build drive
 (a Zig 0.15.2 quirk panics when the source and cache are on different drives).
-The first build fetches mwfl 0.3.0 plus Ghostty and compiles `libghostty-vt`, so it takes a while;
+The first build fetches mwfl 0.1.0 plus Ghostty and compiles `libghostty-vt`, so it takes a while;
 `ghostty-vt.dll` is copied next to the exe automatically.
 
 > Prefer raw CMake? `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build`

@@ -115,7 +115,7 @@ endforeach()
 
 # Fetch pinned Windows foundation and terminal dependencies.
 include(FetchContent)
-set(LINEY_MWFL_VERSION "v0.3.0" CACHE STRING
+set(LINEY_MWFL_VERSION "v0.1.0" CACHE STRING
     "Pinned mwfl release used for Windows foundation primitives")
 FetchContent_Declare(mwfl
   GIT_REPOSITORY https://github.com/mwfl/mwfl.git
