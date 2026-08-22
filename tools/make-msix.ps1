@@ -25,13 +25,29 @@ $env:ZIG_GLOBAL_CACHE_DIR = if (Test-Path $sharedZigCache) {
 } else {
     Join-Path $build 'zig-global-cache'
 }
-$zig = (Get-Command zig -ErrorAction SilentlyContinue).Source
+$zig = Get-ChildItem (Join-Path $root '.toolchain') -Recurse -Filter zig.exe `
+    -ErrorAction SilentlyContinue |
+    Where-Object { (& $_.FullName version) -eq '0.15.2' } |
+    Select-Object -First 1 -ExpandProperty FullName
 if (-not $zig) {
-    $zig = Get-ChildItem (Join-Path $root '.toolchain') -Recurse -Filter zig.exe `
-        -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+    $pathZig = (Get-Command zig -ErrorAction SilentlyContinue).Source
+    if ($pathZig -and (& $pathZig version) -eq '0.15.2') {
+        $zig = $pathZig
+    }
 }
 if (-not $zig) {
     throw 'Zig 0.15.2 not found on PATH or under .toolchain.'
+}
+$cmake = (Get-Command cmake -ErrorAction SilentlyContinue).Source
+if (-not $cmake) {
+    $cmake = Get-ChildItem 'C:\Program Files\Microsoft Visual Studio' -Recurse `
+        -Filter cmake.exe -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -like '*CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe' } |
+        Sort-Object FullName -Descending |
+        Select-Object -First 1 -ExpandProperty FullName
+}
+if (-not $cmake) {
+    throw 'CMake not found on PATH or in a Visual Studio installation.'
 }
 $cmakeArgs = @(
     '-S', $root, '-B', $build, '-G', 'Ninja',
@@ -43,9 +59,9 @@ $cachedGhostty = Join-Path $root 'build-ghostty\_deps\ghostty-src'
 if (Test-Path (Join-Path $cachedGhostty 'build.zig')) {
     $cmakeArgs += "-DFETCHCONTENT_SOURCE_DIR_GHOSTTY=$cachedGhostty"
 }
-& cmake @cmakeArgs | Out-Host
+& $cmake @cmakeArgs | Out-Host
 if ($LASTEXITCODE -ne 0) { throw 'Store CMake configure failed' }
-& cmake --build $build --config Release | Out-Host
+& $cmake --build $build --config Release | Out-Host
 if ($LASTEXITCODE -ne 0) { throw 'Store build failed' }
 & (Join-Path $PSScriptRoot 'gen-assets.ps1')
 

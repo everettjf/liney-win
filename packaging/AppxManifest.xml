@@ -12,7 +12,7 @@
 
   <Identity Name="20370everettjf.LineyTerminal"
             Publisher="CN=560214DD-F83C-484D-87A6-0E0454EE64B0"
-            Version="0.10.8.0"
+            Version="1.0.0.0"
             ProcessorArchitecture="x64" />
 
   <Properties>

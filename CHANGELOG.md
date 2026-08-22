@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-22
+
+- Refreshed the application icon used by Windows and Microsoft Store packages.
+- Adopted the MWFL deployment verifier for safer packaged application startup
+  checks and structured diagnostics for more useful support bundles.
+- Stabilized nightly reliability coverage and calibrated hosted GPU frame
+  budgets to reduce false failures without weakening local certification.
+
 ## [0.10.8] - 2026-08-13
 
 - Fixed GitHub-distributed updates downloading the verified installer with a

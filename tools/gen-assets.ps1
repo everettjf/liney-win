@@ -1,39 +1,49 @@
-# gen-assets.ps1 — generate placeholder MSIX tile/logo PNGs.
+# gen-assets.ps1 — generate MSIX tile/logo PNGs from the primary Liney icon.
 #
-# Produces solid-color "L" tiles at the sizes AppxManifest.xml references. Swap
-# these for real branding before publishing. Output: packaging\Assets\*.png
-#
+# Output: packaging\Assets\*.png
 # Usage: powershell -ExecutionPolicy Bypass -File tools\gen-assets.ps1
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 $root = Split-Path -Parent $PSScriptRoot
+$sourcePath = Join-Path $root 'res\liney-icon.png'
 $assets = Join-Path $root 'packaging\Assets'
 New-Item -ItemType Directory -Force -Path $assets | Out-Null
 
-$bg = [System.Drawing.Color]::FromArgb(16, 40, 64)     # #102840
-$fg = [System.Drawing.Color]::FromArgb(120, 200, 160)  # accent
-
-function New-Tile($w, $h, $file) {
-    $bmp = New-Object System.Drawing.Bitmap $w, $h
-    $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.Clear($bg)
-    $g.SmoothingMode = 'AntiAlias'
-    $g.TextRenderingHint = 'AntiAliasGridFit'
-    $size = [Math]::Max(8, [int]([Math]::Min($w, $h) * 0.55))
-    $font = New-Object System.Drawing.Font 'Segoe UI', $size, ([System.Drawing.FontStyle]::Bold), ([System.Drawing.GraphicsUnit]::Pixel)
-    $brush = New-Object System.Drawing.SolidBrush $fg
-    $fmt = New-Object System.Drawing.StringFormat
-    $fmt.Alignment = 'Center'; $fmt.LineAlignment = 'Center'
-    $rect = New-Object System.Drawing.RectangleF 0, 0, $w, $h
-    $g.DrawString('L', $font, $brush, $rect, $fmt)
-    $g.Dispose()
-    $bmp.Save((Join-Path $assets $file), [System.Drawing.Imaging.ImageFormat]::Png)
-    $bmp.Dispose()
+if (-not (Test-Path $sourcePath)) {
+    throw "Primary application icon not found: $sourcePath"
 }
 
-New-Tile 44 44 'Square44x44Logo.png'
-New-Tile 150 150 'Square150x150Logo.png'
-New-Tile 310 150 'Wide310x150Logo.png'
-New-Tile 50 50 'StoreLogo.png'
-Write-Host "Wrote placeholder assets to $assets"
+$source = [System.Drawing.Image]::FromFile($sourcePath)
+
+function New-Asset($width, $height, $file) {
+    $bitmap = New-Object System.Drawing.Bitmap $width, $height,
+        ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    $graphics.Clear([System.Drawing.Color]::Transparent)
+    $graphics.CompositingQuality = 'HighQuality'
+    $graphics.InterpolationMode = 'HighQualityBicubic'
+    $graphics.PixelOffsetMode = 'HighQuality'
+    $graphics.SmoothingMode = 'HighQuality'
+
+    $side = [Math]::Min($width, $height)
+    $x = [int](($width - $side) / 2)
+    $y = [int](($height - $side) / 2)
+    $graphics.DrawImage($source, $x, $y, $side, $side)
+
+    $graphics.Dispose()
+    $bitmap.Save((Join-Path $assets $file),
+        [System.Drawing.Imaging.ImageFormat]::Png)
+    $bitmap.Dispose()
+}
+
+try {
+    New-Asset 44 44 'Square44x44Logo.png'
+    New-Asset 150 150 'Square150x150Logo.png'
+    New-Asset 310 150 'Wide310x150Logo.png'
+    New-Asset 50 50 'StoreLogo.png'
+} finally {
+    $source.Dispose()
+}
+
+Write-Host "Wrote branded MSIX assets to $assets"
