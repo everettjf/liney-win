@@ -12,12 +12,12 @@
 
   <Identity Name="20370everettjf.LineyTerminal"
             Publisher="CN=560214DD-F83C-484D-87A6-0E0454EE64B0"
-            Version="1.0.0.0"
+            Version="1.0.1.0"
             ProcessorArchitecture="x64" />
 
   <Properties>
     <DisplayName>Liney Terminal</DisplayName>
-    <PublisherDisplayName>everettjf</PublisherDisplayName>
+    <PublisherDisplayName>DUSTAXIOM</PublisherDisplayName>
     <Description>Windows terminal workspace (repos / worktrees / splits).</Description>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>

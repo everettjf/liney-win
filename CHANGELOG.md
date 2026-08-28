@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-08-28
+
+- Removed the GitHub self-update implementation and hidden update test command
+  from Microsoft Store binaries; Store installs rely exclusively on Microsoft
+  Store servicing.
+- Unified publisher and company branding as DUSTAXIOM across Store, Windows
+  version, installer, and WinGet metadata.
+
 ## [1.0.0] - 2026-08-22
 
 - Refreshed the application icon used by Windows and Microsoft Store packages.

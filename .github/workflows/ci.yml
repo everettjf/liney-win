@@ -47,6 +47,12 @@ jobs:
       - name: Build
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\build.ps1
+      - name: Build Microsoft Store package without self-updater
+        if: matrix.os == 'windows-2025'
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File tools\make-msix.ps1 -BuildDir build-store-ci
+          powershell -ExecutionPolicy Bypass -File tools\store-update-policy-smoke.ps1 -Exe build-store-ci\Liney.exe
       - name: Clean-machine load smoke test
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\smoke-test.ps1 -Exe build-ghostty\Liney.exe

@@ -123,7 +123,7 @@ update_verified:
   ; Add/Remove Programs entry.
   WriteRegStr HKCU "${UNINST_KEY}" "DisplayName" "Liney"
   WriteRegStr HKCU "${UNINST_KEY}" "DisplayVersion" "${APPVERSION}"
-  WriteRegStr HKCU "${UNINST_KEY}" "Publisher" "everettjf"
+  WriteRegStr HKCU "${UNINST_KEY}" "Publisher" "DUSTAXIOM"
   WriteRegStr HKCU "${UNINST_KEY}" "DisplayIcon" "$INSTDIR\liney.ico"
   WriteRegStr HKCU "${UNINST_KEY}" "UninstallString" "$INSTDIR\Uninstall.exe"
   WriteRegDWORD HKCU "${UNINST_KEY}" "NoModify" 1

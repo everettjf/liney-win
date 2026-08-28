@@ -31,8 +31,10 @@
 #include "util/Process.h"
 #include "util/Http.h"
 #include "util/Json.h"
+#ifndef LINEY_STORE_BUILD
 #include "util/Authenticode.h"
 #include "core/Update.h"
+#endif
 #include "app/WindowInternal.h"
 #include "workspace/Workspace.h"
 
@@ -106,6 +108,7 @@ bool runCliIfRequested(int& exitCode) {
         exitCode = 0;
         return true;
     }
+#ifndef LINEY_STORE_BUILD
     if (cmd == L"update-self-test" && __argc >= 3) {
         wchar_t token[4096]{};
         GetEnvironmentVariableW(L"LINEY_UPDATE_TEST_TOKEN", token,
@@ -153,6 +156,7 @@ bool runCliIfRequested(int& exitCode) {
         exitCode = trusted ? 0 : 76;
         return true;
     }
+#endif
     if (cmd == L"self-test") {
         // A package manager may launch this GUI-subsystem executable with
         // redirected standard handles. Console children otherwise inherit

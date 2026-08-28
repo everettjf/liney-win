@@ -7,8 +7,10 @@
 #include "util/Json.h"
 #include "util/Process.h"
 #include "util/Base64.h"
+#ifndef LINEY_STORE_BUILD
 #include "util/Authenticode.h"
 #include "core/Update.h"
+#endif
 #include "core/WindowGeometry.h"
 #include "core/RenderSignal.h"
 #include "workspace/Workspace.h"

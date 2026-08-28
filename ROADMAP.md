@@ -127,7 +127,7 @@ SSH / agent / tmux / 打包更新 体量大、相对独立,排在后面;diff/his
 - ✅ **应用图标**:`res/liney.ico`(多尺寸,`tools/gen-icon.ps1` 生成)经 `res/resource.rc` 编入 exe(已验证可从 exe 提取)
 - ✅ **NSIS 安装包**:`packaging/liney-win.nsi` + `tools/make-installer.ps1`(每用户安装、开始菜单快捷方式、Add/Remove、卸载;已验证静默安装/卸载完整闭环)
 - ✅ **便携 zip 打包**:`tools/make-portable.ps1`(已验证产出 `dist\liney-win-portable.zip`,含两个 exe + 文档)
-- ✅ **MSIX 脚手架**:`packaging/AppxManifest.xml`(身份 `everettjf.liney-win`)+ `tools/gen-assets.ps1`(已验证生成图标)+ `tools/make-msix.ps1`(makeappx 打包 + 可选自签)
+- ✅ **MSIX 脚手架**:`packaging/AppxManifest.xml`(Partner Center 分配的固定产品身份)+ `tools/gen-assets.ps1`(已验证生成图标)+ `tools/make-msix.ps1`(makeappx 打包 + 可选自签)
 - ✅ **WinGet 清单模板**:`packaging/winget/*.yaml`(installer / locale / version)
 - ✅ **自动更新(对标 Sparkle,通过 GitHub release)**:`Ctrl+Shift+U` 后台查询 GitHub releases,比较版本;有新版则在 release 资产里找安装包(`*Setup.exe`),弹框确认后下载(WinHTTP,自动跟随 github→CDN 跨主机跳转,确定性验证:成功下载真实 GitHub 资产 1950 字节)到临时目录并运行 NSIS 安装包,随后退出以便就地替换(安装包 `.onInit` 会先 taskkill 旧实例)
 

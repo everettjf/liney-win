@@ -2,7 +2,7 @@
 PackageIdentifier: everettjf.liney-win
 PackageVersion: 1.0.0
 PackageLocale: en-US
-Publisher: everettjf
+Publisher: DUSTAXIOM
 PackageName: liney-win
 License: Apache-2.0
 ShortDescription: Windows terminal workspace (repos / worktrees / splits / sidebar).

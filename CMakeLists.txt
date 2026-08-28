@@ -51,7 +51,6 @@ add_executable(liney_win WIN32
   src/core/Shutdown.cpp
   src/core/KeyBinding.cpp
   src/core/SshProfiles.cpp
-  src/core/Update.cpp
   src/core/WindowGeometry.cpp
   src/core/Ai.cpp
   src/core/CommandHistory.cpp
@@ -70,9 +69,17 @@ add_executable(liney_win WIN32
   src/util/Base64.cpp
   src/util/Http.cpp
   src/util/Diagnostics.cpp
-  src/util/Authenticode.cpp
   src/util/AccessibilityProvider.cpp
 )
+
+# Microsoft Store owns the update lifecycle for MSIX installs. Keep the
+# GitHub installer policy and Authenticode updater code out of that binary
+# entirely instead of merely hiding its UI at runtime.
+if(NOT LINEY_STORE_BUILD)
+  target_sources(liney_win PRIVATE
+    src/core/Update.cpp
+    src/util/Authenticode.cpp)
+endif()
 
 # The GUI binary is Liney.exe. It also serves as the companion CLI: invoked as
 # `liney notify ...` it emits OSC sequences a Liney pane turns into
@@ -91,7 +98,10 @@ endif()
 
 target_link_libraries(liney_win PRIVATE
   d2d1 dwrite d3d11 d3dcompiler dxgi imm32 winhttp bcrypt windowscodecs ole32 oleaut32
-  comctl32 comdlg32 shell32 dbghelp wintrust crypt32 uiautomationcore)
+  comctl32 comdlg32 shell32 dbghelp uiautomationcore)
+if(NOT LINEY_STORE_BUILD)
+  target_link_libraries(liney_win PRIVATE wintrust crypt32)
+endif()
 target_link_libraries(liney_win PRIVATE dwmapi uxtheme)
 
 # resource.rc already embeds our compatibility/DPI/long-path manifest. MSVC's
