@@ -14,7 +14,20 @@ if (-not (Test-Path $sourcePath)) {
     throw "Primary application icon not found: $sourcePath"
 }
 
-$source = [System.Drawing.Image]::FromFile($sourcePath)
+$source = [System.Drawing.Bitmap]::FromFile($sourcePath)
+$alphaBounds = [System.Drawing.Rectangle]::Empty
+for ($y = 0; $y -lt $source.Height; $y++) {
+    for ($x = 0; $x -lt $source.Width; $x++) {
+        if ($source.GetPixel($x, $y).A -eq 0) { continue }
+        $point = New-Object System.Drawing.Rectangle $x, $y, 1, 1
+        $alphaBounds = if ($alphaBounds.IsEmpty) {
+            $point
+        } else {
+            [System.Drawing.Rectangle]::Union($alphaBounds, $point)
+        }
+    }
+}
+if ($alphaBounds.IsEmpty) { throw 'source icon has no visible pixels' }
 
 function New-Asset($width, $height, $file) {
     $bitmap = New-Object System.Drawing.Bitmap $width, $height,
@@ -29,7 +42,9 @@ function New-Asset($width, $height, $file) {
     $side = [Math]::Min($width, $height)
     $x = [int](($width - $side) / 2)
     $y = [int](($height - $side) / 2)
-    $graphics.DrawImage($source, $x, $y, $side, $side)
+    $dest = New-Object System.Drawing.Rectangle $x, $y, $side, $side
+    $graphics.DrawImage($source, $dest, $alphaBounds,
+                        [System.Drawing.GraphicsUnit]::Pixel)
 
     $graphics.Dispose()
     $bitmap.Save((Join-Path $assets $file),
@@ -46,4 +61,4 @@ try {
     $source.Dispose()
 }
 
-Write-Host "Wrote branded MSIX assets to $assets"
+Write-Host "Wrote branded MSIX assets to $assets from cropped alpha bounds $alphaBounds"

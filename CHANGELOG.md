@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-08-28
+
+- Removed transparent source-image padding and the colored Store tile backing
+  so the application icon no longer appears inside a second border.
+
 ## [1.0.1] - 2026-08-28
 
 - Removed the GitHub self-update implementation and hidden update test command

@@ -15,7 +15,20 @@ $src = Join-Path $res 'liney-icon.png'
 $icoPath = Join-Path $res 'liney.ico'
 if (-not (Test-Path $src)) { throw "source icon not found: $src" }
 
-$source = [System.Drawing.Image]::FromFile($src)
+$source = [System.Drawing.Bitmap]::FromFile($src)
+$alphaBounds = [System.Drawing.Rectangle]::Empty
+for ($y = 0; $y -lt $source.Height; $y++) {
+    for ($x = 0; $x -lt $source.Width; $x++) {
+        if ($source.GetPixel($x, $y).A -eq 0) { continue }
+        $point = New-Object System.Drawing.Rectangle $x, $y, 1, 1
+        $alphaBounds = if ($alphaBounds.IsEmpty) {
+            $point
+        } else {
+            [System.Drawing.Rectangle]::Union($alphaBounds, $point)
+        }
+    }
+}
+if ($alphaBounds.IsEmpty) { throw 'source icon has no visible pixels' }
 $sizes = @(16, 32, 48, 64, 128, 256)
 $entries = New-Object System.Collections.ArrayList   # of byte[] (DIB per size)
 
@@ -25,7 +38,9 @@ foreach ($s in $sizes) {
     $g.InterpolationMode = 'HighQualityBicubic'; $g.PixelOffsetMode = 'HighQuality'
     $g.SmoothingMode = 'HighQuality'; $g.CompositingQuality = 'HighQuality'
     $g.Clear([System.Drawing.Color]::Transparent)
-    $g.DrawImage($source, (New-Object System.Drawing.Rectangle 0, 0, $s, $s))
+    $dest = New-Object System.Drawing.Rectangle 0, 0, $s, $s
+    $g.DrawImage($source, $dest, $alphaBounds,
+                 [System.Drawing.GraphicsUnit]::Pixel)
     $g.Dispose()
 
     $rect = New-Object System.Drawing.Rectangle 0, 0, $s, $s
@@ -67,4 +82,4 @@ for ($i = 0; $i -lt $sizes.Count; $i++) { [byte[]]$data = $entries[$i]; $bw.Writ
 $bw.Flush()
 [System.IO.File]::WriteAllBytes($icoPath, $out.ToArray())
 $bw.Dispose(); $out.Dispose()
-Write-Host "Wrote $icoPath ($([System.IO.File]::ReadAllBytes($icoPath).Length) bytes) from liney's icon"
+Write-Host "Wrote $icoPath ($([System.IO.File]::ReadAllBytes($icoPath).Length) bytes) from cropped alpha bounds $alphaBounds"
