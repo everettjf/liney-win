@@ -20,8 +20,11 @@ $out = Join-Path $root 'dist\liney-win.msix'
 # tree so configuring MSIX never turns the normal GitHub/portable build into a
 # Store build (or vice versa).
 $sharedZigCache = Join-Path $root 'build-ghostty\zig-global-cache'
+$storeZigCache = Join-Path $root 'build-store\zig-global-cache'
 $env:ZIG_GLOBAL_CACHE_DIR = if (Test-Path $sharedZigCache) {
     $sharedZigCache
+} elseif (Test-Path $storeZigCache) {
+    $storeZigCache
 } else {
     Join-Path $build 'zig-global-cache'
 }
@@ -56,8 +59,19 @@ $cmakeArgs = @(
     "-DZIG_EXECUTABLE=$zig"
 )
 $cachedGhostty = Join-Path $root 'build-ghostty\_deps\ghostty-src'
+if (-not (Test-Path (Join-Path $cachedGhostty 'build.zig'))) {
+    $cachedGhostty = Join-Path $root 'build-store\_deps\ghostty-src'
+}
 if (Test-Path (Join-Path $cachedGhostty 'build.zig')) {
     $cmakeArgs += "-DFETCHCONTENT_SOURCE_DIR_GHOSTTY=$cachedGhostty"
+}
+$cachedMwfl = Join-Path $root 'build-store\_deps\mwfl-src'
+if (Test-Path (Join-Path $cachedMwfl 'CMakeLists.txt')) {
+    $cmakeArgs += "-DFETCHCONTENT_SOURCE_DIR_MWFL=$cachedMwfl"
+}
+$cachedWil = Join-Path $root 'build-store\_deps\mwfl_wil-src'
+if (Test-Path (Join-Path $cachedWil 'include\wil\resource.h')) {
+    $cmakeArgs += "-DMWFL_WIL_SOURCE_DIR=$cachedWil"
 }
 & $cmake @cmakeArgs | Out-Host
 if ($LASTEXITCODE -ne 0) { throw 'Store CMake configure failed' }

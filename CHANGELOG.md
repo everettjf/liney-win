@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-08-28
+
+- Replaced the packaged taskbar and executable icon with a transparent Liney
+  glyph so Windows no longer shows the purple Store artwork as a background.
+
 ## [1.0.2] - 2026-08-28
 
 - Removed transparent source-image padding and the colored Store tile backing

@@ -1,4 +1,4 @@
-# gen-icon.ps1 — build res\liney.ico from res\liney-icon.png (liney's app icon).
+# gen-icon.ps1 — build res\liney.ico from the transparent taskbar icon.
 #
 # Resizes the 1024px source to standard sizes (16..256) with alpha-preserving
 # resampling and assembles a .ico using 32-bit BMP/DIB entries (the format
@@ -11,7 +11,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 $root = Split-Path -Parent $PSScriptRoot
 $res = Join-Path $root 'res'
-$src = Join-Path $res 'liney-icon.png'
+$src = Join-Path $res 'liney-taskbar-icon.png'
 $icoPath = Join-Path $res 'liney.ico'
 if (-not (Test-Path $src)) { throw "source icon not found: $src" }
 
