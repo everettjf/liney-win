@@ -19,6 +19,7 @@ CMakeFiles/
 cmake_install.cmake
 build-ghostty/
 build-store/
+build-store-*/
 build-tests/
 build-vs*/
 build-zig*/
@@ -27,6 +28,8 @@ compatibility-*.json
 artifacts/
 .release-prev-*/
 .upgrade-test-*/
+local-run-*/
+.tmp-*/
 
 # Local toolchain (e.g. pinned Zig)
 .toolchain/

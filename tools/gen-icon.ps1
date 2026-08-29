@@ -1,4 +1,4 @@
-# gen-icon.ps1 — build res\liney.ico from the transparent taskbar icon.
+# gen-icon.ps1 — build res\liney.ico from macOS Liney's native-size icons.
 #
 # Resizes the 1024px source to standard sizes (16..256) with alpha-preserving
 # resampling and assembles a .ico using 32-bit BMP/DIB entries (the format
@@ -11,37 +11,31 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 $root = Split-Path -Parent $PSScriptRoot
 $res = Join-Path $root 'res'
-$src = Join-Path $res 'liney-taskbar-icon.png'
 $icoPath = Join-Path $res 'liney.ico'
-if (-not (Test-Path $src)) { throw "source icon not found: $src" }
-
-$source = [System.Drawing.Bitmap]::FromFile($src)
-$alphaBounds = [System.Drawing.Rectangle]::Empty
-for ($y = 0; $y -lt $source.Height; $y++) {
-    for ($x = 0; $x -lt $source.Width; $x++) {
-        if ($source.GetPixel($x, $y).A -eq 0) { continue }
-        $point = New-Object System.Drawing.Rectangle $x, $y, 1, 1
-        $alphaBounds = if ($alphaBounds.IsEmpty) {
-            $point
-        } else {
-            [System.Drawing.Rectangle]::Union($alphaBounds, $point)
-        }
-    }
-}
-if ($alphaBounds.IsEmpty) { throw 'source icon has no visible pixels' }
 $sizes = @(16, 32, 48, 64, 128, 256)
+$sourceSizes = @{ 16 = 16; 32 = 32; 48 = 64; 64 = 64; 128 = 128; 256 = 256 }
 $entries = New-Object System.Collections.ArrayList   # of byte[] (DIB per size)
 
 foreach ($s in $sizes) {
+    $sourceSize = $sourceSizes[$s]
+    $src = Join-Path $res "liney-icon-$sourceSize.png"
+    if (-not (Test-Path $src)) { throw "source icon not found: $src" }
+    $source = [System.Drawing.Bitmap]::FromFile($src)
     $bmp = New-Object System.Drawing.Bitmap $s, $s
     $g = [System.Drawing.Graphics]::FromImage($bmp)
     $g.InterpolationMode = 'HighQualityBicubic'; $g.PixelOffsetMode = 'HighQuality'
     $g.SmoothingMode = 'HighQuality'; $g.CompositingQuality = 'HighQuality'
     $g.Clear([System.Drawing.Color]::Transparent)
-    $dest = New-Object System.Drawing.Rectangle 0, 0, $s, $s
-    $g.DrawImage($source, $dest, $alphaBounds,
-                 [System.Drawing.GraphicsUnit]::Pixel)
+    # macOS reserves roughly 9% on each side. Windows taskbar icons look
+    # undersized with that much inset, so trim 8% while preserving the icon's
+    # own antialiased rounded edge. Keep the native 16px artwork untouched.
+    $inset = if ($s -eq 16) { 0 } else { [Math]::Round($sourceSize * 0.08) }
+    $sourceRect = New-Object System.Drawing.Rectangle $inset, $inset,
+        ($source.Width - 2 * $inset), ($source.Height - 2 * $inset)
+    $g.DrawImage($source, (New-Object System.Drawing.Rectangle 0, 0, $s, $s),
+                 $sourceRect, [System.Drawing.GraphicsUnit]::Pixel)
     $g.Dispose()
+    $source.Dispose()
 
     $rect = New-Object System.Drawing.Rectangle 0, 0, $s, $s
     $bd = $bmp.LockBits($rect, 'ReadOnly', 'Format32bppArgb')
@@ -64,7 +58,6 @@ foreach ($s in $sizes) {
     [void]$entries.Add($ms.ToArray())
     $bw.Dispose(); $ms.Dispose()
 }
-$source.Dispose()
 
 $out = New-Object System.IO.MemoryStream
 $bw = New-Object System.IO.BinaryWriter $out
@@ -82,4 +75,4 @@ for ($i = 0; $i -lt $sizes.Count; $i++) { [byte[]]$data = $entries[$i]; $bw.Writ
 $bw.Flush()
 [System.IO.File]::WriteAllBytes($icoPath, $out.ToArray())
 $bw.Dispose(); $out.Dispose()
-Write-Host "Wrote $icoPath ($([System.IO.File]::ReadAllBytes($icoPath).Length) bytes) from cropped alpha bounds $alphaBounds"
+Write-Host "Wrote $icoPath ($([System.IO.File]::ReadAllBytes($icoPath).Length) bytes) from macOS native-size icons"

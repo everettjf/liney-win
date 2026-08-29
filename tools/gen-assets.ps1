@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 $root = Split-Path -Parent $PSScriptRoot
 $sourcePath = Join-Path $root 'res\liney-icon.png'
-$taskbarSourcePath = Join-Path $root 'res\liney-taskbar-icon.png'
+$taskbarSourcePath = Join-Path $root 'res\liney-icon-64.png'
 $assets = Join-Path $root 'packaging\Assets'
 New-Item -ItemType Directory -Force -Path $assets | Out-Null
 
@@ -34,7 +34,7 @@ for ($y = 0; $y -lt $source.Height; $y++) {
 if ($alphaBounds.IsEmpty) { throw 'source icon has no visible pixels' }
 
 function New-Asset($width, $height, $file, $image = $source,
-                   $bounds = $alphaBounds) {
+                   $sourceInset = 0) {
     $bitmap = New-Object System.Drawing.Bitmap $width, $height,
         ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
     $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
@@ -48,7 +48,9 @@ function New-Asset($width, $height, $file, $image = $source,
     $x = [int](($width - $side) / 2)
     $y = [int](($height - $side) / 2)
     $dest = New-Object System.Drawing.Rectangle $x, $y, $side, $side
-    $graphics.DrawImage($image, $dest, $bounds,
+    $sourceRect = New-Object System.Drawing.Rectangle $sourceInset, $sourceInset,
+        ($image.Width - 2 * $sourceInset), ($image.Height - 2 * $sourceInset)
+    $graphics.DrawImage($image, $dest, $sourceRect,
                         [System.Drawing.GraphicsUnit]::Pixel)
 
     $graphics.Dispose()
@@ -59,9 +61,7 @@ function New-Asset($width, $height, $file, $image = $source,
 
 try {
     $taskbarSource = [System.Drawing.Bitmap]::FromFile($taskbarSourcePath)
-    $taskbarBounds = New-Object System.Drawing.Rectangle 0, 0,
-        $taskbarSource.Width, $taskbarSource.Height
-    New-Asset 44 44 'Square44x44Logo.png' $taskbarSource $taskbarBounds
+    New-Asset 44 44 'Square44x44Logo.png' $taskbarSource 5
     New-Asset 150 150 'Square150x150Logo.png'
     New-Asset 310 150 'Wide310x150Logo.png'
     New-Asset 50 50 'StoreLogo.png'
@@ -70,4 +70,4 @@ try {
     $source.Dispose()
 }
 
-Write-Host "Wrote branded MSIX assets to $assets from cropped alpha bounds $alphaBounds"
+Write-Host "Wrote branded MSIX assets to $assets with the macOS icon's safe area"

@@ -4,8 +4,9 @@
 
 ## [1.0.3] - 2026-08-28
 
-- Replaced the packaged taskbar and executable icon with a transparent Liney
-  glyph so Windows no longer shows the purple Store artwork as a background.
+- Rebuilt the packaged taskbar and executable icon from macOS Liney's native
+  icon sizes, preserving its intended rounded artwork while adapting the safe
+  area so it appears at the correct size on the Windows taskbar.
 
 ## [1.0.2] - 2026-08-28
 
