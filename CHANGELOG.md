@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Restored the standalone transparent Windows taskbar mark after the macOS
+  icon sizing change reintroduced a dark background. Rebuilt all ICO sizes
+  with matching transparency masks and added unplated MSIX taskbar assets.
+
 ## [1.0.3] - 2026-08-28
 
 - Rebuilt the packaged taskbar and executable icon from macOS Liney's native

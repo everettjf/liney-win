@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 $root = Split-Path -Parent $PSScriptRoot
 $sourcePath = Join-Path $root 'res\liney-icon.png'
-$taskbarSourcePath = Join-Path $root 'res\liney-icon-64.png'
+$taskbarSourcePath = Join-Path $root 'res\liney-taskbar-icon.png'
 $assets = Join-Path $root 'packaging\Assets'
 New-Item -ItemType Directory -Force -Path $assets | Out-Null
 
@@ -61,7 +61,11 @@ function New-Asset($width, $height, $file, $image = $source,
 
 try {
     $taskbarSource = [System.Drawing.Bitmap]::FromFile($taskbarSourcePath)
-    New-Asset 44 44 'Square44x44Logo.png' $taskbarSource 5
+    New-Asset 44 44 'Square44x44Logo.png' $taskbarSource
+    foreach ($size in @(16, 24, 32, 48, 256)) {
+        New-Asset $size $size "Square44x44Logo.targetsize-$size.png" $taskbarSource
+        New-Asset $size $size "Square44x44Logo.targetsize-${size}_altform-unplated.png" $taskbarSource
+    }
     New-Asset 150 150 'Square150x150Logo.png'
     New-Asset 310 150 'Wide310x150Logo.png'
     New-Asset 50 50 'StoreLogo.png'
