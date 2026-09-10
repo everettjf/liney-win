@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-09-09
+
 - Restored the standalone transparent Windows taskbar mark after the macOS
   icon sizing change reintroduced a dark background. Rebuilt all ICO sizes
   with matching transparency masks and added unplated MSIX taskbar assets.

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity version="1.0.3.0" processorArchitecture="amd64"
+  <assemblyIdentity version="1.0.4.0" processorArchitecture="amd64"
                     name="DUSTAXIOM.Liney" type="win32" />
   <description>Liney terminal workspace</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
