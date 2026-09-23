@@ -62,9 +62,12 @@ function New-Asset($width, $height, $file, $image = $source,
 try {
     $taskbarSource = [System.Drawing.Bitmap]::FromFile($taskbarSourcePath)
     New-Asset 44 44 'Square44x44Logo.png' $taskbarSource
-    foreach ($size in @(16, 24, 32, 48, 256)) {
+    # Shell target sizes cover small taskbar icons and fractional DPI scales.
+    # Both theme variants are required even when they use identical artwork.
+    foreach ($size in @(16, 20, 24, 30, 32, 36, 40, 44, 48, 60, 64, 72, 80, 96, 256)) {
         New-Asset $size $size "Square44x44Logo.targetsize-$size.png" $taskbarSource
         New-Asset $size $size "Square44x44Logo.targetsize-${size}_altform-unplated.png" $taskbarSource
+        New-Asset $size $size "Square44x44Logo.targetsize-${size}_altform-lightunplated.png" $taskbarSource
     }
     New-Asset 150 150 'Square150x150Logo.png'
     New-Asset 310 150 'Wide310x150Logo.png'

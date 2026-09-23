@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-09-23
+
+- Added small-size and light/dark unplated taskbar icons, and indexed all MSIX
+  visual resources with MakePRI so Windows can resolve the correct variant.
+
 ## [1.0.4] - 2026-09-09
 
 - Restored the standalone transparent Windows taskbar mark after the macOS

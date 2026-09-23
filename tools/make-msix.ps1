@@ -88,7 +88,12 @@ function Find-Exe($name) {
 }
 
 # 3) Stage the package layout (manifest + executable + DLLs + assets).
-if (Test-Path $pkgSrc) { Remove-Item $pkgSrc -Recurse -Force }
+$resolvedBuild = [IO.Path]::GetFullPath($build).TrimEnd('\')
+$pkgSrc = [IO.Path]::GetFullPath($pkgSrc)
+if ($pkgSrc -ne (Join-Path $resolvedBuild 'msix-src')) {
+    throw "Unexpected package staging path: $pkgSrc"
+}
+if (Test-Path $pkgSrc) { Remove-Item -LiteralPath $pkgSrc -Recurse -Force }
 New-Item -ItemType Directory -Force -Path (Join-Path $pkgSrc 'Assets') | Out-Null
 Copy-Item (Join-Path $root 'packaging\AppxManifest.xml') $pkgSrc
 Copy-Item (Join-Path $root 'packaging\Assets\*') (Join-Path $pkgSrc 'Assets')
@@ -110,9 +115,27 @@ $sdkBin = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Directory 
     Sort-Object Name -Descending | Select-Object -First 1
 if (-not $sdkBin) { throw "makeappx.exe not found; install the Windows 10/11 SDK." }
 $makeappx = Join-Path $sdkBin.FullName 'x64\makeappx.exe'
+$makepri = Join-Path $sdkBin.FullName 'x64\makepri.exe'
+if (-not (Test-Path $makepri)) { throw 'makepri.exe not found in the Windows SDK' }
+
+# Qualified PNG filenames must be indexed; copying them alone does not register
+# targetsize/altform variants with the shell's resource resolver.
+$priConfig = Join-Path $build 'priconfig.xml'
+& $makepri createconfig /cf $priConfig /dq en-US /o | Out-Host
+if ($LASTEXITCODE -ne 0) { throw 'PRI configuration failed' }
+# Keep all scale/language candidates in this single upload package.
+$config = [xml](Get-Content -LiteralPath $priConfig -Raw)
+$config.SelectNodes('//packaging') | ForEach-Object {
+    [void]$_.ParentNode.RemoveChild($_)
+}
+$config.Save($priConfig)
+& $makepri new /pr $pkgSrc /cf $priConfig /mn (Join-Path $pkgSrc 'AppxManifest.xml') /of (Join-Path $pkgSrc 'resources.pri') /o | Out-Host
+if ($LASTEXITCODE -ne 0) { throw 'PRI resource indexing failed' }
 
 New-Item -ItemType Directory -Force -Path (Split-Path $out) | Out-Null
 & $makeappx pack /d $pkgSrc /p $out /o | Out-Host
+if ($LASTEXITCODE -ne 0) { throw 'MSIX packaging failed' }
+& (Join-Path $PSScriptRoot 'store-icon-smoke.ps1') -Package $out
 Write-Host "MSIX package: $out"
 
 if ($SelfSign) {
