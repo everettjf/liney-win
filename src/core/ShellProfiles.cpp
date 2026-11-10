@@ -75,6 +75,23 @@ if ($env:LINEY_SHELL_INTEGRATION_ACTIVE) { return }
 $env:LINEY_SHELL_INTEGRATION_ACTIVE = '1'
 $script:LineyEsc = [char]27
 $script:LineyOriginalPrompt = $function:prompt
+# Session-local Git shortcuts; leave user-defined aliases/functions intact.
+# PowerShell's stock gs/gc/gl aliases are replaced inside Liney only.
+$lineyGitShortcuts = @{
+    gs = 'status'; ga = 'add'; gc = 'commit'; gl = 'log'
+    gd = 'diff'; gb = 'branch'
+}
+$lineyStockAliases = @{ gs = 'Get-Service'; gc = 'Get-Content'; gl = 'Get-Location' }
+foreach ($name in $lineyGitShortcuts.Keys) {
+    $existing = Get-Command $name -ErrorAction SilentlyContinue
+    if ($existing -and -not ($existing.CommandType -eq 'Alias' -and
+        $existing.Definition -eq $lineyStockAliases[$name])) { continue }
+    $subcommand = $lineyGitShortcuts[$name]
+    $functionName = "Invoke-LineyGit-$subcommand"
+    Set-Item -Path "Function:global:$functionName" -Value ([scriptblock]::Create("& git $subcommand @args"))
+    $options = if ($existing) { $existing.Options } else { 'None' }
+    Set-Alias -Name $name -Value $functionName -Scope Global -Option $options -Force
+}
 function script:Install-LineyEnterHandler {
     if ($script:LineyEnterHandlerInstalled -or
         -not (Get-Module -Name PSReadLine)) { return }

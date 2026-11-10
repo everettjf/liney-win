@@ -67,6 +67,12 @@ nothing but the OS.
   plus full fg/bg + 16-color ANSI overrides for power users
 - **Unix tools** — with Git for Windows installed, `ls` / `cat` / `grep` / `rm` /
   `sed` / `awk` / … work in any shell
+- **Git shortcuts (PowerShell)** — new Liney PowerShell tabs include `gs` →
+  `git status`, `ga` → `git add`, `gc` → `git commit`, `gl` → `git log`,
+  `gd` → `git diff`, and `gb` → `git branch`. Arguments and either letter case
+  work, e.g. `ga .`, `gc -m "Fix issue"`, `gl --oneline -10`. These are local
+  to the session and preserve custom commands. Stock `gs` / `gc` / `gl` aliases
+  are replaced; their full PowerShell commands remain available.
 
 **🗂️ Workspace** — liney's differentiator
 - Tabs (with a **× close button** and right-click **close to the right / left /

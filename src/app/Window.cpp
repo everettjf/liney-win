@@ -661,7 +661,7 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
     }
     case WM_SIZE:
-        if (LOWORD(lParam) && HIWORD(lParam)) {
+        if (wParam != SIZE_MINIMIZED && LOWORD(lParam) && HIWORD(lParam)) {
             renderer_->resize(LOWORD(lParam), HIWORD(lParam));
             // Interactive resize runs a modal loop that starves our render
             // loop; paint here so the window tracks the drag instead of
@@ -669,6 +669,12 @@ LRESULT Window::wndProc(UINT msg, WPARAM wParam, LPARAM lParam) {
             renderFrame();
         }
         return 0;
+    case WM_ACTIVATEAPP:
+        if (wParam) {
+            markRenderDirty();
+            InvalidateRect(hwnd_, nullptr, FALSE);
+        }
+        return DefWindowProcW(hwnd_, msg, wParam, lParam);
     case WM_PAINT: {
         // Modal loops (menus, dialogs, move/size) bypass runMessageLoop —
         // honor paint requests so the window isn't frozen/black meanwhile.
@@ -921,6 +927,14 @@ void Window::renderFrame() {
     pollAiResult();       // display an explicitly requested AI explanation
     pollWorkspaceStatusRefresh();
     updateTitle();        // reflect OSC 0/2 title changes live
+
+    // Windows exposes a transient client size while minimized. Keep polling
+    // background output above, but never lay out/resize a PTY to that size:
+    // ConPTY can repaint a shrunken screen and erase previously visible text.
+    RECT client{};
+    if (IsIconic(hwnd_) || !GetClientRect(hwnd_, &client) ||
+        client.right <= 0 || client.bottom <= 0)
+        return;
 
     Rect leftBar, rightPanel, tabBar, panes;
     regions(leftBar, rightPanel, tabBar, panes);

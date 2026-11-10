@@ -660,6 +660,39 @@ bool runCliIfRequested(int& exitCode) {
         exitCode = result;
         return true;
     }
+    if (cmd == L"compact-layout-self-test") {
+        auto first = std::make_unique<liney::TerminalSession>();
+        auto second = std::make_unique<liney::TerminalSession>();
+        if (!first->start(L"cmd.exe /d /q", L"", 80, 24, 100) ||
+            !second->start(L"cmd.exe /d /q", L"", 80, 24, 100)) {
+            exitCode = 50; return true;
+        }
+        liney::Tab tab(std::move(first));
+        tab.splitActive(liney::SplitDir::Cols, std::move(second));
+        const auto leaves = tab.leaves();
+        const liney::Metrics metrics;
+        bool passed = true;
+        for (int frame = 0; passed && frame < 20; ++frame) {
+            tab.layout({0, 0, 240, 200}, metrics);
+            leaves[0]->session->snapshot();
+            leaves[1]->session->snapshot();
+            // The hidden pane retains its original dimensions, rather than
+            // being repeatedly resized to a discarded split rectangle.
+            passed = tab.compactLayout() &&
+                     leaves[0]->session->grid().cols == 80 &&
+                     leaves[0]->session->grid().rows == 24 &&
+                     leaves[1]->session->grid().cols == 28 &&
+                     leaves[1]->session->grid().rows == 11;
+        }
+        tab.layout({0, 0, 800, 400}, metrics);
+        for (liney::Pane* leaf : leaves) {
+            leaf->session->snapshot();
+            passed = passed && leaf->session->grid().cols == 48;
+            leaf->session->sendBytes("exit\r", 5);
+        }
+        exitCode = passed && !tab.compactLayout() ? 0 : 51;
+        return true;
+    }
     if (cmd == L"vt-regression-self-test") {
         liney::Terminal terminal;
         liney::Grid grid;
@@ -685,6 +718,20 @@ bool runCliIfRequested(int& exitCode) {
                     sawWide = true;
             }
             passed = sawA && sawRed && sawWide;
+        }
+        if (passed) {
+            // Idle/focus repaints must retain old rows even when the child
+            // emits no output. Also cover a cursor-only update after idle.
+            const auto expected = grid.cells;
+            for (int frame = 0; passed && frame < 20; ++frame) {
+                if (frame == 10) terminal.write("\r", 1);
+                passed = terminal.snapshotInto(grid) &&
+                         grid.cells.size() == expected.size();
+                for (size_t i = 0; passed && i < expected.size(); ++i)
+                    passed = grid.cells[i].ch == expected[i].ch &&
+                             grid.cells[i].flags == expected[i].flags;
+            }
+            if (!passed) { exitCode = 49; return true; }
         }
         if (passed) {
             static const char enterAlt[] = "\x1b[?1049hALT";

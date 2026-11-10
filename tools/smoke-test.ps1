@@ -153,6 +153,18 @@ if ($vtTest.ExitCode -ne 0) {
 }
 Write-Host 'VT regression self-test passed.'
 
+$compactTest = Start-Process -FilePath $resolved -ArgumentList 'compact-layout-self-test' -WindowStyle Hidden -PassThru
+if (-not $compactTest.WaitForExit(15000)) {
+    $compactTest.Kill()
+    throw 'Compact layout regression self-test timed out.'
+}
+if ($compactTest.ExitCode -ne 0) {
+    throw "Compact layout regression self-test failed with exit code $($compactTest.ExitCode)."
+}
+Write-Host 'Compact layout regression self-test passed.'
+& (Join-Path $PSScriptRoot 'git-shortcuts-smoke.ps1')
+if ($LASTEXITCODE -ne 0) { throw 'Git shortcut regression test failed.' }
+
 $font = [Diagnostics.Process]::Start($resolved, 'font-self-test')
 if (-not $font.WaitForExit(10000)) {
     $font.Kill()

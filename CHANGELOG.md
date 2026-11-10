@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-11-09
+
+- Preserve terminal dimensions while minimized and resize compact panes only
+  after their final layout is known; repaint when returning to the app.
+- Add session-local PowerShell Git shortcuts: gs, ga, gc, gl, gd and gb, with
+  argument forwarding and preservation of user-defined commands.
+
 ## [1.0.5] - 2026-09-23
 
 - Added small-size and light/dark unplated taskbar icons, and indexed all MSIX

@@ -60,6 +60,12 @@ Direct2D**。用 **MSVC + Zig** 构建。
   (活动 pane 分隔线 / 活动标签的颜色);高级用户还可覆盖前景/背景 + 16 色 ANSI 调色板
 - **Unix 命令** —— 装了 Git for Windows 后,`ls` / `cat` / `grep` / `rm` / `sed` /
   `awk` / … 在任意 shell 都能用
+- **Git 短命令（PowerShell）** —— 新建 Liney PowerShell 标签即可使用 `gs` →
+  `git status`、`ga` → `git add`、`gc` → `git commit`、`gl` → `git log`、
+  `gd` → `git diff`、`gb` → `git branch`，大小写均可，支持追加参数，例如
+  `ga .`、`gc -m "修复问题"`、`gl --oneline -10`。仅作用于当前会话，不修改
+  PowerShell 配置文件；保留用户自定义同名命令，但会替换默认的 `gs` / `gc` / `gl`
+  别名（原命令仍可用 `Get-Service` / `Get-Content` / `Get-Location` 调用）。
 
 **🗂️ 工作区** —— liney 的差异化
 - 标签(带 **× 关闭按钮**,右键可 **关闭右侧 / 左侧 / 其他 / 全部标签**)+ 二叉

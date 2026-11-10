@@ -30,20 +30,7 @@ void fixParents(Pane* p, Pane* parent) {
 
 void layoutRec(Pane* p, const Rect& area, const Metrics& m) {
     p->rect = area;
-    if (p->leaf()) {
-        if (p->session) {
-            // The grid sits inside the pane's inner padding (see
-            // Metrics::panePad); size the terminal to the padded area.
-            const float pad2 = m.panePad() * 2.0f;
-            int cols = static_cast<int>((area.w - pad2) / m.cellW);
-            int rows = static_cast<int>((area.h - pad2) / m.cellH);
-            if (cols < 1) cols = 1;
-            if (rows < 1) rows = 1;
-            p->session->resize(cols, rows, static_cast<int>(m.cellW),
-                               static_cast<int>(m.cellH));
-        }
-        return;
-    }
+    if (p->leaf()) return;
     const float g = m.gutter();
     if (p->dir == SplitDir::Cols) {
         float aw = std::floor((area.w - g) * p->ratio);
@@ -214,15 +201,16 @@ void Tab::layout(const Rect& area, const Metrics& m) {
     if (compactLayout_ && active_) {
         for (Pane* leaf : leaves()) leaf->rect = {0, 0, 0, 0};
         active_->rect = area;
-        if (active_->session) {
-            const float pad2 = m.panePad() * 2.0f;
-            const int cols = std::max(
-                1, static_cast<int>((area.w - pad2) / m.cellW));
-            const int rows = std::max(
-                1, static_cast<int>((area.h - pad2) / m.cellH));
-            active_->session->resize(cols, rows, static_cast<int>(m.cellW),
-                                     static_cast<int>(m.cellH));
-        }
+    }
+    // Only resize the final visible layout. Resizing to the discarded split
+    // rectangles first would shrink and expand ConPTY on every idle repaint.
+    for (Pane* leaf : leaves()) {
+        if (!leaf->session || leaf->rect.w <= 0 || leaf->rect.h <= 0) continue;
+        const float pad2 = m.panePad() * 2.0f;
+        const int cols = std::max(1, static_cast<int>((leaf->rect.w - pad2) / m.cellW));
+        const int rows = std::max(1, static_cast<int>((leaf->rect.h - pad2) / m.cellH));
+        leaf->session->resize(cols, rows, static_cast<int>(m.cellW),
+                              static_cast<int>(m.cellH));
     }
 }
 

@@ -1,6 +1,6 @@
 # WinGet default-locale manifest (template).
 PackageIdentifier: everettjf.liney-win
-PackageVersion: 1.0.0
+PackageVersion: 1.0.6
 PackageLocale: en-US
 Publisher: DUSTAXIOM
 PackageName: liney-win
