@@ -47,6 +47,12 @@ jobs:
       - name: Build
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File tools\build.ps1
+      - name: Paste key character regression
+        shell: pwsh
+        run: |
+          cmake -S tests -B build-tests -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-tests --target windows_keyboard_test
+          ctest --test-dir build-tests -R windows_keyboard --output-on-failure
       - name: Build Microsoft Store package without self-updater
         if: matrix.os == 'windows-2025'
         shell: pwsh

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-11-13
+
+- Suppress the Ctrl+V / Ctrl+Shift+V shortcut character before accessing the
+  clipboard, preventing it from reaching the terminal during reentrant paste.
+- Consume handled paste key messages before character translation, even
+  with Caps Lock enabled; improves compatibility with remapped Ctrl keys.
+
 ## [1.0.6] - 2026-11-09
 
 - Preserve terminal dimensions while minimized and resize compact panes only

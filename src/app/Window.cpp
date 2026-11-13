@@ -1,4 +1,5 @@
 #include "app/Window.h"
+#include "app/KeyboardDispatch.h"
 #include "app/ResponsiveLayout.h"
 
 #include <windowsx.h>  // GET_X_LPARAM / GET_WHEEL_DELTA_WPARAM
@@ -548,6 +549,16 @@ int Window::runMessageLoop() {
                 if (rememberLayout_) saveLayout();  // persist only if opted in
                 runDetached(appExitHook_, L"");  // hooks.appExit
                 return static_cast<int>(msg.wParam);
+            }
+            if (consumePasteKeyBeforeTranslation(msg, hwnd_, [this] {
+                    const bool handled = onKeyDown('V');
+                    // No character will be generated for this key, so don't
+                    // discard the next unrelated character the user types.
+                    if (handled) swallowNextChar_ = false;
+                    return handled;
+                })) {
+                didMsg = true;
+                continue;
             }
             TranslateMessage(&msg);
             DispatchMessageW(&msg);

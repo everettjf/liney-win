@@ -231,7 +231,12 @@ bool Window::onKeyDown(WPARAM vk) {
             case '0':
             case VK_NUMPAD0: zoomFont(0); swallowNextChar_ = true; return true;
             case 'V':  // paste (Windows Terminal convention; ^V is rarely typed)
-                paste(); swallowNextChar_ = true; return true;
+                // Clipboard delayed rendering and the multiline warning can
+                // pump messages before paste() returns. Suppress the queued
+                // shortcut character before either can re-enter onChar().
+                swallowNextChar_ = true;
+                paste();
+                return true;
             default: break;
             }
         }
@@ -246,7 +251,7 @@ bool Window::onKeyDown(WPARAM vk) {
             case 'U': executePaletteAction(11); swallowNextChar_ = true; return true;
             case 'A': selectAllActive(); swallowNextChar_ = true; return true;
             case 'C': copySelection(); swallowNextChar_ = true; return true;
-            case 'V': paste(); swallowNextChar_ = true; return true;
+            case 'V': swallowNextChar_ = true; paste(); return true;
             case 'Z': executePaletteAction(6); swallowNextChar_ = true; return true;
             case 'E': executePaletteAction(7); swallowNextChar_ = true; return true;
             case 'L':  // git history for the active pane's repo (pager view)

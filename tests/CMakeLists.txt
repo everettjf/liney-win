@@ -34,3 +34,10 @@ target_include_directories(liney_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../sr
 
 enable_testing()
 add_test(NAME unit COMMAND liney_tests)
+
+if(WIN32)
+  add_executable(windows_keyboard_test windows_keyboard_test.cpp)
+  target_include_directories(windows_keyboard_test PRIVATE ../src)
+  target_link_libraries(windows_keyboard_test PRIVATE user32)
+  add_test(NAME windows_keyboard COMMAND windows_keyboard_test)
+endif()
