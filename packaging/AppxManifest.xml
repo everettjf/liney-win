@@ -17,7 +17,7 @@
 
   <Properties>
     <DisplayName>Liney Terminal</DisplayName>
-    <PublisherDisplayName>DUSTAXIOM</PublisherDisplayName>
+    <PublisherDisplayName>AtomSprout</PublisherDisplayName>
     <Description>Windows terminal workspace (repos / worktrees / splits).</Description>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>

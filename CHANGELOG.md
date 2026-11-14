@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Align the MSIX publisher display name with the current Partner Center account.
+
 ## [1.0.7] - 2026-11-13
 
 - Suppress the Ctrl+V / Ctrl+Shift+V shortcut character before accessing the
